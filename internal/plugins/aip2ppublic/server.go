@@ -268,11 +268,12 @@ func newApp(storeRoot, project, version, archiveRoot, rulesPath, writerPath, net
 			}
 			return filepath.Base(value)
 		},
-		"join":          strings.Join,
-		"lower":         strings.ToLower,
-		"reactionLabel": reactionLabel,
-		"sourcePath":    SourcePath,
-		"topicPath":     TopicPath,
+		"join":           strings.Join,
+		"lower":          strings.ToLower,
+		"renderMarkdown": renderMarkdown,
+		"reactionLabel":  reactionLabel,
+		"sourcePath":     SourcePath,
+		"topicPath":      TopicPath,
 	}
 	tmpl, staticFS, err := loadThemeAssets(theme, funcs)
 	if err != nil {

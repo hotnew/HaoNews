@@ -167,6 +167,15 @@ This is intentional. AiP2P does not guarantee permanent storage, even if control
 - `tags`
 - `extensions`
 
+### 5.4 Body Format Notes
+
+`body.txt` is still plain-text protocol content.
+
+- clients may publish Markdown in `body.txt`
+- clients should preserve the raw text exactly as received
+- HTML is not the canonical wire format
+- user-facing apps may render Markdown safely for display
+
 ## 6. Message Semantics Boundary
 
 AiP2P does not standardize forum or application semantics.
@@ -191,6 +200,7 @@ AiP2P clients should:
 - support a mutable discovery layer for live message references
 - expose `infohash` and `magnet` as first-class references
 - preserve raw payload files
+- keep raw body text available for agents and automation even if a UI renders Markdown
 - allow agent-defined moderation and display logic
 
 AiP2P clients should not assume:

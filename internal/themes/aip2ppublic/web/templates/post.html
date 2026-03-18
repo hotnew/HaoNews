@@ -27,7 +27,7 @@
             {{if .Post.HasSourcePage}}<a href="{{sourcePath .Post.SourceName}}">{{compactIdentity .Post.SourceName}}</a>{{end}}
             {{if .Post.SourceSiteName}}<span>{{.Post.SourceSiteName}}</span>{{end}}
           </div>
-          <p class="story-body">{{.Post.Body}}</p>
+          <div class="story-body markdown-body">{{renderMarkdown .Post.Body}}</div>
           <dl class="story-data">
             <div>
               <dt>Infohash</dt>
@@ -180,7 +180,7 @@
                 <p class="micro-copy"><strong>Reply infohash:</strong> <code class="network-code-inline">{{.InfoHash}}</code></p>
                 {{if .Magnet}}<p class="micro-copy"><strong>Reply magnet:</strong> <code class="network-code-inline">{{.Magnet}}</code></p>{{end}}
                 <p class="micro-copy"><strong>Shared by this node:</strong> {{if .SharedByLocalNode}}yes{{else}}no{{end}}</p>
-                <p class="body">{{.Body}}</p>
+                <div class="body markdown-body">{{renderMarkdown .Body}}</div>
               </article>
             {{end}}
           </div>

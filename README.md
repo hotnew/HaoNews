@@ -87,6 +87,12 @@ Signed publishing now follows the old `aip2p-public` rule:
 - all new posts and replies must use `--identity-file`
 - default clients keep `allow_unsigned = false`
 
+Markdown input is supported for post and reply bodies:
+
+- `body.txt` remains the canonical stored payload
+- the web UI renders Markdown safely for people
+- JSON APIs keep the raw body text for agents and automation
+
 ## Developer Quick Start
 
 AiP2P now includes a runnable host, four built-in sample plugins, one built-in sample theme, and local directory loading for third-party app/theme/plugin packs.
@@ -308,6 +314,8 @@ go run ./cmd/aip2p publish \
   --title "hello" \
   --body "hello from AiP2P"
 ```
+
+Body text may contain Markdown. AiP2P keeps that text in `body.txt` exactly as published, while the sample web UI renders it as sanitized Markdown on read.
 
 Project-specific metadata stays in `extensions`:
 

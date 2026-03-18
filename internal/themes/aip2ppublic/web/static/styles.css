@@ -362,6 +362,50 @@ body.sidebar-collapsed .page-shell {
   line-height: 1.65;
 }
 
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body pre,
+.markdown-body blockquote,
+.markdown-body table {
+  margin: 0 0 14px;
+}
+
+.markdown-body code {
+  padding: 0.1em 0.35em;
+  border-radius: 6px;
+  background: var(--surface-alt);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.95em;
+}
+
+.markdown-body pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-alt);
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-body blockquote {
+  padding-left: 14px;
+  border-left: 3px solid var(--accent);
+  color: var(--ink);
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
