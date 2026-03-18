@@ -1,8 +1,0 @@
-{
-  "id": "news-demo-archive",
-  "name": "AiP2P News Demo Archive",
-  "version": "0.1.0",
-  "plugin_kind": "archive",
-  "description": "Sample news demo archive plugin with markdown archive pages and history manifest APIs.",
-  "default_theme": "news-demo"
-}

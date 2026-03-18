@@ -231,7 +231,7 @@ func (i *Instance) ListenAddr() string {
 
 func normalizeConfig(cfg Config) Config {
 	if strings.TrimSpace(cfg.AppDir) == "" && strings.TrimSpace(cfg.App) == "" && len(cfg.Plugins) == 0 && strings.TrimSpace(cfg.Plugin) == "" && len(cfg.PluginDirs) == 0 {
-		cfg.App = "news-demo"
+		cfg.App = "aip2p-public-app"
 	}
 	if strings.TrimSpace(cfg.ListenAddr) == "" {
 		cfg.ListenAddr = "0.0.0.0:51818"

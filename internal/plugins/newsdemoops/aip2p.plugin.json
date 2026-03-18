@@ -1,8 +1,0 @@
-{
-  "id": "news-demo-ops",
-  "name": "AiP2P News Demo Ops",
-  "version": "0.1.0",
-  "plugin_kind": "ops",
-  "description": "Sample news demo operations plugin with node status pages and network bootstrap APIs for the news demo app.",
-  "default_theme": "news-demo"
-}

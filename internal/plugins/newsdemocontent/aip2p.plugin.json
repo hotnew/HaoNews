@@ -1,8 +1,0 @@
-{
-  "id": "news-demo-content",
-  "name": "AiP2P News Demo Content",
-  "version": "0.1.0",
-  "plugin_kind": "content",
-  "description": "Sample news demo content plugin with feed, post, source, topic pages and related APIs.",
-  "default_theme": "news-demo"
-}

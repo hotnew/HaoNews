@@ -13,13 +13,13 @@ If you want a runnable project first, start in this repository.
 
 The current built-in sample app is composed from:
 
-- `news-demo-content`
-- `news-demo-governance`
-- `news-demo-archive`
-- `news-demo-ops`
-- `news-demo`
+- `aip2p-public-content`
+- `aip2p-public-governance`
+- `aip2p-public-archive`
+- `aip2p-public-ops`
+- `aip2p-public-theme`
 
-The legacy [`AiP2P News Demo`](https://github.com/AiP2P/AiP2P-News) remains only as an old exploration reference, not the active mainline.
+The legacy [`AiP2P-News`](https://github.com/AiP2P/AiP2P-News) remains only as an old exploration reference, not the active mainline.
 
 ## Core Position
 
@@ -51,7 +51,7 @@ If an AI agent is reading this repository for installation or setup, use one of 
 - bootstrap skill: [`skills/bootstrap-aip2p/SKILL.md`](skills/bootstrap-aip2p/SKILL.md)
 - protocol draft: [`docs/protocol-v0.1.md`](docs/protocol-v0.1.md)
 - discovery notes: [`docs/discovery-bootstrap.md`](docs/discovery-bootstrap.md)
-- current release line: `v0.2.5.1.3`
+- current release line: `v0.2.5.1.4`
 
 Supported operating systems:
 
@@ -82,7 +82,7 @@ Start the built-in modular sample app:
 go run ./cmd/aip2p serve
 ```
 
-Signed publishing now follows the old `aip2p-news` rule:
+Signed publishing now follows the old `aip2p-public` rule:
 
 - all new posts and replies must use `--identity-file`
 - default clients keep `allow_unsigned = false`
@@ -102,7 +102,7 @@ Create and run a third-party plugin pack:
 ```bash
 go run ./cmd/aip2p create plugin my-plugin
 go run ./cmd/aip2p plugins inspect --dir ./my-plugin
-go run ./cmd/aip2p serve --plugin-dir ./my-plugin --theme news-demo
+go run ./cmd/aip2p serve --plugin-dir ./my-plugin --theme aip2p-public-theme
 ```
 
 Optional plugin workspace config:
@@ -173,7 +173,7 @@ macOS / Linux:
 
 ```bash
 git fetch --tags origin
-git checkout v0.2.5.1.3
+git checkout v0.2.5.1.4
 go test ./...
 ```
 
@@ -181,13 +181,13 @@ Windows PowerShell:
 
 ```powershell
 git fetch --tags origin
-git checkout v0.2.5.1.3
+git checkout v0.2.5.1.4
 go test ./...
 ```
 
 Current rollback targets:
 
-- `v0.2.5.1.3`
+- `v0.2.5.1.4`
 - `v0.1.16-draft`
 
 ## What AiP2P Is

@@ -24,12 +24,12 @@ func (r testResolver) ResolvePlugin(id string) (apphost.HTTPPlugin, apphost.Plug
 type testBasePlugin struct{}
 
 func (testBasePlugin) Manifest() apphost.PluginManifest {
-	return apphost.PluginManifest{ID: "news-demo-content", Name: "News Content", DefaultTheme: "news-demo"}
+	return apphost.PluginManifest{ID: "aip2p-public-content", Name: "News Content", DefaultTheme: "aip2p-public-theme"}
 }
 
 func (testBasePlugin) Build(context.Context, apphost.Config, apphost.WebTheme) (*apphost.Site, error) {
 	return &apphost.Site{
-		Manifest: apphost.PluginManifest{ID: "news-demo-content", Name: "News Content", DefaultTheme: "news-demo"},
+		Manifest: apphost.PluginManifest{ID: "aip2p-public-content", Name: "News Content", DefaultTheme: "aip2p-public-theme"},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte("ok"))
 		}),
@@ -39,7 +39,7 @@ func (testBasePlugin) Build(context.Context, apphost.Config, apphost.WebTheme) (
 type testTheme struct{}
 
 func (testTheme) Manifest() apphost.ThemeManifest {
-	return apphost.ThemeManifest{ID: "news-demo", Name: "Default News"}
+	return apphost.ThemeManifest{ID: "aip2p-public-theme", Name: "AiP2P Public Theme"}
 }
 
 func (testTheme) ParseTemplates(template.FuncMap) (*template.Template, error) {
@@ -52,7 +52,7 @@ func (testTheme) StaticFS() (fs.FS, error) {
 
 func TestLoadBuildsDelegatingPlugin(t *testing.T) {
 	root := t.TempDir()
-	writePluginFile(t, root, "aip2p.plugin.json", "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"news-demo-content\",\n  \"default_theme\": \"news-demo\"\n}\n")
+	writePluginFile(t, root, "aip2p.plugin.json", "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"aip2p-public-content\",\n  \"default_theme\": \"aip2p-public-theme\"\n}\n")
 
 	plugin, err := Load(root, testResolver{plugin: testBasePlugin{}})
 	if err != nil {

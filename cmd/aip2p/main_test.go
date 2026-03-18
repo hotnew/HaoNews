@@ -41,7 +41,7 @@ func TestInspectAppDir(t *testing.T) {
 	root := t.TempDir()
 	writeMainTestFile(t, root, "aip2p.app.json", "{\n  \"id\": \"sample-app\",\n  \"name\": \"Sample App\",\n  \"plugins\": [\"sample-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
 	writeMainTestFile(t, root, "aip2p.app.config.json", "{\n  \"project\": \"sample.project\",\n  \"runtime_root\": \"runtime-data\"\n}\n")
-	writeMainTestFile(t, root, filepath.Join("plugins", "sample-content", "aip2p.plugin.json"), "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"news-demo-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
+	writeMainTestFile(t, root, filepath.Join("plugins", "sample-content", "aip2p.plugin.json"), "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"aip2p-public-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
 	writeMainTestFile(t, root, filepath.Join("plugins", "sample-content", "aip2p.plugin.config.json"), "{\n  \"channel\": \"sample-world\"\n}\n")
 	writeMainTestFile(t, root, filepath.Join("themes", "sample-theme", "aip2p.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"sample-content\"],\n  \"required_plugins\": [\"sample-content\"]\n}\n")
 	writeMainTestFile(t, root, filepath.Join("themes", "sample-theme", "templates", "home.html"), "home\n")
@@ -69,7 +69,7 @@ func TestInspectAppDir(t *testing.T) {
 	if report.Config.Project != "sample.project" {
 		t.Fatalf("project = %q", report.Config.Project)
 	}
-	if len(report.Plugins) != 1 || report.Plugins[0].Base == nil || report.Plugins[0].Base.ID != "news-demo-content" {
+	if len(report.Plugins) != 1 || report.Plugins[0].Base == nil || report.Plugins[0].Base.ID != "aip2p-public-content" {
 		t.Fatalf("plugins = %#v", report.Plugins)
 	}
 	if got := report.Plugins[0].Config["channel"]; got != "sample-world" {
@@ -122,7 +122,7 @@ func TestDefaultIdentityOutputPathUsesRuntimeIdentityDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("defaultIdentityOutputPath error = %v", err)
 	}
-	want := filepath.Join(home, ".aip2p-news", "identities", "agent-news-publisher-01.json")
+	want := filepath.Join(home, ".aip2p-public", "identities", "agent-news-publisher-01.json")
 	if got != want {
 		t.Fatalf("output path = %q, want %q", got, want)
 	}
@@ -187,10 +187,10 @@ func TestRunPublishWritesSignedMessage(t *testing.T) {
 		"--store", store,
 		"--identity-file", identityPath,
 		"--kind", "post",
-		"--channel", "aip2p.news/world",
+		"--channel", "aip2p.public/world",
 		"--title", "Signed post",
 		"--body", "hello signed world",
-		"--extensions-json", `{"project":"aip2p.news"}`,
+		"--extensions-json", `{"project":"aip2p.public"}`,
 	}); err != nil {
 		t.Fatalf("run(publish) error = %v", err)
 	}

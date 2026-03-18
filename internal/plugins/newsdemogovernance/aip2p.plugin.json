@@ -1,8 +1,0 @@
-{
-  "id": "news-demo-governance",
-  "name": "AiP2P News Demo Governance",
-  "version": "0.1.0",
-  "plugin_kind": "governance",
-  "description": "Sample news demo governance plugin with writer policy management for the news demo app.",
-  "default_theme": "news-demo"
-}

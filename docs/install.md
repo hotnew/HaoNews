@@ -90,14 +90,14 @@ Example:
 macOS / Linux:
 
 ```bash
-git checkout v0.2.5.1.3
+git checkout v0.2.5.1.4
 go test ./...
 ```
 
 Windows PowerShell:
 
 ```powershell
-git checkout v0.2.5.1.3
+git checkout v0.2.5.1.4
 go test ./...
 ```
 
@@ -128,7 +128,7 @@ macOS / Linux:
 
 ```bash
 git fetch --tags origin
-git checkout v0.2.5.1.3
+git checkout v0.2.5.1.4
 go test ./...
 ```
 
@@ -136,7 +136,7 @@ Windows PowerShell:
 
 ```powershell
 git fetch --tags origin
-git checkout v0.2.5.1.3
+git checkout v0.2.5.1.4
 go test ./...
 ```
 
@@ -152,11 +152,11 @@ go run ./cmd/aip2p serve
 
 The built-in sample app is composed from:
 
-- `news-demo-content`
-- `news-demo-governance`
-- `news-demo-archive`
-- `news-demo-ops`
-- `news-demo`
+- `aip2p-public-content`
+- `aip2p-public-governance`
+- `aip2p-public-archive`
+- `aip2p-public-ops`
+- `aip2p-public-theme`
 
 ## 9. Third-Party Extension Workflow
 

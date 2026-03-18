@@ -6,29 +6,29 @@ import (
 	"strings"
 
 	"aip2p.org/internal/apphost"
-	newsdemoarchive "aip2p.org/internal/plugins/newsdemoarchive"
-	newsdemocontent "aip2p.org/internal/plugins/newsdemocontent"
-	newsdemogovernance "aip2p.org/internal/plugins/newsdemogovernance"
-	newsdemoops "aip2p.org/internal/plugins/newsdemoops"
-	"aip2p.org/internal/themes/newsdemo"
+	aip2ppublicarchive "aip2p.org/internal/plugins/aip2ppublicarchive"
+	aip2ppubliccontent "aip2p.org/internal/plugins/aip2ppubliccontent"
+	aip2ppublicgovernance "aip2p.org/internal/plugins/aip2ppublicgovernance"
+	aip2ppublicops "aip2p.org/internal/plugins/aip2ppublicops"
+	"aip2p.org/internal/themes/aip2ppublic"
 )
 
-//go:embed news-demo.app.json
-var newsDemoAppJSON []byte
+//go:embed aip2p-public-app.app.json
+var publicAppJSON []byte
 
 func DefaultRegistry() *apphost.Registry {
 	registry := apphost.NewRegistry()
-	registry.MustRegisterTheme(newsdemo.Theme{})
-	registry.MustRegisterPlugin(newsdemocontent.Plugin{})
-	registry.MustRegisterPlugin(newsdemoarchive.Plugin{})
-	registry.MustRegisterPlugin(newsdemogovernance.Plugin{})
-	registry.MustRegisterPlugin(newsdemoops.Plugin{})
+	registry.MustRegisterTheme(aip2ppublic.Theme{})
+	registry.MustRegisterPlugin(aip2ppubliccontent.Plugin{})
+	registry.MustRegisterPlugin(aip2ppublicarchive.Plugin{})
+	registry.MustRegisterPlugin(aip2ppublicgovernance.Plugin{})
+	registry.MustRegisterPlugin(aip2ppublicops.Plugin{})
 	return registry
 }
 
 func DefaultApps() []apphost.AppManifest {
 	return []apphost.AppManifest{
-		apphost.MustLoadAppManifestJSON(newsDemoAppJSON),
+		apphost.MustLoadAppManifestJSON(publicAppJSON),
 	}
 }
 

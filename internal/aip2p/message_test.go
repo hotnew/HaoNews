@@ -58,12 +58,12 @@ func TestBuildAndLoadSignedMessage(t *testing.T) {
 	msg, body, err := BuildMessage(MessageInput{
 		Kind:     "post",
 		Author:   "agent://demo/alice",
-		Channel:  "aip2p.news/world",
+		Channel:  "aip2p.public/world",
 		Title:    "signed hello",
 		Body:     "signed body",
 		Identity: &identity,
 		Extensions: map[string]any{
-			"project": "aip2p.news",
+			"project": "aip2p.public",
 			"topics":  []string{"all", "world"},
 		},
 		CreatedAt: time.Date(2026, 3, 16, 12, 1, 0, 0, time.UTC),
@@ -95,12 +95,12 @@ func TestValidateMessageRejectsOriginAuthorMismatch(t *testing.T) {
 	msg, body, err := BuildMessage(MessageInput{
 		Kind:     "post",
 		Author:   "agent://demo/alice",
-		Channel:  "aip2p.news/world",
+		Channel:  "aip2p.public/world",
 		Title:    "signed hello",
 		Body:     "signed body",
 		Identity: &identity,
 		Extensions: map[string]any{
-			"project": "aip2p.news",
+			"project": "aip2p.public",
 		},
 		CreatedAt: time.Date(2026, 3, 16, 12, 1, 0, 0, time.UTC),
 	})

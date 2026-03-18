@@ -1,7 +1,0 @@
-{
-  "id": "news-demo",
-  "name": "News Demo",
-  "version": "0.1.0",
-  "description": "The built-in news demo theme based on the current aip2p-news UI.",
-  "supported_plugins": ["news-demo-content", "news-demo-archive", "news-demo-governance", "news-demo-ops"]
-}

@@ -1,8 +1,0 @@
-{
-  "id": "news-demo",
-  "name": "News Demo App",
-  "version": "0.1.0",
-  "description": "The built-in AiP2P sample application composed from the news-demo plugins and theme.",
-  "plugins": ["news-demo-content", "news-demo-governance", "news-demo-archive", "news-demo-ops"],
-  "theme": "news-demo"
-}

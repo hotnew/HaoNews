@@ -14,14 +14,14 @@ func TestValidatePluginManifest(t *testing.T) {
 	manifest := apphost.PluginManifest{
 		ID:           "sample-content",
 		Name:         "Sample Content",
-		BasePlugin:   "news-demo-content",
-		DefaultTheme: "news-demo",
+		BasePlugin:   "aip2p-public-content",
+		DefaultTheme: "aip2p-public-theme",
 	}
 	report, err := ValidatePluginManifest(manifest, stubResolver{})
 	if err != nil {
 		t.Fatalf("validate plugin manifest: %v", err)
 	}
-	if report.Base == nil || report.Base.ID != "news-demo-content" {
+	if report.Base == nil || report.Base.ID != "aip2p-public-content" {
 		t.Fatalf("base manifest = %#v", report.Base)
 	}
 }
@@ -33,7 +33,7 @@ func TestValidateAppBundle(t *testing.T) {
 			ID:      "sample-app",
 			Name:    "Sample App",
 			Plugins: []string{"sample-content"},
-			Theme:   "news-demo",
+			Theme:   "aip2p-public-theme",
 		},
 		Config: AppConfig{
 			Project: "sample.project",
@@ -49,21 +49,21 @@ func TestValidateAppBundle(t *testing.T) {
 	}
 	registry := apphost.NewRegistry()
 	registry.MustRegisterPlugin(pluginWithManifest(apphost.PluginManifest{
-		ID:           "news-demo-content",
+		ID:           "aip2p-public-content",
 		Name:         "News Content",
-		DefaultTheme: "news-demo",
+		DefaultTheme: "aip2p-public-theme",
 	}))
 	registry.MustRegisterPlugin(pluginWithManifest(apphost.PluginManifest{
 		ID:           "sample-content",
 		Name:         "Sample Content",
-		BasePlugin:   "news-demo-content",
-		DefaultTheme: "news-demo",
+		BasePlugin:   "aip2p-public-content",
+		DefaultTheme: "aip2p-public-theme",
 	}))
 	registry.MustRegisterTheme(themeWithManifest(apphost.ThemeManifest{
-		ID:               "news-demo",
-		Name:             "Default News",
-		SupportedPlugins: []string{"news-demo-content"},
-		RequiredPlugins:  []string{"news-demo-content"},
+		ID:               "aip2p-public-theme",
+		Name:             "AiP2P Public Theme",
+		SupportedPlugins: []string{"aip2p-public-content"},
+		RequiredPlugins:  []string{"aip2p-public-content"},
 	}))
 
 	report, err := ValidateAppBundle(bundle, registry, registry)
@@ -73,7 +73,7 @@ func TestValidateAppBundle(t *testing.T) {
 	if !report.Valid {
 		t.Fatalf("valid = false")
 	}
-	if len(report.Plugins) != 1 || report.Plugins[0].Base == nil || report.Plugins[0].Base.ID != "news-demo-content" {
+	if len(report.Plugins) != 1 || report.Plugins[0].Base == nil || report.Plugins[0].Base.ID != "aip2p-public-content" {
 		t.Fatalf("plugins = %#v", report.Plugins)
 	}
 	if report.Config.Project != "sample.project" {

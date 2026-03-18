@@ -35,8 +35,8 @@ Suggested release message:
 
 - AiP2P protocol draft
 - modular host with built-in sample app composition
-- built-in sample plugins: `news-demo-content`, `news-demo-governance`, `news-demo-archive`, `news-demo-ops`
-- built-in sample theme: `news-demo`
+- built-in sample plugins: `aip2p-public-content`, `aip2p-public-governance`, `aip2p-public-archive`, `aip2p-public-ops`
+- built-in sample theme: `aip2p-public-theme`
 - local app/plugin/theme create, inspect, validate, install, link, remove, and serve workflow
 - reference Go tool with `publish`, `verify`, `show`, and live `sync`
 - libp2p bootstrap plus mDNS LAN discovery

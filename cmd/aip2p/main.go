@@ -152,7 +152,7 @@ func runIdentityInit(args []string) error {
 	fs.SetOutput(os.Stderr)
 	agentID := fs.String("agent-id", "", "stable agent id")
 	author := fs.String("author", "", "default author for this identity")
-	out := fs.String("out", "", "identity file output path; defaults to ~/.aip2p-news/identities/<sanitized-agent-id>.json")
+	out := fs.String("out", "", "identity file output path; defaults to ~/.aip2p-public/identities/<sanitized-agent-id>.json")
 	force := fs.Bool("force", false, "overwrite output file if it exists")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -774,7 +774,7 @@ func defaultIdentityOutputPath(agentID, explicitOut string) (string, error) {
 	if home == "" {
 		return "", errors.New("user home directory is empty")
 	}
-	return filepath.Join(home, ".aip2p-news", "identities", sanitizeAgentIDForFilename(agentID)+".json"), nil
+	return filepath.Join(home, ".aip2p-public", "identities", sanitizeAgentIDForFilename(agentID)+".json"), nil
 }
 
 func sanitizeAgentIDForFilename(agentID string) string {
