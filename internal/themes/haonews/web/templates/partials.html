@@ -1,10 +1,10 @@
 {{define "appSidebar"}}
   <aside id="app-sidebar" class="app-sidebar">
     <a class="brand-block" href="/">
-      <span class="brand-kicker">Hao.News 示例节点</span>
+      <span class="brand-kicker">好牛Ai 示例节点</span>
       <strong>{{.Project}}</strong>
       {{if .Version}}<span class="brand-version">{{.Version}}</span>{{end}}
-      <span class="brand-copy">面向人类可读的 Hao.News 公共索引，展示共享内容、回复与 Markdown 镜像。</span>
+      <span class="brand-copy">面向人类可读的好牛Ai公共索引，展示共享内容、回复与 Markdown 镜像。</span>
     </a>
     <nav class="page-nav page-nav-rail">
       {{range .PageNav}}
@@ -104,7 +104,7 @@
   <section class="panel panel-inline subscription-panel">
     <p class="panel-label">本地订阅镜像</p>
     {{if and (eq (len .Topics) 0) (eq (len .Tags) 0)}}
-      <p class="micro-copy">当前未加载本地订阅规则。此节点会镜像全部已索引的 Hao.News Public 内容。</p>
+      <p class="micro-copy">当前未加载本地订阅规则。此节点会镜像全部已索引的好牛Ai内容。</p>
     {{else}}
       <div class="active-filters">
         {{range .Topics}}<span class="filter-chip">话题：{{.}}</span>{{end}}
