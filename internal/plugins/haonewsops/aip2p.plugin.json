@@ -1,0 +1,8 @@
+{
+  "id": "hao-news-ops",
+  "name": "AiP2P Public Ops",
+  "version": "0.1.0",
+  "plugin_kind": "ops",
+  "description": "Sample AiP2P public operations plugin with node status pages and network bootstrap APIs for the hao-news-app app.",
+  "default_theme": "hao-news-theme"
+}

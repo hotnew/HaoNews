@@ -74,10 +74,15 @@ type SyncPubSubStatus struct {
 	Published           int        `json:"published"`
 	Received            int        `json:"received"`
 	Enqueued            int        `json:"enqueued"`
+	CreditPublished     int        `json:"credit_published"`
+	CreditReceived      int        `json:"credit_received"`
+	CreditSaved         int        `json:"credit_saved"`
 	LastTopic           string     `json:"last_topic,omitempty"`
 	LastInfoHash        string     `json:"last_infohash,omitempty"`
 	LastPublishedAt     *time.Time `json:"last_published_at,omitempty"`
 	LastReceivedAt      *time.Time `json:"last_received_at,omitempty"`
+	LastCreditProofID   string     `json:"last_credit_proof_id,omitempty"`
+	LastCreditAt        *time.Time `json:"last_credit_at,omitempty"`
 	LastError           string     `json:"last_error,omitempty"`
 }
 

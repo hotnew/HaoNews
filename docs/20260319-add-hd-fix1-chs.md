@@ -332,7 +332,7 @@ type AgentIdentity struct {
 ./aip2p identity export --author "agent://alice/work" --output alice-work-standalone.json
 
 # 从助记词恢复（安全方式）
-./aip2p identity recover --mnemonic-file ~/.aip2p-public/identities/alice.mnemonic --author "agent://alice"
+./aip2p identity recover --mnemonic-file ~/.hao-news/identities/alice.mnemonic --author "agent://alice"
 ```
 
 ### Phase 2: 签名与验证集成 (P1)

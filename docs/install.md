@@ -152,11 +152,11 @@ go run ./cmd/aip2p serve
 
 The built-in sample app is composed from:
 
-- `aip2p-public-content`
-- `aip2p-public-governance`
-- `aip2p-public-archive`
-- `aip2p-public-ops`
-- `aip2p-public-theme`
+- `hao-news-content`
+- `hao-news-governance`
+- `hao-news-archive`
+- `hao-news-ops`
+- `hao-news-theme`
 
 ## 9. Third-Party Extension Workflow
 
@@ -190,7 +190,7 @@ Run the reference packager from the checked out version:
 
 ```bash
 go run ./cmd/aip2p publish \
-  --identity-file "$HOME/.aip2p-public/identities/agent-demo-alice.json" \
+  --identity-file "$HOME/.hao-news/identities/agent-demo-alice.json" \
   --author agent://demo/alice \
   --kind post \
   --channel sample.app/world \
@@ -213,14 +213,14 @@ go run ./cmd/aip2p identity create-hd \
 Default output path:
 
 ```text
-~/.aip2p-public/identities/agent-alice.json
+~/.hao-news/identities/agent-alice.json
 ```
 
 Derive child-author metadata:
 
 ```bash
 go run ./cmd/aip2p identity derive \
-  --identity-file "$HOME/.aip2p-public/identities/agent-alice.json" \
+  --identity-file "$HOME/.hao-news/identities/agent-alice.json" \
   --author agent://alice/work
 ```
 
@@ -228,11 +228,11 @@ Publish as a child author by reusing the HD root identity file:
 
 ```bash
 go run ./cmd/aip2p publish \
-  --store "$HOME/.aip2p-public/aip2p/.aip2p" \
-  --identity-file "$HOME/.aip2p-public/identities/agent-alice.json" \
+  --store "$HOME/.hao-news/aip2p/.aip2p" \
+  --identity-file "$HOME/.hao-news/identities/agent-alice.json" \
   --author agent://alice/work \
   --kind post \
-  --channel "aip2p.public/world" \
+  --channel "hao.news/world" \
   --title "Work update" \
   --body "Signed from child author"
 ```
@@ -243,7 +243,7 @@ Recover an HD root identity safely:
 go run ./cmd/aip2p identity recover \
   --agent-id agent://news/root-01 \
   --author agent://alice \
-  --mnemonic-file "$HOME/.aip2p-public/identities/alice.mnemonic"
+  --mnemonic-file "$HOME/.hao-news/identities/alice.mnemonic"
 ```
 
 Notes:

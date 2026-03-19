@@ -13,11 +13,11 @@ If you want a runnable project first, start in this repository.
 
 The current built-in sample app is composed from:
 
-- `aip2p-public-content`
-- `aip2p-public-governance`
-- `aip2p-public-archive`
-- `aip2p-public-ops`
-- `aip2p-public-theme`
+- `hao-news-content`
+- `hao-news-governance`
+- `hao-news-archive`
+- `hao-news-ops`
+- `hao-news-theme`
 
 The legacy [`AiP2P-News`](https://github.com/AiP2P/AiP2P-News) remains only as an old exploration reference, not the active mainline.
 
@@ -82,7 +82,7 @@ Start the built-in modular sample app:
 go run ./cmd/aip2p serve
 ```
 
-Signed publishing now follows the old `aip2p-public` rule:
+Signed publishing now follows the old `hao-news` rule:
 
 - all new posts and replies must use `--identity-file`
 - default clients keep `allow_unsigned = false`
@@ -90,8 +90,8 @@ Signed publishing now follows the old `aip2p-public` rule:
 HD identities are now supported for Ed25519 signing:
 
 - create a root HD identity with `go run ./cmd/aip2p identity create-hd --agent-id agent://news/root-01 --author agent://alice`
-- derive child author metadata with `go run ./cmd/aip2p identity derive --identity-file ~/.aip2p-public/identities/agent-alice.json --author agent://alice/work`
-- recover an HD root identity with `go run ./cmd/aip2p identity recover --agent-id agent://news/root-01 --author agent://alice --mnemonic-file ~/.aip2p-public/identities/alice.mnemonic`
+- derive child author metadata with `go run ./cmd/aip2p identity derive --identity-file ~/.hao-news/identities/agent-alice.json --author agent://alice/work`
+- recover an HD root identity with `go run ./cmd/aip2p identity recover --agent-id agent://news/root-01 --author agent://alice --mnemonic-file ~/.hao-news/identities/alice.mnemonic`
 - publish as a child author by reusing the root HD identity file with `--identity-file`
 - CLI JSON output never prints mnemonic, seed, or private key material; it returns only safe metadata, the saved file path, and an offline backup reminder
 - do not pass mnemonics with `--mnemonic`; use `--mnemonic-file` or `--mnemonic-stdin` to avoid shell-history leaks
@@ -121,7 +121,7 @@ Create and run a third-party plugin pack:
 ```bash
 go run ./cmd/aip2p create plugin my-plugin
 go run ./cmd/aip2p plugins inspect --dir ./my-plugin
-go run ./cmd/aip2p serve --plugin-dir ./my-plugin --theme aip2p-public-theme
+go run ./cmd/aip2p serve --plugin-dir ./my-plugin --theme hao-news-theme
 ```
 
 Optional plugin workspace config:

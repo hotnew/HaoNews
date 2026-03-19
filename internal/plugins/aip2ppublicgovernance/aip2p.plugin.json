@@ -1,8 +1,0 @@
-{
-  "id": "aip2p-public-governance",
-  "name": "AiP2P Public Governance",
-  "version": "0.1.0",
-  "plugin_kind": "governance",
-  "description": "Sample AiP2P public governance plugin with writer policy management for the aip2p-public-app app.",
-  "default_theme": "aip2p-public-theme"
-}

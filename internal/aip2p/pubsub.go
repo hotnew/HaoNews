@@ -24,6 +24,7 @@ const (
 	syncPubSubTopicPrefix      = "aip2p/announce"
 	syncPubSubGlobalTopic      = syncPubSubTopicPrefix + "/global"
 	syncPubSubDiscoveryDefault = "aip2p/sync"
+	creditProofTopicPrefix     = "haonews/credit/proofs"
 	reservedTopicAll           = "all"
 )
 
@@ -61,6 +62,7 @@ func startPubSubRuntime(
 	hostRuntime *libp2pRuntime,
 	rules SyncSubscriptions,
 	onAnnouncement func(SyncAnnouncement) (bool, error),
+	onCreditProof func(OnlineProof) (bool, error),
 ) (*pubsubRuntime, error) {
 	if hostRuntime == nil || hostRuntime.host == nil {
 		return nil, nil
@@ -94,6 +96,12 @@ func startPubSubRuntime(
 
 	for _, topicName := range joinedTopics {
 		if err := runtime.subscribe(ctx, topicName, onAnnouncement); err != nil {
+			runtime.Close()
+			return nil, err
+		}
+	}
+	if onCreditProof != nil {
+		if err := runtime.subscribeCreditProofs(ctx, creditProofTopic(hostRuntime.networkID), onCreditProof); err != nil {
 			runtime.Close()
 			return nil, err
 		}
@@ -161,6 +169,31 @@ func (r *pubsubRuntime) PublishAnnouncement(ctx context.Context, announcement Sy
 	return nil
 }
 
+func (r *pubsubRuntime) PublishCreditProof(ctx context.Context, proof OnlineProof) error {
+	if r == nil {
+		return nil
+	}
+	body, err := json.Marshal(proof)
+	if err != nil {
+		return err
+	}
+	topicName := creditProofTopic(r.host.networkID)
+	topic, err := r.ensureTopic(topicName)
+	if err != nil {
+		r.recordError(err)
+		return err
+	}
+	publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	err = topic.Publish(publishCtx, body)
+	cancel()
+	if err != nil {
+		r.recordError(err)
+		return fmt.Errorf("publish credit proof to %s: %w", topicName, err)
+	}
+	r.recordCreditPublished(proof.ProofID)
+	return nil
+}
+
 func (r *pubsubRuntime) subscribe(ctx context.Context, topicName string, onAnnouncement func(SyncAnnouncement) (bool, error)) error {
 	topic, err := r.ensureTopic(topicName)
 	if err != nil {
@@ -205,6 +238,52 @@ func (r *pubsubRuntime) subscribe(ctx context.Context, topicName string, onAnnou
 				}
 			}
 			r.recordReceived(topicName, announcement.InfoHash, enqueued)
+		}
+	}()
+	return nil
+}
+
+func (r *pubsubRuntime) subscribeCreditProofs(ctx context.Context, topicName string, onCreditProof func(OnlineProof) (bool, error)) error {
+	topic, err := r.ensureTopic(topicName)
+	if err != nil {
+		return err
+	}
+	sub, err := topic.Subscribe()
+	if err != nil {
+		return fmt.Errorf("subscribe %s: %w", topicName, err)
+	}
+	r.mu.Lock()
+	r.subscriptions[topicName] = sub
+	r.joinedTopics = uniqueStrings(append(r.joinedTopics, topicName))
+	r.status.JoinedTopics = append([]string(nil), r.joinedTopics...)
+	r.mu.Unlock()
+
+	go func() {
+		for {
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				if ctx.Err() == nil {
+					r.recordError(err)
+				}
+				return
+			}
+			if msg.ReceivedFrom == r.host.host.ID() {
+				continue
+			}
+			var proof OnlineProof
+			if err := json.Unmarshal(msg.Data, &proof); err != nil {
+				r.recordError(fmt.Errorf("decode credit proof on %s: %w", topicName, err))
+				continue
+			}
+			saved := false
+			if onCreditProof != nil {
+				saved, err = onCreditProof(proof)
+				if err != nil {
+					r.recordError(fmt.Errorf("handle credit proof on %s: %w", topicName, err))
+					continue
+				}
+			}
+			r.recordCreditReceived(proof.ProofID, saved)
 		}
 	}()
 	return nil
@@ -294,6 +373,27 @@ func (r *pubsubRuntime) recordReceived(topicName, infoHash string, enqueued bool
 	r.status.LastReceivedAt = &now
 }
 
+func (r *pubsubRuntime) recordCreditPublished(proofID string) {
+	now := time.Now().UTC()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.status.CreditPublished++
+	r.status.LastCreditProofID = proofID
+	r.status.LastCreditAt = &now
+}
+
+func (r *pubsubRuntime) recordCreditReceived(proofID string, saved bool) {
+	now := time.Now().UTC()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.status.CreditReceived++
+	if saved {
+		r.status.CreditSaved++
+	}
+	r.status.LastCreditProofID = proofID
+	r.status.LastCreditAt = &now
+}
+
 func (r *pubsubRuntime) recordError(err error) {
 	if err == nil {
 		return
@@ -374,6 +474,14 @@ func namespacedDiscoveryNamespace(networkID, value string) string {
 		return value
 	}
 	return "aip2p/discovery/" + networkID + "/" + url.PathEscape(value)
+}
+
+func creditProofTopic(networkID string) string {
+	networkID = normalizeNetworkID(networkID)
+	if networkID == "" {
+		return creditProofTopicPrefix
+	}
+	return creditProofTopicPrefix + "/" + url.PathEscape(networkID)
 }
 
 func normalizeAnnouncement(announcement SyncAnnouncement) SyncAnnouncement {

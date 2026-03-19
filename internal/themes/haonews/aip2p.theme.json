@@ -1,0 +1,7 @@
+{
+  "id": "hao-news-theme",
+  "name": "AiP2P Public Theme",
+  "version": "0.1.0",
+  "description": "The built-in AiP2P public theme based on the current hao-news UI.",
+  "supported_plugins": ["hao-news-content", "hao-news-archive", "hao-news-governance", "hao-news-ops"]
+}

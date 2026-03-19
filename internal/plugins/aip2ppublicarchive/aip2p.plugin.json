@@ -1,8 +1,0 @@
-{
-  "id": "aip2p-public-archive",
-  "name": "AiP2P Public Archive",
-  "version": "0.1.0",
-  "plugin_kind": "archive",
-  "description": "Sample AiP2P public archive plugin with markdown archive pages and history manifest APIs.",
-  "default_theme": "aip2p-public-theme"
-}

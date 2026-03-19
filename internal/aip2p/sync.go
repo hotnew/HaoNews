@@ -19,17 +19,18 @@ import (
 )
 
 type SyncOptions struct {
-	StoreRoot         string
-	QueuePath         string
-	NetPath           string
-	TrackerListPath   string
-	SubscriptionsPath string
-	ListenAddr        string
-	Refs              []string
-	PollInterval      time.Duration
-	Timeout           time.Duration
-	Once              bool
-	Seed              bool
+	StoreRoot          string
+	QueuePath          string
+	NetPath            string
+	TrackerListPath    string
+	SubscriptionsPath  string
+	CreditIdentityFile string
+	ListenAddr         string
+	Refs               []string
+	PollInterval       time.Duration
+	Timeout            time.Duration
+	Once               bool
+	Seed               bool
 }
 
 type SyncRef struct {
@@ -132,20 +133,36 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	defer libp2pRuntime.Close()
 
 	runtime := &syncRuntime{
-		store:         store,
-		queuePath:     queuePath,
-		mode:          syncMode(opts.Once),
-		seed:          opts.Seed,
-		startedAt:     time.Now().UTC(),
-		torrentClient: client,
-		libp2p:        libp2pRuntime,
-		netCfg:        netCfg,
-		trackers:      trackers,
-		subscriptions: subscriptions,
-		announced:     make(map[string]struct{}),
-		seeded:        make(map[string]struct{}),
+		store:           store,
+		queuePath:       queuePath,
+		mode:            syncMode(opts.Once),
+		seed:            opts.Seed,
+		startedAt:       time.Now().UTC(),
+		torrentClient:   client,
+		libp2p:          libp2pRuntime,
+		netCfg:          netCfg,
+		trackers:        trackers,
+		subscriptions:   subscriptions,
+		announced:       make(map[string]struct{}),
+		announcedProofs: make(map[string]struct{}),
+		seeded:          make(map[string]struct{}),
 	}
-	runtime.pubsub, err = startPubSubRuntime(ctx, libp2pRuntime, subscriptions, runtime.handleAnnouncement)
+	runtime.creditStore, err = OpenCreditStore(store.Root)
+	if err != nil {
+		return err
+	}
+	runtime.creditIdentity, err = loadSyncCreditIdentity(opts.CreditIdentityFile)
+	if err != nil {
+		if logf != nil {
+			logf("load credit identity: %v", err)
+		}
+	}
+	if runtime.creditIdentity != nil && libp2pRuntime != nil {
+		if err := registerCreditWitnessHandler(libp2pRuntime.host, *runtime.creditIdentity, runtime.seededInfohashes); err != nil && logf != nil {
+			logf("register credit witness handler: %v", err)
+		}
+	}
+	runtime.pubsub, err = startPubSubRuntime(ctx, libp2pRuntime, subscriptions, runtime.handleAnnouncement, runtime.handleCreditProof)
 	if err != nil {
 		return err
 	}
@@ -175,6 +192,15 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 		if err := runtime.announceLocalBundles(ctx, logf); err != nil && logf != nil {
 			logf("announce local bundles: %v", err)
 		}
+		if err := runtime.generateLocalCreditProof(time.Now().UTC(), logf); err != nil && logf != nil {
+			logf("generate local credit proof: %v", err)
+		}
+		if err := runtime.ensureLocalCreditBundle(time.Now().UTC(), logf); err != nil && logf != nil {
+			logf("ensure local credit bundle: %v", err)
+		}
+		if err := runtime.announceLocalCreditProofs(ctx, logf); err != nil && logf != nil {
+			logf("announce local credit proofs: %v", err)
+		}
 		if err := runtime.reconcileQueue(ctx, opts.Refs, opts.Timeout, logf); err != nil {
 			return err
 		}
@@ -193,6 +219,15 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 		if err := runtime.announceLocalBundles(ctx, logf); err != nil && logf != nil {
 			logf("announce local bundles: %v", err)
 		}
+		if err := runtime.generateLocalCreditProof(time.Now().UTC(), logf); err != nil && logf != nil {
+			logf("generate local credit proof: %v", err)
+		}
+		if err := runtime.ensureLocalCreditBundle(time.Now().UTC(), logf); err != nil && logf != nil {
+			logf("ensure local credit bundle: %v", err)
+		}
+		if err := runtime.announceLocalCreditProofs(ctx, logf); err != nil && logf != nil {
+			logf("announce local credit proofs: %v", err)
+		}
 		if err := runtime.reconcileQueue(ctx, opts.Refs, opts.Timeout, logf); err != nil {
 			return err
 		}
@@ -205,21 +240,24 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 }
 
 type syncRuntime struct {
-	mu            sync.Mutex
-	store         *Store
-	queuePath     string
-	mode          string
-	seed          bool
-	startedAt     time.Time
-	torrentClient *torrent.Client
-	libp2p        *libp2pRuntime
-	pubsub        *pubsubRuntime
-	netCfg        NetworkBootstrapConfig
-	trackers      []string
-	subscriptions SyncSubscriptions
-	announced     map[string]struct{}
-	seeded        map[string]struct{}
-	activity      SyncActivityStatus
+	mu              sync.Mutex
+	store           *Store
+	queuePath       string
+	mode            string
+	seed            bool
+	startedAt       time.Time
+	torrentClient   *torrent.Client
+	libp2p          *libp2pRuntime
+	pubsub          *pubsubRuntime
+	creditStore     *CreditStore
+	creditIdentity  *AgentIdentity
+	netCfg          NetworkBootstrapConfig
+	trackers        []string
+	subscriptions   SyncSubscriptions
+	announced       map[string]struct{}
+	announcedProofs map[string]struct{}
+	seeded          map[string]struct{}
+	activity        SyncActivityStatus
 }
 
 func (r *syncRuntime) setQueueRefs(n int) {
@@ -288,6 +326,11 @@ func (r *syncRuntime) processQueue(ctx context.Context, direct []string, timeout
 	}
 	for _, ref := range refs {
 		result := syncRef(ctx, r.torrentClient, r.store, ref, timeout, r.netCfg.LANPeers, r.trackers, r.subscriptions)
+		if result.Status == "imported" && result.ContentDir != "" {
+			if err := r.importCreditBundle(result.ContentDir, logf); err != nil && logf != nil {
+				logf("import credit bundle: %v", err)
+			}
+		}
 		r.recordResult(result)
 		if result.Status == "imported" || result.Status == "skipped" {
 			if err := removeSyncRef(r.queuePath, ref); err != nil && logf != nil {
@@ -437,6 +480,208 @@ func (r *syncRuntime) handleAnnouncement(announcement SyncAnnouncement) (bool, e
 		return false, nil
 	}
 	return enqueueSyncRef(r.queuePath, ref)
+}
+
+func (r *syncRuntime) handleCreditProof(proof OnlineProof) (bool, error) {
+	if r.creditStore == nil {
+		return false, nil
+	}
+	if r.netCfg.NetworkID != "" && !strings.EqualFold(strings.TrimSpace(proof.NetworkID), r.netCfg.NetworkID) {
+		return false, nil
+	}
+	err := r.creditStore.SaveProof(proof)
+	if errors.Is(err, ErrDuplicateProof) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (r *syncRuntime) generateLocalCreditProof(now time.Time, logf func(string, ...any)) error {
+	if r.creditStore == nil || r.creditIdentity == nil {
+		return nil
+	}
+	infohashes := r.seededInfohashes()
+	if len(infohashes) == 0 {
+		return nil
+	}
+	windowStart := AlignToWindow(now.UTC()).Add(-ProofWindowMinutes * time.Minute)
+	if windowStart.IsZero() {
+		return nil
+	}
+	proof, err := NewOnlineProof(*r.creditIdentity, windowStart, infohashes, r.netCfg.NetworkID)
+	if err != nil {
+		return err
+	}
+	if err := SignProof(proof, *r.creditIdentity); err != nil {
+		return err
+	}
+	witnessCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	witnesses, err := collectRemoteWitnesses(witnessCtx, r.libp2p, *proof, MinWitnesses)
+	cancel()
+	if err != nil && logf != nil {
+		logf("collect remote witnesses: %v", err)
+	}
+	if len(witnesses) < MinWitnesses {
+		if logf != nil {
+			logf("skip credit proof: no remote witness available for %s", proof.WindowStart)
+		}
+		return nil
+	}
+	proof.Witnesses = append(proof.Witnesses, witnesses...)
+	err = r.creditStore.SaveProof(*proof)
+	if errors.Is(err, ErrDuplicateProof) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if logf != nil {
+		logf("credit proof saved: %s (%s)", proof.ProofID, proof.WindowStart)
+	}
+	return nil
+}
+
+func (r *syncRuntime) ensureLocalCreditBundle(now time.Time, logf func(string, ...any)) error {
+	if r.store == nil || r.creditStore == nil {
+		return nil
+	}
+	result, err := EnsureCreditProofBundle(r.store, r.creditStore, now, r.netCfg.NetworkID)
+	if err != nil {
+		return err
+	}
+	if result.InfoHash != "" && logf != nil {
+		logf("credit daily bundle ready: %s", result.InfoHash)
+	}
+	return nil
+}
+
+func (r *syncRuntime) importCreditBundle(contentDir string, logf func(string, ...any)) error {
+	if r.creditStore == nil {
+		return nil
+	}
+	imported, err := ImportCreditProofsFromBundle(contentDir, r.creditStore, r.netCfg.NetworkID)
+	if err != nil {
+		return err
+	}
+	if imported > 0 && logf != nil {
+		logf("imported %d credit proofs from bundle", imported)
+	}
+	return nil
+}
+
+func (r *syncRuntime) announceLocalCreditProofs(ctx context.Context, logf func(string, ...any)) error {
+	if r.pubsub == nil || r.creditStore == nil {
+		return nil
+	}
+	proofs, err := r.creditStore.GetProofsSince(time.Now().UTC().Add(-ProofMaxAge))
+	if err != nil {
+		return err
+	}
+	published := 0
+	for _, proof := range proofs {
+		if r.netCfg.NetworkID != "" && !strings.EqualFold(strings.TrimSpace(proof.NetworkID), r.netCfg.NetworkID) {
+			continue
+		}
+		r.mu.Lock()
+		_, seen := r.announcedProofs[proof.ProofID]
+		r.mu.Unlock()
+		if seen {
+			continue
+		}
+		if err := r.pubsub.PublishCreditProof(ctx, proof); err != nil {
+			return err
+		}
+		r.mu.Lock()
+		r.announcedProofs[proof.ProofID] = struct{}{}
+		r.mu.Unlock()
+		published++
+	}
+	if published > 0 && logf != nil {
+		logf("published %d local credit proofs", published)
+	}
+	return nil
+}
+
+func (r *syncRuntime) seededInfohashes() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.seeded))
+	for infohash := range r.seeded {
+		infohash = strings.ToLower(strings.TrimSpace(infohash))
+		if infohash == "" {
+			continue
+		}
+		out = append(out, infohash)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func loadSyncCreditIdentity(explicitPath string) (*AgentIdentity, error) {
+	explicitPath = strings.TrimSpace(explicitPath)
+	if explicitPath != "" {
+		identity, err := LoadAgentIdentity(explicitPath)
+		if err != nil {
+			return nil, err
+		}
+		if !isCreditOnlineIdentity(identity) {
+			return nil, errors.New("credit identity must use /credit/online author")
+		}
+		return &identity, nil
+	}
+	identityDir, err := defaultSyncIdentityDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(identityDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		path := filepath.Join(identityDir, name)
+		identity, err := LoadAgentIdentity(path)
+		if err != nil {
+			continue
+		}
+		if !isCreditOnlineIdentity(identity) {
+			continue
+		}
+		return &identity, nil
+	}
+	return nil, nil
+}
+
+func defaultSyncIdentityDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return "", errors.New("user home directory is empty")
+	}
+	return filepath.Join(home, ".hao-news", "identities"), nil
+}
+
+func isCreditOnlineIdentity(identity AgentIdentity) bool {
+	if err := identity.ValidatePrivate(); err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.TrimSpace(identity.Author), "/credit/online")
 }
 
 func (r *syncRuntime) enqueueHistoryFromLocalManifests(logf func(string, ...any)) (int, error) {

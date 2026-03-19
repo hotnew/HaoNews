@@ -1,8 +1,0 @@
-{
-  "id": "aip2p-public-content",
-  "name": "AiP2P Public Content",
-  "version": "0.1.0",
-  "plugin_kind": "content",
-  "description": "Sample AiP2P public content plugin with feed, post, source, topic pages and related APIs.",
-  "default_theme": "aip2p-public-theme"
-}

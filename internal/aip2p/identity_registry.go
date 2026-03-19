@@ -149,7 +149,7 @@ func DefaultIdentityRegistryPath() (string, error) {
 	if home == "" {
 		return "", errors.New("user home directory is empty")
 	}
-	return filepath.Join(home, ".aip2p-public", "identity_registry.json"), nil
+	return filepath.Join(home, ".hao-news", "identity_registry.json"), nil
 }
 
 func LoadMasterIdentity(author string) (*AgentIdentity, error) {

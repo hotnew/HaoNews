@@ -10,14 +10,17 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/tyler-smith/go-bip39"
 )
 
 const (
-	HDDefaultRootPath = "m/0'"
-	hdPathHashKey     = "aip2p-hd-path-v1"
-	hardenedOffset    = uint32(0x80000000)
+	HDDefaultRootPath  = "m/0'"
+	HDCreditRootPath   = "m/1'"
+	HDCreditOnlinePath = "m/1'/0'"
+	hdPathHashKey      = "aip2p-hd-path-v1"
+	hardenedOffset     = uint32(0x80000000)
 )
 
 func GenerateMnemonic() (string, error) {
@@ -187,4 +190,46 @@ func deriveHDChild(parentKey, parentChain []byte, index uint32) ([]byte, []byte)
 	_, _ = mac.Write(data)
 	sum := mac.Sum(nil)
 	return append([]byte(nil), sum[:32]...), append([]byte(nil), sum[32:]...)
+}
+
+func DeriveCreditOnlineKey(identity AgentIdentity) (AgentIdentity, error) {
+	if err := identity.Validate(); err != nil {
+		return AgentIdentity{}, err
+	}
+	if !identity.HDEnabled || strings.TrimSpace(identity.Mnemonic) == "" {
+		return AgentIdentity{}, errors.New("identity does not contain HD mnemonic material")
+	}
+	rootAuthor, err := RootAuthor(identity.Author)
+	if err != nil {
+		return AgentIdentity{}, err
+	}
+	if strings.TrimSpace(identity.Author) != rootAuthor {
+		return AgentIdentity{}, errors.New("credit keys must be derived from an HD root identity")
+	}
+	seed, err := MnemonicToSeed(identity.Mnemonic)
+	if err != nil {
+		return AgentIdentity{}, err
+	}
+	publicKey, privateKey, _, err := DeriveHDKey(seed, HDCreditOnlinePath)
+	if err != nil {
+		return AgentIdentity{}, err
+	}
+	masterPubKey := strings.TrimSpace(identity.MasterPubKey)
+	if masterPubKey == "" {
+		masterPubKey = strings.TrimSpace(identity.PublicKey)
+	}
+	createdAt := time.Now().UTC().Format(time.RFC3339)
+	return AgentIdentity{
+		AgentID:         identity.AgentID,
+		Author:          rootAuthor + "/credit/online",
+		KeyType:         KeyTypeEd25519,
+		PublicKey:       publicKey,
+		PrivateKey:      privateKey,
+		CreatedAt:       createdAt,
+		HDEnabled:       true,
+		MasterPubKey:    masterPubKey,
+		DerivationPath:  HDCreditOnlinePath,
+		Parent:          rootAuthor,
+		ParentPublicKey: strings.TrimSpace(identity.PublicKey),
+	}, nil
 }

@@ -3,7 +3,7 @@ package workspace
 import (
 	"fmt"
 
-	"aip2p.org/internal/apphost"
+	"hao.news/internal/apphost"
 )
 
 type ThemeResolver interface {

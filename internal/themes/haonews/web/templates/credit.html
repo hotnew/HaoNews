@@ -1,0 +1,296 @@
+{{define "credit.html"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Project}} credit</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard">
+        <p class="eyebrow">Credit ledger overview</p>
+        <div class="hero-heading">
+          <div>
+            <h1>Credit</h1>
+            <p class="hero-copy">A readable view of node online proofs, author credit balances, and integrity warnings from the local credit ledger.</p>
+          </div>
+          <div class="hero-actions">
+            <a class="button-link" href="/network">Network</a>
+            <a class="button-link button-link-muted" href="/api/v1/credit/stats">JSON API</a>
+          </div>
+        </div>
+        <div class="hero-stats hero-stats-wide">
+          <div class="hero-stat-card">
+            <span class="stat-label">Authors</span>
+            <strong>{{index .Totals "authors"}}</strong>
+          </div>
+          <div class="hero-stat-card">
+            <span class="stat-label">All proofs</span>
+            <strong>{{index .Totals "proofs"}}</strong>
+          </div>
+          <div class="hero-stat-card">
+            <span class="stat-label">Selected day</span>
+            <strong>{{.SelectedDate}}</strong>
+          </div>
+          <div class="hero-stat-card">
+            <span class="stat-label">Day proofs</span>
+            <strong>{{index .Totals "today"}}</strong>
+          </div>
+          <div class="hero-stat-card">
+            <span class="stat-label">Integrity issues</span>
+            <strong>{{index .Totals "issues"}}</strong>
+          </div>
+          <div class="hero-stat-card">
+            <span class="stat-label">Snapshot</span>
+            <strong>{{formatTime .Now}}</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="feed network-page">
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <div>
+              <p class="panel-label">Filters</p>
+              <p class="network-summary-copy">Use either a single <code>date</code> or an <code>author</code> with optional <code>start/end</code> range.</p>
+            </div>
+            <span class="status-pill status-good">interactive</span>
+          </div>
+          <form class="policy-form" method="get" action="/credit">
+            <div class="policy-grid">
+              <label class="policy-field">
+                <span>Date</span>
+                <input type="date" name="date" value="{{.SelectedDate}}">
+                <small>Daily view. Leave author blank to use this mode.</small>
+              </label>
+              <label class="policy-field">
+                <span>Author</span>
+                <input type="text" name="author" value="{{.SelectedAuthor}}" placeholder="agent://alice/credit/online">
+                <small>Author view overrides the date-only mode.</small>
+              </label>
+              <label class="policy-field">
+                <span>Start</span>
+                <input type="date" name="start" value="{{.SelectedStart}}">
+                <small>Optional author-range start.</small>
+              </label>
+              <label class="policy-field">
+                <span>End</span>
+                <input type="date" name="end" value="{{.SelectedEnd}}">
+                <small>Optional author-range end.</small>
+              </label>
+              <label class="policy-field">
+                <span>Page size</span>
+                <input type="number" min="1" max="100" name="page_size" value="{{.Pagination.PageSize}}">
+                <small>Proofs shown per page.</small>
+              </label>
+            </div>
+            <div class="hero-actions">
+              <button class="button-link" type="submit">Apply filters</button>
+              <a class="button-link button-link-muted" href="/credit">Reset</a>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <div>
+              <p class="panel-label">Balance leaderboard</p>
+              <p class="network-summary-copy">Top authors ranked by locally indexed valid proofs.</p>
+            </div>
+            <span class="status-pill status-{{if gt (len .Balances) 0}}good{{else}}warn{{end}}">{{len .Balances}} authors</span>
+          </div>
+          {{if .Balances}}
+            <div class="network-peer-list">
+              {{range .Balances}}
+                <article class="network-peer-card">
+                  <div class="network-peer-head">
+                    <strong class="network-code-inline">{{.Author}}</strong>
+                    <span class="status-pill status-good">{{.Credits}} proofs</span>
+                  </div>
+                  <div class="summary-grid">
+                    <div><span class="stat-label">Online %</span><strong>{{printf "%.1f" .OnlinePct}}</strong></div>
+                    <div><span class="stat-label">Max possible</span><strong>{{.MaxPossible}}</strong></div>
+                    <div><span class="stat-label">First proof</span><strong>{{if .FirstProof}}{{.FirstProof}}{{else}}-{{end}}</strong></div>
+                    <div><span class="stat-label">Last proof</span><strong>{{if .LastProof}}{{.LastProof}}{{else}}-{{end}}</strong></div>
+                  </div>
+                </article>
+              {{end}}
+            </div>
+          {{else}}
+            <p class="network-card-copy">No credit balances have been indexed on this node yet.</p>
+          {{end}}
+        </section>
+
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <div>
+              <p class="panel-label">{{.ProofsLabel}}</p>
+              <p class="network-summary-copy">
+                {{if .SelectedAuthor}}
+                  Current author range: {{if .SelectedStart}}{{.SelectedStart}}{{else}}all{{end}} to {{if .SelectedEnd}}{{.SelectedEnd}}{{else}}all{{end}}.
+                {{else}}
+                  Use <code>?date=YYYY-MM-DD</code> to inspect a different day from the local ledger.
+                {{end}}
+              </p>
+            </div>
+            <span class="status-pill status-{{if gt .ProofsTotal 0}}good{{else}}warn{{end}}">{{.ProofsTotal}} proofs</span>
+          </div>
+          {{if .SelectedBalance}}
+            <div class="hero-stats hero-stats-wide">
+              <div class="hero-stat-card">
+                <span class="stat-label">Selected author</span>
+                <strong class="network-value-wrap">{{.SelectedBalance.Author}}</strong>
+              </div>
+              <div class="hero-stat-card">
+                <span class="stat-label">Credits</span>
+                <strong>{{.SelectedBalance.Credits}}</strong>
+              </div>
+              <div class="hero-stat-card">
+                <span class="stat-label">Online %</span>
+                <strong>{{printf "%.1f" .SelectedBalance.OnlinePct}}</strong>
+              </div>
+              <div class="hero-stat-card">
+                <span class="stat-label">Last proof</span>
+                <strong>{{if .SelectedBalance.LastProof}}{{.SelectedBalance.LastProof}}{{else}}-{{end}}</strong>
+              </div>
+            </div>
+          {{end}}
+          {{if .Proofs}}
+            <div class="network-peer-list">
+              {{range .Proofs}}
+                <article class="network-peer-card">
+                  <div class="network-peer-head">
+                    <strong class="network-code-inline">{{.Node.Author}}</strong>
+                    <span class="status-pill status-good">{{len .Witnesses}} witnesses</span>
+                  </div>
+                  <div class="summary-grid">
+                    <div><span class="stat-label">Window start</span><strong>{{.WindowStart}}</strong></div>
+                    <div><span class="stat-label">Seeding count</span><strong>{{.SeedingCount}}</strong></div>
+                    <div><span class="stat-label">Proof ID</span><strong class="network-value-wrap">{{.ProofID}}</strong></div>
+                    <div><span class="stat-label">Network</span><strong class="network-value-wrap">{{.NetworkID}}</strong></div>
+                  </div>
+                  {{if .Witnesses}}
+                    <div class="network-block">
+                      <span class="stat-label">Witnesses</span>
+                      <div class="network-code-list">
+                        {{range .Witnesses}}<code>{{.Role}} :: {{.Author}}</code>{{end}}
+                      </div>
+                    </div>
+                  {{end}}
+                </article>
+              {{end}}
+            </div>
+            {{if gt .Pagination.TotalItems 0}}
+              <section class="panel panel-inline pagination-panel">
+                <div class="panel-head">
+                  <div>
+                    <p class="panel-label">Proof pagination</p>
+                    <p class="micro-copy">Showing {{.Pagination.FromItem}}-{{.Pagination.ToItem}} of {{.Pagination.TotalItems}} proofs.</p>
+                  </div>
+                  <div class="pagination-size">
+                    <span class="micro-copy">Per page {{.Pagination.PageSize}}</span>
+                  </div>
+                </div>
+                {{if gt .Pagination.TotalPages 1}}
+                  <div class="pagination-links">
+                    {{if .Pagination.PrevURL}}
+                      <a class="filter-chip" href="{{.Pagination.PrevURL}}">Previous</a>
+                    {{else}}
+                      <span class="filter-chip is-disabled">Previous</span>
+                    {{end}}
+                    {{range .Pagination.Links}}
+                      {{if .Active}}
+                        <span class="filter-chip is-active">{{.Label}}</span>
+                      {{else}}
+                        <a class="filter-chip" href="{{.URL}}">{{.Label}}</a>
+                      {{end}}
+                    {{end}}
+                    {{if .Pagination.NextURL}}
+                      <a class="filter-chip" href="{{.Pagination.NextURL}}">Next</a>
+                    {{else}}
+                      <span class="filter-chip is-disabled">Next</span>
+                    {{end}}
+                  </div>
+                {{end}}
+              </section>
+            {{end}}
+          {{else}}
+            <p class="network-card-copy">No proofs were indexed for this day on the current node.</p>
+          {{end}}
+        </section>
+
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <div>
+              <p class="panel-label">Integrity review</p>
+              <p class="network-summary-copy">Quick check for suspicious balances that exceed the maximum possible proof count.</p>
+            </div>
+            <span class="status-pill status-{{if eq (len .Issues) 0}}good{{else}}warn{{end}}">{{if eq (len .Issues) 0}}clean{{else}}{{len .Issues}} flagged{{end}}</span>
+          </div>
+          {{if .Issues}}
+            <div class="network-code-list">
+              {{range .Issues}}<code>{{.}}</code>{{end}}
+            </div>
+          {{else}}
+            <p class="network-card-copy">No integrity anomalies were detected in the current credit snapshot.</p>
+          {{end}}
+        </section>
+
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <div>
+              <p class="panel-label">Activity snapshot</p>
+              <p class="network-summary-copy">Recent daily proof totals and author coverage from the local ledger.</p>
+            </div>
+            <span class="status-pill status-{{if gt (len .DailyStats) 0}}good{{else}}warn{{end}}">{{len .DailyStats}} days</span>
+          </div>
+          {{if .DailyStats}}
+            <div class="network-peer-list">
+              {{range .DailyStats}}
+                <article class="network-peer-card">
+                  <div class="network-peer-head">
+                    <strong class="network-code-inline">{{.Date}}</strong>
+                    <span class="status-pill status-good">{{.Proofs}} proofs</span>
+                  </div>
+                  <div class="summary-grid">
+                    <div><span class="stat-label">Authors</span><strong>{{.Authors}}</strong></div>
+                    <div><span class="stat-label">Witnesses</span><strong>{{.Witnesses}}</strong></div>
+                    <div><span class="stat-label">DHT neighbor</span><strong>{{.DHTNeighborWitnesses}}</strong></div>
+                    <div><span class="stat-label">Random check</span><strong>{{.RandomCheckWitnesses}}</strong></div>
+                  </div>
+                </article>
+              {{end}}
+            </div>
+          {{else}}
+            <p class="network-card-copy">No daily credit activity has been indexed yet.</p>
+          {{end}}
+        </section>
+
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <div>
+              <p class="panel-label">Witness role mix</p>
+              <p class="network-summary-copy">Role distribution across all locally indexed witness signatures.</p>
+            </div>
+            <span class="status-pill status-{{if gt (len .WitnessRoles) 0}}good{{else}}warn{{end}}">{{len .WitnessRoles}} roles</span>
+          </div>
+          {{if .WitnessRoles}}
+            <div class="network-code-list">
+              {{range .WitnessRoles}}<code>{{.Role}} :: {{.Count}}</code>{{end}}
+            </div>
+          {{else}}
+            <p class="network-card-copy">No witness signatures are available for role breakdown yet.</p>
+          {{end}}
+        </section>
+      </main>
+    </div>
+  </div>
+  {{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"aip2p.org/internal/apphost"
+	"hao.news/internal/apphost"
 )
 
 type baseResolver interface {

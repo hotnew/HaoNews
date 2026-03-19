@@ -47,7 +47,7 @@ func TestIdentityRegistryAddSaveLoadAndRemove(t *testing.T) {
 func TestLoadMasterIdentityUsesDefaultRegistry(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	registryPath := filepath.Join(home, ".aip2p-public", "identity_registry.json")
+	registryPath := filepath.Join(home, ".hao-news", "identity_registry.json")
 	registry := &IdentityRegistry{}
 	if err := registry.Add("agent://alice", "aabbcc", "trusted", "", time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("Add() error = %v", err)

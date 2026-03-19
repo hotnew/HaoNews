@@ -9,7 +9,7 @@ import (
 func TestStoreInstallListRemovePlugin(t *testing.T) {
 	store := newTestStore(t)
 	src := t.TempDir()
-	writeExtFile(t, src, "aip2p.plugin.json", "{\n  \"id\": \"sample-plugin\",\n  \"name\": \"Sample Plugin\",\n  \"base_plugin\": \"aip2p-public-content\",\n  \"default_theme\": \"aip2p-public-theme\"\n}\n")
+	writeExtFile(t, src, "aip2p.plugin.json", "{\n  \"id\": \"sample-plugin\",\n  \"name\": \"Sample Plugin\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"hao-news-theme\"\n}\n")
 	writeExtFile(t, src, "aip2p.plugin.config.json", "{\n  \"channel\": \"sample-world\"\n}\n")
 
 	entry, err := store.InstallPlugin(src, false)
@@ -62,7 +62,7 @@ func TestStoreInstallApp(t *testing.T) {
 	src := t.TempDir()
 	writeExtFile(t, src, "aip2p.app.json", "{\n  \"id\": \"sample-app\",\n  \"name\": \"Sample App\",\n  \"plugins\": [\"sample-plugin\"],\n  \"theme\": \"sample-theme\"\n}\n")
 	writeExtFile(t, src, "aip2p.app.config.json", "{\n  \"project\": \"sample.project\"\n}\n")
-	writeExtFile(t, src, filepath.Join("plugins", "sample-plugin", "aip2p.plugin.json"), "{\n  \"id\": \"sample-plugin\",\n  \"name\": \"Sample Plugin\",\n  \"base_plugin\": \"aip2p-public-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
+	writeExtFile(t, src, filepath.Join("plugins", "sample-plugin", "aip2p.plugin.json"), "{\n  \"id\": \"sample-plugin\",\n  \"name\": \"Sample Plugin\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
 	writeThemeScaffold(t, filepath.Join(src, "themes", "sample-theme"), "sample-theme", "Sample Theme")
 
 	entry, err := store.InstallApp(src, false)

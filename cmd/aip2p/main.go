@@ -15,14 +15,14 @@ import (
 	"syscall"
 	"time"
 
-	"aip2p.org/internal/aip2p"
-	"aip2p.org/internal/apphost"
-	"aip2p.org/internal/builtin"
-	"aip2p.org/internal/extensions"
-	"aip2p.org/internal/host"
-	"aip2p.org/internal/scaffold"
-	"aip2p.org/internal/themes/directorytheme"
-	"aip2p.org/internal/workspace"
+	"hao.news/internal/aip2p"
+	"hao.news/internal/apphost"
+	"hao.news/internal/builtin"
+	"hao.news/internal/extensions"
+	"hao.news/internal/host"
+	"hao.news/internal/scaffold"
+	"hao.news/internal/themes/directorytheme"
+	"hao.news/internal/workspace"
 )
 
 type boolFlag interface {
@@ -53,6 +53,8 @@ func run(args []string) error {
 		return runShow(args[1:])
 	case "sync":
 		return runSync(args[1:])
+	case "credit":
+		return runCredit(args[1:])
 	case "serve":
 		return runServe(args[1:])
 	case "plugins":
@@ -142,7 +144,7 @@ func runPublish(args []string) error {
 
 func runIdentity(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: aip2p identity <init|create-hd|derive|list|recover> [flags]")
+		return errors.New("usage: aip2p identity <init|create-hd|derive|derive-credit|list|recover> [flags]")
 	}
 	switch args[0] {
 	case "init":
@@ -151,6 +153,8 @@ func runIdentity(args []string) error {
 		return runIdentityCreateHD(args[1:])
 	case "derive":
 		return runIdentityDerive(args[1:])
+	case "derive-credit":
+		return runIdentityDeriveCredit(args[1:])
 	case "list":
 		return runIdentityList(args[1:])
 	case "recover":
@@ -158,7 +162,29 @@ func runIdentity(args []string) error {
 	case "registry":
 		return runIdentityRegistry(args[1:])
 	default:
-		return errors.New("usage: aip2p identity <init|create-hd|derive|list|recover|registry> [flags]")
+		return errors.New("usage: aip2p identity <init|create-hd|derive|derive-credit|list|recover|registry> [flags]")
+	}
+}
+
+func runCredit(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: aip2p credit <balance|proofs|stats|derive-key|clean|archive> [flags]")
+	}
+	switch args[0] {
+	case "balance":
+		return runCreditBalance(args[1:])
+	case "proofs":
+		return runCreditProofs(args[1:])
+	case "stats":
+		return runCreditStats(args[1:])
+	case "derive-key":
+		return runCreditDeriveKey(args[1:])
+	case "clean":
+		return runCreditClean(args[1:])
+	case "archive":
+		return runCreditArchive(args[1:])
+	default:
+		return errors.New("usage: aip2p credit <balance|proofs|stats|derive-key|clean|archive> [flags]")
 	}
 }
 
@@ -183,7 +209,7 @@ func runIdentityInit(args []string) error {
 	fs.SetOutput(os.Stderr)
 	agentID := fs.String("agent-id", "", "stable agent id")
 	author := fs.String("author", "", "default author for this identity")
-	out := fs.String("out", "", "identity file output path; defaults to ~/.aip2p-public/identities/<sanitized-agent-id>.json")
+	out := fs.String("out", "", "identity file output path; defaults to ~/.hao-news/identities/<sanitized-agent-id>.json")
 	force := fs.Bool("force", false, "overwrite output file if it exists")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -222,7 +248,7 @@ func runIdentityCreateHD(args []string) error {
 	fs.SetOutput(os.Stderr)
 	agentID := fs.String("agent-id", "", "stable agent id")
 	author := fs.String("author", "", "root author for this HD identity")
-	out := fs.String("out", "", "identity file output path; defaults to ~/.aip2p-public/identities/<sanitized-author>.json")
+	out := fs.String("out", "", "identity file output path; defaults to ~/.hao-news/identities/<sanitized-author>.json")
 	force := fs.Bool("force", false, "overwrite output file if it exists")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -257,7 +283,7 @@ func runIdentityRecover(args []string) error {
 	mnemonic := fs.String("mnemonic", "", "deprecated insecure input; use --mnemonic-file or --mnemonic-stdin")
 	mnemonicFile := fs.String("mnemonic-file", "", "path to a file that contains the BIP39 mnemonic")
 	mnemonicStdin := fs.Bool("mnemonic-stdin", false, "read the BIP39 mnemonic from stdin")
-	out := fs.String("out", "", "identity file output path; defaults to ~/.aip2p-public/identities/<sanitized-author>.json")
+	out := fs.String("out", "", "identity file output path; defaults to ~/.hao-news/identities/<sanitized-author>.json")
 	force := fs.Bool("force", false, "overwrite output file if it exists")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -327,10 +353,14 @@ func runIdentityDerive(args []string) error {
 	return writeJSON(identitySummary(childIdentity, outputPath))
 }
 
+func runIdentityDeriveCredit(args []string) error {
+	return runCreditDeriveKey(args)
+}
+
 func runIdentityList(args []string) error {
 	fs := flag.NewFlagSet("identity list", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	dir := fs.String("dir", "", "identity directory; defaults to ~/.aip2p-public/identities")
+	dir := fs.String("dir", "", "identity directory; defaults to ~/.hao-news/identities")
 	parent := fs.String("parent", "", "optional root or parent author filter")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -364,10 +394,198 @@ func runIdentityList(args []string) error {
 	return writeJSON(items)
 }
 
+func runCreditBalance(args []string) error {
+	fs := flag.NewFlagSet("credit balance", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	author := fs.String("author", "", "author URI to query")
+	storeRoot := fs.String("store", ".hao-news", "credit store root directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	store, err := aip2p.OpenCreditStore(*storeRoot)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(*author) != "" {
+		return writeJSON(store.GetBalance(*author))
+	}
+	balances, err := store.GetAllBalances()
+	if err != nil {
+		return err
+	}
+	return writeJSON(balances)
+}
+
+func runCreditProofs(args []string) error {
+	fs := flag.NewFlagSet("credit proofs", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	date := fs.String("date", "", "date to query (YYYY-MM-DD)")
+	author := fs.String("author", "", "author URI to query")
+	start := fs.String("start", "", "start date (YYYY-MM-DD)")
+	end := fs.String("end", "", "end date (YYYY-MM-DD)")
+	storeRoot := fs.String("store", ".hao-news", "credit store root directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	store, err := aip2p.OpenCreditStore(*storeRoot)
+	if err != nil {
+		return err
+	}
+	switch {
+	case strings.TrimSpace(*date) != "":
+		proofs, err := store.GetProofsByDate(*date)
+		if err != nil {
+			return err
+		}
+		return writeJSON(proofs)
+	case strings.TrimSpace(*author) != "":
+		proofs, err := store.GetProofsByAuthor(*author, *start, *end)
+		if err != nil {
+			return err
+		}
+		return writeJSON(proofs)
+	default:
+		proofs, err := store.GetProofsByDate(time.Now().UTC().Format("2006-01-02"))
+		if err != nil {
+			return err
+		}
+		return writeJSON(proofs)
+	}
+}
+
+func runCreditStats(args []string) error {
+	fs := flag.NewFlagSet("credit stats", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	storeRoot := fs.String("store", ".hao-news", "credit store root directory")
+	dailyLimit := fs.Int("daily-limit", 7, "number of recent daily stats to include")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	store, err := aip2p.OpenCreditStore(*storeRoot)
+	if err != nil {
+		return err
+	}
+	balances, err := store.GetAllBalances()
+	if err != nil {
+		return err
+	}
+	totalCredits := 0
+	for _, balance := range balances {
+		totalCredits += balance.Credits
+	}
+	dailyStats, err := store.GetDailyStats(*dailyLimit)
+	if err != nil {
+		return err
+	}
+	witnessRoles, err := store.GetWitnessRoleStats()
+	if err != nil {
+		return err
+	}
+	return writeJSON(map[string]any{
+		"total_nodes":   len(balances),
+		"total_credits": totalCredits,
+		"suspicious":    store.ValidateBalanceIntegrity(),
+		"balances":      balances,
+		"daily":         dailyStats,
+		"witness_roles": witnessRoles,
+		"daily_limit":   *dailyLimit,
+	})
+}
+
+func runCreditDeriveKey(args []string) error {
+	fs := flag.NewFlagSet("credit derive-key", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	parentFile := fs.String("parent", "", "path to the HD master identity JSON file")
+	identityFile := fs.String("identity-file", "", "alias for --parent")
+	out := fs.String("out", "", "credit identity output path")
+	force := fs.Bool("force", false, "overwrite output file if it exists")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	input := strings.TrimSpace(*parentFile)
+	if input == "" {
+		input = strings.TrimSpace(*identityFile)
+	}
+	if input == "" {
+		return errors.New("parent is required")
+	}
+	parentIdentity, err := aip2p.LoadAgentIdentity(input)
+	if err != nil {
+		return err
+	}
+	creditIdentity, err := aip2p.DeriveCreditOnlineKey(parentIdentity)
+	if err != nil {
+		return err
+	}
+	outputPath, err := defaultIdentityOutputPath(creditIdentity.Author, *out)
+	if err != nil {
+		return err
+	}
+	if !*force {
+		if _, err := os.Stat(outputPath); err == nil {
+			return fmt.Errorf("identity file already exists: %s", outputPath)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return err
+	}
+	if err := aip2p.SaveAgentIdentity(outputPath, creditIdentity); err != nil {
+		return err
+	}
+	return writeJSON(identitySummaryForSavedIdentity(creditIdentity, outputPath))
+}
+
+func runCreditClean(args []string) error {
+	fs := flag.NewFlagSet("credit clean", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	keepDays := fs.Int("keep-days", 90, "keep proofs for this many days")
+	storeRoot := fs.String("store", ".hao-news", "credit store root directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	store, err := aip2p.OpenCreditStore(*storeRoot)
+	if err != nil {
+		return err
+	}
+	removed, err := store.CleanOldProofs(*keepDays)
+	if err != nil {
+		return err
+	}
+	return writeJSON(map[string]any{
+		"removed":   removed,
+		"keep_days": *keepDays,
+		"store":     store.Root,
+	})
+}
+
+func runCreditArchive(args []string) error {
+	fs := flag.NewFlagSet("credit archive", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	keepDays := fs.Int("keep-days", 90, "keep live proofs for this many days before archiving older days")
+	storeRoot := fs.String("store", ".hao-news", "credit store root directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	store, err := aip2p.OpenCreditStore(*storeRoot)
+	if err != nil {
+		return err
+	}
+	archivedDays, archivedProofs, err := store.ArchiveProofs(*keepDays)
+	if err != nil {
+		return err
+	}
+	return writeJSON(map[string]any{
+		"archived_days":   archivedDays,
+		"archived_proofs": archivedProofs,
+		"keep_days":       *keepDays,
+		"store":           store.Root,
+	})
+}
+
 func runIdentityRegistryAdd(args []string) error {
 	fs := flag.NewFlagSet("identity registry add", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	registryPath := fs.String("registry", "", "registry file path; defaults to ~/.aip2p-public/identity_registry.json")
+	registryPath := fs.String("registry", "", "registry file path; defaults to ~/.hao-news/identity_registry.json")
 	author := fs.String("author", "", "root author to register")
 	pubkey := fs.String("pubkey", "", "master public key")
 	trustLevel := fs.String("trust-level", "known", "trust level: trusted, known, unknown")
@@ -403,7 +621,7 @@ func runIdentityRegistryAdd(args []string) error {
 func runIdentityRegistryList(args []string) error {
 	fs := flag.NewFlagSet("identity registry list", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	registryPath := fs.String("registry", "", "registry file path; defaults to ~/.aip2p-public/identity_registry.json")
+	registryPath := fs.String("registry", "", "registry file path; defaults to ~/.hao-news/identity_registry.json")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -434,7 +652,7 @@ func runIdentityRegistryList(args []string) error {
 func runIdentityRegistryRemove(args []string) error {
 	fs := flag.NewFlagSet("identity registry remove", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	registryPath := fs.String("registry", "", "registry file path; defaults to ~/.aip2p-public/identity_registry.json")
+	registryPath := fs.String("registry", "", "registry file path; defaults to ~/.hao-news/identity_registry.json")
 	author := fs.String("author", "", "root author to remove")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -514,6 +732,7 @@ func runSync(args []string) error {
 	netPath := fs.String("net", "./aip2p_net.inf", "network bootstrap config")
 	trackersPath := fs.String("trackers", "", "tracker list file; defaults to Trackerlist.inf next to the net config")
 	subscriptionsPath := fs.String("subscriptions", "", "subscription rules file for pubsub topic joins")
+	creditIdentityFile := fs.String("credit-identity-file", "", "path to credit identity JSON file for auto proof generation")
 	listenAddr := fs.String("listen", "0.0.0.0:0", "bittorrent listen address")
 	magnets := fs.String("magnet", "", "comma-separated magnets or infohashes to sync immediately")
 	poll := fs.Duration("poll", 30*time.Second, "queue polling interval")
@@ -528,17 +747,18 @@ func runSync(args []string) error {
 	defer stop()
 
 	return aip2p.RunSync(ctx, aip2p.SyncOptions{
-		StoreRoot:         *storeRoot,
-		QueuePath:         *queuePath,
-		NetPath:           *netPath,
-		TrackerListPath:   *trackersPath,
-		SubscriptionsPath: *subscriptionsPath,
-		ListenAddr:        *listenAddr,
-		Refs:              splitCSV(*magnets),
-		PollInterval:      *poll,
-		Timeout:           *timeout,
-		Once:              *once,
-		Seed:              *seed,
+		StoreRoot:          *storeRoot,
+		QueuePath:          *queuePath,
+		NetPath:            *netPath,
+		TrackerListPath:    *trackersPath,
+		SubscriptionsPath:  *subscriptionsPath,
+		CreditIdentityFile: *creditIdentityFile,
+		ListenAddr:         *listenAddr,
+		Refs:               splitCSV(*magnets),
+		PollInterval:       *poll,
+		Timeout:            *timeout,
+		Once:               *once,
+		Seed:               *seed,
 	}, log.Printf)
 }
 
@@ -1084,7 +1304,7 @@ func defaultIdentityDir(explicitDir string) (string, error) {
 	if home == "" {
 		return "", errors.New("user home directory is empty")
 	}
-	return filepath.Join(home, ".aip2p-public", "identities"), nil
+	return filepath.Join(home, ".hao-news", "identities"), nil
 }
 
 func defaultIdentityRegistryPath(explicitPath string) (string, error) {
@@ -1100,7 +1320,7 @@ func defaultIdentityRegistryPath(explicitPath string) (string, error) {
 	if home == "" {
 		return "", errors.New("user home directory is empty")
 	}
-	return filepath.Join(home, ".aip2p-public", "identity_registry.json"), nil
+	return filepath.Join(home, ".hao-news", "identity_registry.json"), nil
 }
 
 func identitySummary(identity aip2p.AgentIdentity, path string) map[string]any {
@@ -1427,7 +1647,7 @@ func writeJSON(v any) error {
 }
 
 func usageError() error {
-	return errors.New("usage: aip2p <identity|publish|verify|show|sync|serve|plugins|themes|apps|create> [flags]")
+	return errors.New("usage: aip2p <identity|credit|publish|verify|show|sync|serve|plugins|themes|apps|create> [flags]")
 }
 
 func loadJSONObject(inline, path string) (map[string]any, error) {

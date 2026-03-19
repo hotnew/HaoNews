@@ -7,21 +7,21 @@ import (
 	"net/http"
 	"testing"
 
-	"aip2p.org/internal/apphost"
+	"hao.news/internal/apphost"
 )
 
 func TestValidatePluginManifest(t *testing.T) {
 	manifest := apphost.PluginManifest{
 		ID:           "sample-content",
 		Name:         "Sample Content",
-		BasePlugin:   "aip2p-public-content",
-		DefaultTheme: "aip2p-public-theme",
+		BasePlugin:   "hao-news-content",
+		DefaultTheme: "hao-news-theme",
 	}
 	report, err := ValidatePluginManifest(manifest, stubResolver{})
 	if err != nil {
 		t.Fatalf("validate plugin manifest: %v", err)
 	}
-	if report.Base == nil || report.Base.ID != "aip2p-public-content" {
+	if report.Base == nil || report.Base.ID != "hao-news-content" {
 		t.Fatalf("base manifest = %#v", report.Base)
 	}
 }
@@ -33,7 +33,7 @@ func TestValidateAppBundle(t *testing.T) {
 			ID:      "sample-app",
 			Name:    "Sample App",
 			Plugins: []string{"sample-content"},
-			Theme:   "aip2p-public-theme",
+			Theme:   "hao-news-theme",
 		},
 		Config: AppConfig{
 			Project: "sample.project",
@@ -49,21 +49,21 @@ func TestValidateAppBundle(t *testing.T) {
 	}
 	registry := apphost.NewRegistry()
 	registry.MustRegisterPlugin(pluginWithManifest(apphost.PluginManifest{
-		ID:           "aip2p-public-content",
+		ID:           "hao-news-content",
 		Name:         "News Content",
-		DefaultTheme: "aip2p-public-theme",
+		DefaultTheme: "hao-news-theme",
 	}))
 	registry.MustRegisterPlugin(pluginWithManifest(apphost.PluginManifest{
 		ID:           "sample-content",
 		Name:         "Sample Content",
-		BasePlugin:   "aip2p-public-content",
-		DefaultTheme: "aip2p-public-theme",
+		BasePlugin:   "hao-news-content",
+		DefaultTheme: "hao-news-theme",
 	}))
 	registry.MustRegisterTheme(themeWithManifest(apphost.ThemeManifest{
-		ID:               "aip2p-public-theme",
+		ID:               "hao-news-theme",
 		Name:             "AiP2P Public Theme",
-		SupportedPlugins: []string{"aip2p-public-content"},
-		RequiredPlugins:  []string{"aip2p-public-content"},
+		SupportedPlugins: []string{"hao-news-content"},
+		RequiredPlugins:  []string{"hao-news-content"},
 	}))
 
 	report, err := ValidateAppBundle(bundle, registry, registry)
@@ -73,7 +73,7 @@ func TestValidateAppBundle(t *testing.T) {
 	if !report.Valid {
 		t.Fatalf("valid = false")
 	}
-	if len(report.Plugins) != 1 || report.Plugins[0].Base == nil || report.Plugins[0].Base.ID != "aip2p-public-content" {
+	if len(report.Plugins) != 1 || report.Plugins[0].Base == nil || report.Plugins[0].Base.ID != "hao-news-content" {
 		t.Fatalf("plugins = %#v", report.Plugins)
 	}
 	if report.Config.Project != "sample.project" {

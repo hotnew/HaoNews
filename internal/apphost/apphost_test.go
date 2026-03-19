@@ -222,18 +222,18 @@ func TestRegistryAcceptsThemeCompatibilityViaBasePlugin(t *testing.T) {
 	registry := NewRegistry()
 	registry.MustRegisterTheme(themeWithManifest{
 		manifest: ThemeManifest{
-			ID:               "aip2p-public-theme",
+			ID:               "hao-news-theme",
 			Name:             "AiP2P Public Theme",
-			SupportedPlugins: []string{"aip2p-public-content"},
-			RequiredPlugins:  []string{"aip2p-public-content"},
+			SupportedPlugins: []string{"hao-news-content"},
+			RequiredPlugins:  []string{"hao-news-content"},
 		},
 	})
 	registry.MustRegisterPlugin(pluginWithManifest{
 		manifest: PluginManifest{
 			ID:           "sample-content",
 			Name:         "Sample Content",
-			BasePlugin:   "aip2p-public-content",
-			DefaultTheme: "aip2p-public-theme",
+			BasePlugin:   "hao-news-content",
+			DefaultTheme: "hao-news-theme",
 		},
 		build: func(context.Context, Config, WebTheme) (*Site, error) {
 			return &Site{Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}, nil
@@ -242,7 +242,7 @@ func TestRegistryAcceptsThemeCompatibilityViaBasePlugin(t *testing.T) {
 
 	if _, err := registry.Build(context.Background(), Config{
 		Plugin: "sample-content",
-		Theme:  "aip2p-public-theme",
+		Theme:  "hao-news-theme",
 	}); err != nil {
 		t.Fatalf("build with base-plugin compatibility: %v", err)
 	}

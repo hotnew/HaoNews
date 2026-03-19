@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"aip2p.org/internal/apphost"
-	"aip2p.org/internal/builtin"
-	"aip2p.org/internal/themes/directorytheme"
-	"aip2p.org/internal/workspace"
+	"hao.news/internal/apphost"
+	"hao.news/internal/builtin"
+	"hao.news/internal/themes/directorytheme"
+	"hao.news/internal/workspace"
 )
 
 const (

@@ -10,7 +10,7 @@ import (
 
 func TestLoadThemeFromDirectory(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, root, "aip2p.theme.json", "{\n  \"id\": \"custom-theme\",\n  \"name\": \"Custom Theme\",\n  \"supported_plugins\": [\"aip2p-public-content\"],\n  \"required_plugins\": [\"aip2p-public-content\"]\n}\n")
+	writeTestFile(t, root, "aip2p.theme.json", "{\n  \"id\": \"custom-theme\",\n  \"name\": \"Custom Theme\",\n  \"supported_plugins\": [\"hao-news-content\"],\n  \"required_plugins\": [\"hao-news-content\"]\n}\n")
 	writeTestFile(t, root, "templates/home.html", "<!doctype html><html><body>home</body></html>\n")
 	writeTestFile(t, root, "static/styles.css", "body { color: black; }\n")
 

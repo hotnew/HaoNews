@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"aip2p.org/internal/apphost"
-	"aip2p.org/internal/builtin"
-	"aip2p.org/internal/extensions"
-	"aip2p.org/internal/themes/directorytheme"
-	"aip2p.org/internal/workspace"
+	"hao.news/internal/apphost"
+	"hao.news/internal/builtin"
+	"hao.news/internal/extensions"
+	"hao.news/internal/themes/directorytheme"
+	"hao.news/internal/workspace"
 )
 
 type Config struct {
@@ -231,7 +231,7 @@ func (i *Instance) ListenAddr() string {
 
 func normalizeConfig(cfg Config) Config {
 	if strings.TrimSpace(cfg.AppDir) == "" && strings.TrimSpace(cfg.App) == "" && len(cfg.Plugins) == 0 && strings.TrimSpace(cfg.Plugin) == "" && len(cfg.PluginDirs) == 0 {
-		cfg.App = "aip2p-public-app"
+		cfg.App = "hao-news-app"
 	}
 	if strings.TrimSpace(cfg.ListenAddr) == "" {
 		cfg.ListenAddr = "0.0.0.0:51818"
