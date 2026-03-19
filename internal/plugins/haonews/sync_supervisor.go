@@ -249,9 +249,9 @@ func resolveManagedSyncBinary(cfg ManagedSyncConfig) (string, error) {
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(cwd, projectSyncBinaryName+platformExecutableSuffix()),
-			filepath.Join(cwd, "aip2p", projectSyncBinaryName+platformExecutableSuffix()),
-			filepath.Join(cwd, "aip2pd"+platformExecutableSuffix()),
-			filepath.Join(cwd, "aip2p", "aip2pd"+platformExecutableSuffix()),
+			filepath.Join(cwd, "haonews", projectSyncBinaryName+platformExecutableSuffix()),
+			filepath.Join(cwd, "haonewsd"+platformExecutableSuffix()),
+			filepath.Join(cwd, "haonews", "haonewsd"+platformExecutableSuffix()),
 		)
 	}
 	seen := map[string]struct{}{}

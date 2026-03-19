@@ -27,8 +27,8 @@ const defaultTrackerListINF = `# Trackerlist.inf
 # Public BitTorrent helper write-back section:
 # After a public tracker/helper is deployed, add the final tracker URLs here.
 # Example:
-# udp://free001.aip2p.org:6969/announce
-# https://free001.aip2p.org/announce
+# udp://free001.haonews.org:6969/announce
+# https://free001.haonews.org/announce
 http://1337.abcvg.info:80/announce
 http://bt.okmp3.ru:2710/announce
 http://ipv4.rer.lol:2710/announce
@@ -119,7 +119,7 @@ func defaultLatestNetINF() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf(`# AiP2P News bootstrap configuration
+	return fmt.Sprintf(`# Hao.News News bootstrap configuration
 # Plaintext file loaded by --net ~/.hao-news/hao_news_net.inf
 #
 # Supported keys:
@@ -139,17 +139,17 @@ libp2p_listen=/ip4/0.0.0.0/udp/%d/quic-v1
 bittorrent_listen=0.0.0.0:%d
 
 # Default LAN anchor. This matches the reference latest.org setup and gives
-# AiP2P Public uses the same shared LAN libp2p entrypoint by default.
+# Hao.News Public uses the same shared LAN libp2p entrypoint by default.
 lan_peer=192.168.102.74
 
 # Default LAN BitTorrent/DHT anchor. This matches the reference latest.org
-# setup and gives AiP2P Public the same shared LAN BT/DHT backfill path.
+# setup and gives Hao.News Public the same shared LAN BT/DHT backfill path.
 lan_bt_peer=192.168.102.74
 
 # Public libp2p helper write-back section. After the public helper node is
 # deployed, replace <peer-id> and uncomment these entries.
-# libp2p_bootstrap=/dns4/free001.aip2p.org/tcp/4001/p2p/<peer-id>
-# libp2p_bootstrap=/dns4/free001.aip2p.org/udp/4001/quic-v1/p2p/<peer-id>
+# libp2p_bootstrap=/dns4/free001.haonews.org/tcp/4001/p2p/<peer-id>
+# libp2p_bootstrap=/dns4/free001.haonews.org/udp/4001/quic-v1/p2p/<peer-id>
 
 # hao.news should treat libp2p as the primary control plane for discovery and subscriptions.
 libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
@@ -209,7 +209,7 @@ func RuntimePathsFromRoot(root string) RuntimePaths {
 	if root == "" {
 		root = ".hao-news"
 	}
-	storeRoot := filepath.Join(root, "aip2p", ".aip2p")
+	storeRoot := filepath.Join(root, "haonews", ".haonews")
 	binRoot := filepath.Join(root, "bin")
 	return RuntimePaths{
 		Root:                root,
@@ -318,7 +318,7 @@ func appendNetworkIDIfMissing(path, networkID string) error {
 		return nil
 	}
 	body := strings.TrimRight(string(data), "\n")
-	body += "\n\n# Stable 256-bit AiP2P network namespace for hao.news.\n"
+	body += "\n\n# Stable 256-bit Hao.News network namespace for hao.news.\n"
 	body += "network_id=" + networkID + "\n"
 	return os.WriteFile(path, []byte(body), 0o644)
 }

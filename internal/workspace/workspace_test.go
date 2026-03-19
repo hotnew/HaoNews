@@ -14,13 +14,13 @@ import (
 
 func TestLoadAppBundle(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "aip2p.app.json", "{\n  \"id\": \"sample-app\",\n  \"name\": \"Sample App\",\n  \"plugins\": [\"hao-news-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
-	writeFile(t, root, "aip2p.app.config.json", "{\n  \"project\": \"sample.project\",\n  \"runtime_root\": \"runtime\",\n  \"sync_stale_after\": \"45s\"\n}\n")
-	writeFile(t, root, filepath.Join("themes", "sample-theme", "aip2p.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"hao-news-content\"],\n  \"required_plugins\": [\"hao-news-content\"]\n}\n")
+	writeFile(t, root, "haonews.app.json", "{\n  \"id\": \"sample-app\",\n  \"name\": \"Sample App\",\n  \"plugins\": [\"hao-news-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
+	writeFile(t, root, "haonews.app.config.json", "{\n  \"project\": \"sample.project\",\n  \"runtime_root\": \"runtime\",\n  \"sync_stale_after\": \"45s\"\n}\n")
+	writeFile(t, root, filepath.Join("themes", "sample-theme", "haonews.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"hao-news-content\"],\n  \"required_plugins\": [\"hao-news-content\"]\n}\n")
 	writeFile(t, root, filepath.Join("themes", "sample-theme", "templates", "home.html"), "home\n")
 	writeFile(t, root, filepath.Join("themes", "sample-theme", "static", "styles.css"), "body{}\n")
-	writeFile(t, root, filepath.Join("plugins", "sample-plugin", "aip2p.plugin.json"), "{\n  \"id\": \"sample-plugin\",\n  \"name\": \"Sample Plugin\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
-	writeFile(t, root, filepath.Join("plugins", "sample-plugin", "aip2p.plugin.config.json"), "{\n  \"channel\": \"sample-world\"\n}\n")
+	writeFile(t, root, filepath.Join("plugins", "sample-plugin", "haonews.plugin.json"), "{\n  \"id\": \"sample-plugin\",\n  \"name\": \"Sample Plugin\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
+	writeFile(t, root, filepath.Join("plugins", "sample-plugin", "haonews.plugin.config.json"), "{\n  \"channel\": \"sample-world\"\n}\n")
 
 	bundle, err := LoadAppBundle(root)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestLoadAppBundle(t *testing.T) {
 
 func TestLoadPlugins(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, filepath.Join("plugins", "sample-plugin", "aip2p.plugin.json"), "{\n  \"id\": \"sample-plugin\",\n  \"name\": \"Sample Plugin\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"hao-news-theme\"\n}\n")
+	writeFile(t, root, filepath.Join("plugins", "sample-plugin", "haonews.plugin.json"), "{\n  \"id\": \"sample-plugin\",\n  \"name\": \"Sample Plugin\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"hao-news-theme\"\n}\n")
 
 	plugins, manifests, err := LoadPlugins(filepath.Join(root, "plugins"), stubResolver{})
 	if err != nil {
@@ -82,7 +82,7 @@ func (stubPlugin) Build(context.Context, apphost.Config, apphost.WebTheme) (*app
 type stubTheme struct{}
 
 func (stubTheme) Manifest() apphost.ThemeManifest {
-	return apphost.ThemeManifest{ID: "hao-news-theme", Name: "AiP2P Public Theme"}
+	return apphost.ThemeManifest{ID: "hao-news-theme", Name: "Hao.News Public Theme"}
 }
 
 func (stubTheme) ParseTemplates(template.FuncMap) (*template.Template, error) {

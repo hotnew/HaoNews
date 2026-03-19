@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const latestAppDelegationVersion = "aip2p-delegation/0.1"
+const latestAppDelegationVersion = "haonews-delegation/0.1"
 
 type DelegationKind string
 

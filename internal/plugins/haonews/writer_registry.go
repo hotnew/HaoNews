@@ -135,7 +135,7 @@ func (r *SignedWriterRegistry) Normalize() {
 	}
 	r.Version = strings.TrimSpace(r.Version)
 	if r.Version == "" {
-		r.Version = "aip2p-writer-registry/0.1"
+		r.Version = "haonews-writer-registry/0.1"
 	}
 	r.Scope = strings.TrimSpace(r.Scope)
 	if r.Scope == "" {

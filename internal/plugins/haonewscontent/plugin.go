@@ -10,7 +10,7 @@ import (
 
 type Plugin struct{}
 
-//go:embed aip2p.plugin.json
+//go:embed haonews.plugin.json
 var pluginManifestJSON []byte
 
 func (Plugin) Manifest() apphost.PluginManifest {

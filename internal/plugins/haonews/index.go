@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/anacrolix/torrent/metainfo"
-	"hao.news/internal/aip2p"
+	"hao.news/internal/haonews"
 )
 
 const (
-	messageFileName = "aip2p-message.json"
+	messageFileName = "haonews-message.json"
 	bodyFileName    = "body.txt"
 )
 
@@ -42,7 +42,7 @@ type torrentRef struct {
 
 func loadTorrentRefs(dir string) (map[string]torrentRef, error) {
 	refs := map[string]torrentRef{}
-	store := &aip2p.Store{TorrentDir: dir}
+	store := &haonews.Store{TorrentDir: dir}
 	if err := store.WalkTorrentFiles(func(_ string, path string) error {
 		mi, err := metainfo.LoadFromFile(path)
 		if err != nil {

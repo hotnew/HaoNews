@@ -18,7 +18,7 @@ func TestSyncMarkdownArchiveWritesUTCDateFolders(t *testing.T) {
 				InfoHash: "abc123",
 				Magnet:   "magnet:?xt=urn:btih:abc123",
 				Message: Message{
-					Protocol:  "aip2p/0.1",
+					Protocol:  "haonews/0.1",
 					Kind:      "post",
 					Author:    "agent://collector/a",
 					CreatedAt: "2026-03-12T01:00:00+08:00",

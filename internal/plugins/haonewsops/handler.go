@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"hao.news/internal/aip2p"
+	"hao.news/internal/haonews"
 	newsplugin "hao.news/internal/plugins/haonews"
 )
 
@@ -19,18 +19,18 @@ type creditPageData struct {
 	Now             time.Time
 	NodeStatus      newsplugin.NodeStatus
 	Totals          map[string]int
-	Balances        []aip2p.CreditBalance
-	Proofs          []aip2p.OnlineProof
+	Balances        []haonews.CreditBalance
+	Proofs          []haonews.OnlineProof
 	ProofsTotal     int
 	Issues          []string
-	DailyStats      []aip2p.CreditDailyStat
-	WitnessRoles    []aip2p.CreditWitnessRoleStat
+	DailyStats      []haonews.CreditDailyStat
+	WitnessRoles    []haonews.CreditWitnessRoleStat
 	SelectedDate    string
 	SelectedAuthor  string
 	SelectedStart   string
 	SelectedEnd     string
 	ProofsLabel     string
-	SelectedBalance *aip2p.CreditBalance
+	SelectedBalance *haonews.CreditBalance
 	Pagination      newsplugin.PaginationState
 }
 
@@ -140,8 +140,8 @@ func handleCredit(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 	end := strings.TrimSpace(query.Get("end"))
 
 	var (
-		proofs          []aip2p.OnlineProof
-		selectedBalance *aip2p.CreditBalance
+		proofs          []haonews.OnlineProof
+		selectedBalance *haonews.CreditBalance
 		proofsLabel     string
 	)
 	if author != "" {
@@ -205,15 +205,15 @@ func handleCredit(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func paginateCreditProofs(proofs []aip2p.OnlineProof, r *http.Request) ([]aip2p.OnlineProof, newsplugin.PaginationState) {
+func paginateCreditProofs(proofs []haonews.OnlineProof, r *http.Request) ([]haonews.OnlineProof, newsplugin.PaginationState) {
 	return paginateCreditProofsForPath(proofs, r, "/credit")
 }
 
-func paginateCreditProofsAPI(proofs []aip2p.OnlineProof, r *http.Request) ([]aip2p.OnlineProof, newsplugin.PaginationState) {
+func paginateCreditProofsAPI(proofs []haonews.OnlineProof, r *http.Request) ([]haonews.OnlineProof, newsplugin.PaginationState) {
 	return paginateCreditProofsForPath(proofs, r, "/api/v1/credit/proofs")
 }
 
-func paginateCreditProofsForPath(proofs []aip2p.OnlineProof, r *http.Request, basePath string) ([]aip2p.OnlineProof, newsplugin.PaginationState) {
+func paginateCreditProofsForPath(proofs []haonews.OnlineProof, r *http.Request, basePath string) ([]haonews.OnlineProof, newsplugin.PaginationState) {
 	query := r.URL.Query()
 	pageSize := 20
 	if value, err := strconv.Atoi(strings.TrimSpace(query.Get("page_size"))); err == nil && value > 0 && value <= 100 {

@@ -25,7 +25,7 @@ func (a *App) LatestHistoryListPayload() (HistoryManifestAPIResponse, error) {
 		originAuthor, originAgentID, originKeyType, originPublicKey, originSigned := originSummary(bundle.Message.Origin)
 		delegated, parentAgentID, parentKeyType, parentPublicKey := delegationSummary(bundle.Delegation)
 		entries = append(entries, HistoryManifestEntry{
-			Protocol:          "aip2p-sync/0.1",
+			Protocol:          "haonews-sync/0.1",
 			InfoHash:          strings.ToLower(strings.TrimSpace(bundle.InfoHash)),
 			Magnet:            strings.TrimSpace(bundle.Magnet),
 			SizeBytes:         bundle.SizeBytes,

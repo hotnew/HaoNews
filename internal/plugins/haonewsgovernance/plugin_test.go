@@ -39,7 +39,7 @@ func TestPluginBuildSavesWriterPolicy(t *testing.T) {
 		ArchiveRoot:      filepath.Join(root, "archive"),
 		RulesPath:        filepath.Join(root, "config", "subscriptions.json"),
 		WriterPolicyPath: filepath.Join(root, "config", "writer_policy.json"),
-		NetPath:          filepath.Join(root, "config", "aip2p_net.inf"),
+		NetPath:          filepath.Join(root, "config", "haonews_net.inf"),
 		Project:          "hao.news",
 		Version:          "test",
 	}
@@ -97,7 +97,7 @@ func buildGovernanceSite(t *testing.T) *apphost.Site {
 		ArchiveRoot:      filepath.Join(root, "archive"),
 		RulesPath:        filepath.Join(root, "config", "subscriptions.json"),
 		WriterPolicyPath: filepath.Join(root, "config", "writer_policy.json"),
-		NetPath:          filepath.Join(root, "config", "aip2p_net.inf"),
+		NetPath:          filepath.Join(root, "config", "haonews_net.inf"),
 		Project:          "hao.news",
 		Version:          "test",
 	}

@@ -1,160 +1,109 @@
 ---
 name: release-github
-description: Use this skill when publishing a small GitHub release for AiP2P and the paired latest.org app repo. It covers version bumps, tests, fresh-clone verification, safe push flow, tag creation, and GitHub release creation without breaking the split-repo layout.
+description: 当需要为 Hao.News 好牛Ai 及配套应用仓库发布一个小版本时使用。覆盖版本号更新、测试、全新克隆验证、安全推送、tag 创建和 GitHub Release 创建流程。
 ---
 
-# GitHub Release
+# GitHub 发布流程
 
-Use this skill when you need to publish a new small version for:
+当任务是为 GitHub 仓库发布一个新版本时，使用这份 skill。
 
-- `AiP2P`
-- `latest.org`
+## 适用仓库
 
-This workspace uses one local root Git repository, but GitHub uses two separate repositories:
+当前主要面向：
 
-- `AiP2P/AiP2P`
-- `AiP2P/Latest`
+- `HaoNews/HaoNews`
+- 配套应用仓库
 
-Do not push subdirectories from the root repo directly.
+如果本地工作区是一个大根目录，推送时不要直接从根目录把子目录强推到 GitHub。
 
-## Required Outcome
+## 目标结果
 
-For every release:
+每次发布至少完成这些步骤：
 
-1. bump the version strings in source and docs
-2. update the draft release note file
-3. run tests locally
-4. verify with a fresh GitHub-style install when needed
-5. fresh-clone each GitHub repo into a temp directory
-6. copy only the relevant subtree into that temp clone
-7. commit with GitHub `noreply` email
-8. push `main`
-9. create and push the new tag
-10. create the GitHub Release from the release note file
+1. 更新源码和文档中的版本号
+2. 更新发布说明草稿
+3. 本地跑测试
+4. 在需要时做一次全新克隆验证
+5. 临时克隆 GitHub 仓库到新目录
+6. 只复制相关子树到临时仓库
+7. 使用 GitHub `noreply` 邮箱提交
+8. 推送 `main`
+9. 创建并推送 tag
+10. 在 GitHub 上创建 Release
 
-## Version Rules
+## 版本规则
 
-Use small increments only.
+- 优先做小版本递增
+- 避免一次发布同时混入大范围无关改动
 
-Typical pair:
+至少同步这些位置：
 
-- `AiP2P`: `v0.1.X-draft`
-- `latest.org`: `v0.1.Y-demo`
+- `README.md`
+- `docs/install.md`
+- `docs/release.md`
+- 相关升级说明
+- 相关发布说明草稿
 
-Update these places at minimum:
+## 推送前测试
 
-- `aip2p/README.md`
-- `aip2p/docs/install.md`
-- `aip2p/docs/release.md`
-- `aip2p/docs/github-release-v*.md`
-- `latest/cmd/latest/main.go`
-- `latest/README.md`
-- `latest/docs/install.md`
-- `latest/docs/release.md`
-- `latest/skills/bootstrap-latest/SKILL.md`
-- `latest/docs/github-release-v*.md`
-
-## Test Before Push
-
-Run:
+先执行：
 
 ```bash
 go test ./...
 ```
 
-In:
+如果改动涉及运行行为，还应补做：
 
-- `aip2p`
-- `latest/aip2p`
-- `latest`
+- 全新克隆后的安装验证
+- `go run ./cmd/haonews serve`
+- 必要的 CLI / API 冒烟检查
 
-If the change affects runtime behavior, also do a fresh install style check from GitHub or from a fresh clone.
+## 安全推送流程
 
-## Safe Push Flow
+不要直接从当前复杂工作区向远端发版。
 
-Do not publish from the root workspace checkout.
+推荐流程：
 
-Instead:
+1. 创建临时目录
+2. 全新克隆目标 GitHub 仓库
+3. 把本地目标子树复制到临时 clone
+4. 排除 `.git`
+5. 不要把临时构建产物、二进制和缓存带进去
 
-1. create temp directories
-2. clone `https://github.com/AiP2P/AiP2P.git`
-3. clone `https://github.com/AiP2P/Latest.git`
-4. copy:
-   - local `aip2p/` into the fresh `AiP2P` clone
-   - local `latest/` into the fresh `Latest` clone
-5. exclude `.git`
-6. do not commit built binaries unless the repo already intentionally tracks them
-
-Recommended copy pattern:
+推荐复制方式：
 
 ```bash
-rsync -a --delete --exclude '.git' /local/path/aip2p/ /tmp/push-aip2p/
-rsync -a --delete --exclude '.git' /local/path/latest/ /tmp/push-latest/
+rsync -a --delete --exclude '.git' /local/path/haonews/ /tmp/push-haonews/
 ```
 
-## Commit Identity
+## 提交身份
 
-GitHub may reject pushes that expose a private email address.
+GitHub 可能拒绝暴露私有邮箱的提交。
 
-Before commit or amend:
+提交前设置：
 
 ```bash
-git config user.name AiP2P
-git config user.email <github-id>+AiP2P@users.noreply.github.com
+git config user.name HaoNews
+git config user.email <github-id>+HaoNews@users.noreply.github.com
 ```
 
-If a push is rejected with `GH007`, amend the commit with:
+如果遇到 `GH007`，重新设作者：
 
 ```bash
 git commit --amend --no-edit --reset-author
 ```
 
-Then push again.
+## Tag 与 Release
 
-## Tag And Release
+每次发布应做：
 
-For each repo:
+1. 推送 `main`
+2. 创建或更新 tag
+3. 推送 tag
+4. 依据发布说明创建 GitHub Release
 
-1. push `main`
-2. create or update the tag
-3. push the tag
-4. create the GitHub release with `gh release create`
+## 额外提醒
 
-Pattern:
-
-```bash
-git push origin main
-git tag -f <tag>
-git push -f origin <tag>
-gh release create <tag> --repo <owner/repo> --title "<title>" --notes-file <release-notes-file>
-```
-
-## Release Notes
-
-Keep one release note file per version:
-
-- `aip2p/docs/github-release-vX.Y.Z-draft.md`
-- `latest/docs/github-release-vX.Y.Z-demo.md`
-
-Each note should include:
-
-- release title
-- one-sentence summary
-- highlights
-- install or upgrade reminder
-
-## After Push
-
-Verify:
-
-- the tag exists on GitHub
-- the release page exists
-- `main` contains the expected commit
-- a fresh install can check out the new tag
-
-## Do Not Forget
-
-- keep the split-repo flow
-- keep GitHub `noreply` email
-- do not rely on the root workspace Git history for publishing
-- update both repos when the feature spans both protocol and app layers
+- 发布文案统一使用 `Hao.News 好牛Ai`
+- 命令名 `haonews`、协议字段、文件名保持兼容字面量
+- 如果远端已有不同历史，只有在明确确认后才使用 `--force-with-lease`

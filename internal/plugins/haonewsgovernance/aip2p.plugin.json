@@ -1,8 +1,0 @@
-{
-  "id": "hao-news-governance",
-  "name": "AiP2P Public Governance",
-  "version": "0.1.0",
-  "plugin_kind": "governance",
-  "description": "Sample AiP2P public governance plugin with writer policy management for the hao-news-app app.",
-  "default_theme": "hao-news-theme"
-}

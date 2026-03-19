@@ -13,10 +13,10 @@ import (
 
 func TestNewLoadsAppDirTheme(t *testing.T) {
 	root := t.TempDir()
-	writeHostFile(t, root, "aip2p.app.json", "{\n  \"id\": \"sample-news\",\n  \"name\": \"Sample News\",\n  \"plugins\": [\"sample-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
-	writeHostFile(t, root, "aip2p.app.config.json", "{\n  \"project\": \"sample.project\",\n  \"runtime_root\": \"runtime-data\",\n  \"store_root\": \"workspace-store\",\n  \"sync_stale_after\": \"33s\"\n}\n")
-	writeHostFile(t, root, filepath.Join("plugins", "sample-content", "aip2p.plugin.json"), "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
-	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "aip2p.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"sample-content\"],\n  \"required_plugins\": [\"sample-content\"]\n}\n")
+	writeHostFile(t, root, "haonews.app.json", "{\n  \"id\": \"sample-news\",\n  \"name\": \"Sample News\",\n  \"plugins\": [\"sample-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
+	writeHostFile(t, root, "haonews.app.config.json", "{\n  \"project\": \"sample.project\",\n  \"runtime_root\": \"runtime-data\",\n  \"store_root\": \"workspace-store\",\n  \"sync_stale_after\": \"33s\"\n}\n")
+	writeHostFile(t, root, filepath.Join("plugins", "sample-content", "haonews.plugin.json"), "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
+	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "haonews.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"sample-content\"],\n  \"required_plugins\": [\"sample-content\"]\n}\n")
 	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "templates", "home.html"), "home\n")
 	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "templates", "post.html"), "post\n")
 	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "templates", "directory.html"), "directory\n")
@@ -60,9 +60,9 @@ func TestNewLoadsAppDirTheme(t *testing.T) {
 
 func TestNewDefaultsAppDirRuntimeRoot(t *testing.T) {
 	root := t.TempDir()
-	writeHostFile(t, root, "aip2p.app.json", "{\n  \"id\": \"sample-news\",\n  \"name\": \"Sample News\",\n  \"plugins\": [\"sample-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
-	writeHostFile(t, root, filepath.Join("plugins", "sample-content", "aip2p.plugin.json"), "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
-	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "aip2p.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"sample-content\"],\n  \"required_plugins\": [\"sample-content\"]\n}\n")
+	writeHostFile(t, root, "haonews.app.json", "{\n  \"id\": \"sample-news\",\n  \"name\": \"Sample News\",\n  \"plugins\": [\"sample-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
+	writeHostFile(t, root, filepath.Join("plugins", "sample-content", "haonews.plugin.json"), "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
+	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "haonews.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"sample-content\"],\n  \"required_plugins\": [\"sample-content\"]\n}\n")
 	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "templates", "home.html"), "home\n")
 	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "templates", "post.html"), "post\n")
 	writeHostFile(t, root, filepath.Join("themes", "sample-theme", "templates", "directory.html"), "directory\n")
@@ -90,9 +90,9 @@ func TestNewLoadsInstalledAppByID(t *testing.T) {
 		t.Fatalf("open extensions store: %v", err)
 	}
 	appRoot := t.TempDir()
-	writeHostFile(t, appRoot, "aip2p.app.json", "{\n  \"id\": \"installed-app\",\n  \"name\": \"Installed App\",\n  \"plugins\": [\"sample-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
-	writeHostFile(t, appRoot, filepath.Join("plugins", "sample-content", "aip2p.plugin.json"), "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
-	writeHostFile(t, appRoot, filepath.Join("themes", "sample-theme", "aip2p.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"sample-content\"],\n  \"required_plugins\": [\"sample-content\"]\n}\n")
+	writeHostFile(t, appRoot, "haonews.app.json", "{\n  \"id\": \"installed-app\",\n  \"name\": \"Installed App\",\n  \"plugins\": [\"sample-content\"],\n  \"theme\": \"sample-theme\"\n}\n")
+	writeHostFile(t, appRoot, filepath.Join("plugins", "sample-content", "haonews.plugin.json"), "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"sample-theme\"\n}\n")
+	writeHostFile(t, appRoot, filepath.Join("themes", "sample-theme", "haonews.theme.json"), "{\n  \"id\": \"sample-theme\",\n  \"name\": \"Sample Theme\",\n  \"supported_plugins\": [\"sample-content\"],\n  \"required_plugins\": [\"sample-content\"]\n}\n")
 	writeHostFile(t, appRoot, filepath.Join("themes", "sample-theme", "templates", "home.html"), "home\n")
 	writeHostFile(t, appRoot, filepath.Join("themes", "sample-theme", "templates", "post.html"), "post\n")
 	writeHostFile(t, appRoot, filepath.Join("themes", "sample-theme", "templates", "directory.html"), "directory\n")

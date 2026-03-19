@@ -12,7 +12,7 @@ import (
 //go:embed web/templates/*.html web/static/*
 var assets embed.FS
 
-//go:embed aip2p.theme.json
+//go:embed haonews.theme.json
 var themeManifestJSON []byte
 
 type Theme struct{}

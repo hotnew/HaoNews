@@ -1,5 +1,5 @@
-# aip2p bootstrap configuration
-# Plaintext file loaded by: aip2p sync --net ./aip2p_net.inf
+# haonews bootstrap configuration
+# Plaintext file loaded by: haonews sync --net ./haonews_net.inf
 #
 # Supported keys:
 #   network_id=<64 hex chars>

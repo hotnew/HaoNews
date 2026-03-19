@@ -1,0 +1,8 @@
+{
+  "id": "hao-news-governance",
+  "name": "Hao.News Public Governance",
+  "version": "0.1.0",
+  "plugin_kind": "governance",
+  "description": "Sample Hao.News public governance plugin with writer policy management for the hao-news-app app.",
+  "default_theme": "hao-news-theme"
+}

@@ -32,7 +32,7 @@ func Load(root string, resolver baseResolver) (Plugin, error) {
 	if err != nil {
 		return Plugin{}, err
 	}
-	data, err := os.ReadFile(filepath.Join(root, "aip2p.plugin.json"))
+	data, err := os.ReadFile(filepath.Join(root, "haonews.plugin.json"))
 	if err != nil {
 		return Plugin{}, err
 	}

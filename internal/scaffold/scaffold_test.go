@@ -15,7 +15,7 @@ func TestThemeFilesAreRunnableScaffold(t *testing.T) {
 		paths[file.Path] = file.Content
 	}
 	required := []string{
-		"aip2p.theme.json",
+		"haonews.theme.json",
 		"templates/home.html",
 		"templates/post.html",
 		"templates/directory.html",
@@ -33,7 +33,7 @@ func TestThemeFilesAreRunnableScaffold(t *testing.T) {
 			t.Fatalf("missing scaffold file %q", path)
 		}
 	}
-	if got := paths["aip2p.theme.json"]; got == "" || !strings.Contains(got, `"required_plugins": []`) {
+	if got := paths["haonews.theme.json"]; got == "" || !strings.Contains(got, `"required_plugins": []`) {
 		t.Fatalf("theme manifest missing required_plugins: %q", got)
 	}
 }
@@ -47,13 +47,13 @@ func TestPluginFilesIncludeBasePlugin(t *testing.T) {
 	for _, file := range files {
 		paths[file.Path] = file.Content
 	}
-	if got := paths["aip2p.plugin.json"]; got == "" || !strings.Contains(got, `"base_plugin": "hao-news-content"`) {
+	if got := paths["haonews.plugin.json"]; got == "" || !strings.Contains(got, `"base_plugin": "hao-news-content"`) {
 		t.Fatalf("plugin manifest missing base_plugin: %q", got)
 	}
-	if _, ok := paths["aip2p.plugin.config.json"]; !ok {
+	if _, ok := paths["haonews.plugin.config.json"]; !ok {
 		t.Fatalf("missing plugin config scaffold")
 	}
-	if got := paths["aip2p.plugin.config.json"]; !strings.Contains(got, `"sample-plugin/general"`) {
+	if got := paths["haonews.plugin.config.json"]; !strings.Contains(got, `"sample-plugin/general"`) {
 		t.Fatalf("plugin config does not include generated channel: %q", got)
 	}
 }
@@ -67,25 +67,25 @@ func TestAppFilesUseLocalPluginPack(t *testing.T) {
 	for _, file := range files {
 		paths[file.Path] = file.Content
 	}
-	if got := paths["aip2p.app.json"]; got == "" || !strings.Contains(got, `"plugins": [`) || !strings.Contains(got, `"sample-app-plugin"`) {
+	if got := paths["haonews.app.json"]; got == "" || !strings.Contains(got, `"plugins": [`) || !strings.Contains(got, `"sample-app-plugin"`) {
 		t.Fatalf("app manifest does not target local plugin: %q", got)
 	}
-	if _, ok := paths["aip2p.app.config.json"]; !ok {
+	if _, ok := paths["haonews.app.config.json"]; !ok {
 		t.Fatalf("missing app config scaffold")
 	}
-	if got := paths["aip2p.app.config.json"]; !strings.Contains(got, `"sample-app.sample"`) {
+	if got := paths["haonews.app.config.json"]; !strings.Contains(got, `"sample-app.sample"`) {
 		t.Fatalf("app config does not include generated project id: %q", got)
 	}
-	if got := paths["plugins/sample-app-plugin/aip2p.plugin.json"]; got == "" || !strings.Contains(got, `"base_plugin": "hao-news-content"`) {
+	if got := paths["plugins/sample-app-plugin/haonews.plugin.json"]; got == "" || !strings.Contains(got, `"base_plugin": "hao-news-content"`) {
 		t.Fatalf("app plugin manifest missing base_plugin: %q", got)
 	}
-	if _, ok := paths["plugins/sample-app-plugin/aip2p.plugin.config.json"]; !ok {
+	if _, ok := paths["plugins/sample-app-plugin/haonews.plugin.config.json"]; !ok {
 		t.Fatalf("missing app plugin config scaffold")
 	}
-	if got := paths["plugins/sample-app-plugin/aip2p.plugin.config.json"]; !strings.Contains(got, `"sample-app/general"`) {
+	if got := paths["plugins/sample-app-plugin/haonews.plugin.config.json"]; !strings.Contains(got, `"sample-app/general"`) {
 		t.Fatalf("app plugin config does not include generated channel: %q", got)
 	}
-	if got := paths["themes/sample-app-theme/aip2p.theme.json"]; got == "" || !strings.Contains(got, `"sample-app-plugin"`) {
+	if got := paths["themes/sample-app-theme/haonews.theme.json"]; got == "" || !strings.Contains(got, `"sample-app-plugin"`) {
 		t.Fatalf("theme manifest does not depend on local plugin: %q", got)
 	}
 }

@@ -1,107 +1,104 @@
-# Public Bootstrap Node For AiP2P Networks
+# Hao.News 好牛Ai 公网 Bootstrap 节点说明
 
-This document tells AI agents how to prepare a public Internet node that improves AiP2P connectivity across private networks.
+这份文档用于说明如何准备一个公网节点，帮助不同私网、不同 NAT 环境下的 Hao.News 好牛Ai 节点互相发现并建立连接。
 
-## Purpose
+## 作用
 
-This node is part of the transport layer.
+公网 bootstrap 节点的职责不是保存所有内容，而是改善连接性。
 
-It is not:
-
-- a forum server
-- a database
-- a moderation service
-- a permanent content store
-
-Its job is to improve connectivity for AiP2P peers.
-
-## Recommended Public Services
-
-At least one public node should provide:
+通常它提供以下能力：
 
 - `libp2p bootstrap`
 - `libp2p rendezvous`
+- 最好还能提供 `libp2p relay`
 
-Preferably it should also provide:
+## 为什么需要公网节点
 
-- `libp2p relay`
+如果多个节点都在：
 
-Those three roles solve different problems:
+- 家用宽带
+- 公司内网
+- 云服务私网
+- 多层 NAT 环境
 
-- `bootstrap`: lets a cold node enter the network
-- `rendezvous`: helps compatible nodes discover each other
-- `relay`: carries traffic when two peers cannot connect directly across NAT/firewall boundaries
+那么只靠局域网地址或临时对等发现通常不够稳定。
 
-## Important Boundary
+这时就需要一个公网可达的辅助节点，作为初始汇合点。
 
-The current AiP2P repository does not yet ship a ready-made public bootstrap or relay server binary.
+## 当前仓库状态
 
-An AI agent should therefore treat this as an external operator deployment task:
+当前 Hao.News 好牛Ai 仓库还没有内置一个完整的公网 bootstrap / relay 专用二进制，但协议和同步体系已经支持接入外部辅助节点。
 
-- provision a public Linux host
-- deploy a compatible libp2p implementation for bootstrap and rendezvous
-- preferably enable relay support
-- return the final multiaddrs and ports
+因此现在的推荐方式是：
 
-Do not fabricate unsupported repository commands.
+- 单独准备一个公网节点
+- 在 `haonews_net.inf` 中写入它的 bootstrap 信息
+- 所有参与节点共享同一份 `network_id`
 
-## Host Recommendation
+## 推荐准备项
 
-Use at least one public Linux machine with:
+公网节点至少需要：
 
-- stable public IPv4
-- optional IPv6
-- DNS if available
-- fixed inbound firewall rules
+- 固定公网 IP 或稳定域名
+- 开放用于 `libp2p` 的监听端口
+- 稳定运行的系统环境
+- 基本的日志与重启机制
 
-## Suggested Ports
+建议额外准备：
 
-Open fixed inbound ports for libp2p transports.
+- 防火墙规则
+- 自动重启
+- 监控与健康检查
 
-Common operator choice:
+## 配置建议
 
-- `TCP 4001`
-- `UDP 4001`
+### 1. 先生成项目 network_id
 
-If the same machine also serves BitTorrent assistance, operators may additionally expose:
+```bash
+openssl rand -hex 32
+```
 
-- `UDP 6881`
+### 2. 记录 bootstrap 地址
 
-## Expected Output
-
-After deployment, the AI agent should return:
+你需要收集公网节点的：
 
 - peer ID
-- one or more public multiaddrs
-- opened TCP/UDP ports
-- supported roles: bootstrap, rendezvous, relay
+- listen multiaddr
+- 可公开访问的地址
 
-Example:
+### 3. 写入 `haonews_net.inf`
 
-```text
-/dns4/free01.sample.app/tcp/4001/p2p/<peer-id>
-/dns4/free01.sample.app/udp/4001/quic-v1/p2p/<peer-id>
-```
+确保参与同一项目网络的节点使用同一个 `network_id`，并共享同一组 bootstrap 信息。
 
-## Update aip2p_net.inf
+## 运维步骤建议
 
-Add the public node into the project network bootstrap file:
+1. 部署公网节点
+2. 获取它的 peer ID 和公开地址
+3. 写入 `haonews_net.inf`
+4. 把配置同步给所有项目节点
+5. 重启 `haonews sync`
+6. 观察 peer 发现与连接状态
 
-```text
-network_id=<64 hex chars>
-libp2p_bootstrap=/dns4/free01.sample.app/tcp/4001/p2p/<peer-id>
-libp2p_bootstrap=/dns4/free01.sample.app/udp/4001/quic-v1/p2p/<peer-id>
-libp2p_rendezvous=<project>/global
-libp2p_rendezvous=<project>/<topic>
-```
+## 适合的场景
 
-## AI Agent Checklist
+- 多个家庭宽带节点互联
+- 局域网节点需要对外桥接
+- 需要稳定 rendezvous 入口
+- 项目测试网或小规模公共网络
 
-1. provision one public Linux host
-2. open fixed TCP and UDP ports
-3. deploy a libp2p bootstrap plus rendezvous service
-4. preferably enable relay
-5. report public multiaddrs and peer ID
-6. write them into `aip2p_net.inf`
-7. restart `aip2p sync`
-8. verify peer counts improve
+## 不适合承担的职责
+
+公网 bootstrap 节点不应默认承担：
+
+- 所有内容永久保存
+- 全网内容审核
+- 项目级业务逻辑
+
+它的主要目标是：
+
+- 让节点更容易找到彼此
+- 让跨网络连接更稳定
+
+## 结论
+
+对于跨 NAT、跨私网的 Hao.News 好牛Ai 部署，准备至少一个公网 bootstrap 节点是强烈推荐的做法。

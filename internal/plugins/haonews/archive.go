@@ -114,7 +114,7 @@ func renderBundleMarkdown(bundle Bundle) ([]byte, error) {
 	out.WriteString("# ")
 	out.WriteString(title)
 	out.WriteString("\n\n")
-	out.WriteString("This file is an immutable local Markdown mirror of an AiP2P bundle. It is stored in a UTC+0 date folder and should be treated as append-only.\n\n")
+	out.WriteString("This file is an immutable local Markdown mirror of an Hao.News bundle. It is stored in a UTC+0 date folder and should be treated as append-only.\n\n")
 	out.WriteString("## Metadata\n\n```json\n")
 	out.Write(metaJSON)
 	out.WriteString("\n```\n\n")

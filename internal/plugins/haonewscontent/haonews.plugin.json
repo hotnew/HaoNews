@@ -1,0 +1,8 @@
+{
+  "id": "hao-news-content",
+  "name": "Hao.News Public Content",
+  "version": "0.1.0",
+  "plugin_kind": "content",
+  "description": "Sample Hao.News public content plugin with feed, post, source, topic pages and related APIs.",
+  "default_theme": "hao-news-theme"
+}

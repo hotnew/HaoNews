@@ -61,7 +61,7 @@ func TestValidateAppBundle(t *testing.T) {
 	}))
 	registry.MustRegisterTheme(themeWithManifest(apphost.ThemeManifest{
 		ID:               "hao-news-theme",
-		Name:             "AiP2P Public Theme",
+		Name:             "Hao.News Public Theme",
 		SupportedPlugins: []string{"hao-news-content"},
 		RequiredPlugins:  []string{"hao-news-content"},
 	}))

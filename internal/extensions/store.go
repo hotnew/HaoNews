@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	metaSuffix     = ".aip2p.install.json"
-	defaultEnvRoot = "AIP2P_EXTENSIONS_ROOT"
+	metaSuffix     = ".haonews.install.json"
+	defaultEnvRoot = "HAONEWS_EXTENSIONS_ROOT"
 	kindPlugin     = "plugin"
 	kindTheme      = "theme"
 	kindApp        = "app"
@@ -83,7 +83,7 @@ func resolvePaths(root string) (Paths, error) {
 		if err != nil {
 			return Paths{}, err
 		}
-		root = filepath.Join(home, ".aip2p", "extensions")
+		root = filepath.Join(home, ".haonews", "extensions")
 	}
 	root, err := filepath.Abs(root)
 	if err != nil {

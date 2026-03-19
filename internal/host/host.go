@@ -336,7 +336,7 @@ func applyAppBundleConfig(cfg Config, appCfg workspace.AppConfig) (Config, error
 
 func (i *Instance) String() string {
 	if i == nil || i.site == nil {
-		return "aip2p host"
+		return "haonews host"
 	}
 	return fmt.Sprintf("%s on %s", i.site.Manifest.Name, i.config.ListenAddr)
 }

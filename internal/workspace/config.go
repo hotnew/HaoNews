@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	appManifestName    = "aip2p.app.json"
-	appConfigName      = "aip2p.app.config.json"
-	pluginManifestName = "aip2p.plugin.json"
-	pluginConfigName   = "aip2p.plugin.config.json"
+	appManifestName    = "haonews.app.json"
+	appConfigName      = "haonews.app.config.json"
+	pluginManifestName = "haonews.plugin.json"
+	pluginConfigName   = "haonews.plugin.config.json"
 )
 
 type AppConfig struct {

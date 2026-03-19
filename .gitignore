@@ -1,4 +1,6 @@
-.aip2p/
-aip2pd
+.haonews/
+haonews
+haonewsd
+archive/legacy-bin/
 public-helper-node/
 .DS_Store

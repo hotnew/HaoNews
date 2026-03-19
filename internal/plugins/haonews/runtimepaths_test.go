@@ -24,7 +24,7 @@ func TestDefaultRuntimePathsFromHome(t *testing.T) {
 	if paths.Root != "/tmp/example-home/.hao-news" {
 		t.Fatalf("root = %q", paths.Root)
 	}
-	if paths.StoreRoot != "/tmp/example-home/.hao-news/aip2p/.aip2p" {
+	if paths.StoreRoot != "/tmp/example-home/.hao-news/haonews/.haonews" {
 		t.Fatalf("store = %q", paths.StoreRoot)
 	}
 	if paths.IdentitiesRoot != "/tmp/example-home/.hao-news/identities" {
@@ -65,7 +65,7 @@ func TestEnsureRuntimeLayoutCreatesDefaultConfigFiles(t *testing.T) {
 	defer func() { buildDefaultLatestNetINF = previous }()
 
 	root := t.TempDir()
-	store := filepath.Join(root, "aip2p", ".aip2p")
+	store := filepath.Join(root, "haonews", ".haonews")
 	archive := filepath.Join(root, "archive")
 	rules := filepath.Join(root, "subscriptions.json")
 	writerPolicy := filepath.Join(root, "writer_policy.json")
@@ -153,7 +153,7 @@ func TestEnsureRuntimeLayoutPreservesExistingRules(t *testing.T) {
 	defer func() { buildDefaultLatestNetINF = previous }()
 
 	root := t.TempDir()
-	store := filepath.Join(root, "aip2p", ".aip2p")
+	store := filepath.Join(root, "haonews", ".haonews")
 	archive := filepath.Join(root, "archive")
 	rules := filepath.Join(root, "subscriptions.json")
 	writerPolicy := filepath.Join(root, "writer_policy.json")
@@ -182,7 +182,7 @@ func TestEnsureRuntimeLayoutMigratesLegacyWriterPolicyTemplate(t *testing.T) {
 	defer func() { buildDefaultLatestNetINF = previous }()
 
 	root := t.TempDir()
-	store := filepath.Join(root, "aip2p", ".aip2p")
+	store := filepath.Join(root, "haonews", ".haonews")
 	archive := filepath.Join(root, "archive")
 	rules := filepath.Join(root, "subscriptions.json")
 	writerPolicy := filepath.Join(root, "writer_policy.json")
@@ -212,7 +212,7 @@ func TestEnsureRuntimeLayoutPreservesCustomWriterPolicy(t *testing.T) {
 	defer func() { buildDefaultLatestNetINF = previous }()
 
 	root := t.TempDir()
-	store := filepath.Join(root, "aip2p", ".aip2p")
+	store := filepath.Join(root, "haonews", ".haonews")
 	archive := filepath.Join(root, "archive")
 	rules := filepath.Join(root, "subscriptions.json")
 	writerPolicy := filepath.Join(root, "writer_policy.json")
@@ -253,7 +253,7 @@ func TestEnsureRuntimeLayoutAppendsLatestNetworkIDToExistingNetConfig(t *testing
 	defer func() { buildDefaultLatestNetINF = previous }()
 
 	root := t.TempDir()
-	store := filepath.Join(root, "aip2p", ".aip2p")
+	store := filepath.Join(root, "haonews", ".haonews")
 	archive := filepath.Join(root, "archive")
 	rules := filepath.Join(root, "subscriptions.json")
 	writerPolicy := filepath.Join(root, "writer_policy.json")

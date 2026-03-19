@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"hao.news/internal/aip2p"
 	"hao.news/internal/apphost"
-	"hao.news/internal/themes/haonews"
+	corehaonews "hao.news/internal/haonews"
+	themehaonews "hao.news/internal/themes/haonews"
 )
 
 func TestPluginBuildServesHomePage(t *testing.T) {
@@ -25,7 +25,7 @@ func TestPluginBuildServesHomePage(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "AiP2P Public") {
+	if !strings.Contains(rec.Body.String(), "Hao.News Public") {
 		t.Fatalf("expected home page content, got %q", rec.Body.String())
 	}
 	body := rec.Body.String()
@@ -139,21 +139,21 @@ func buildContentSiteAtRoot(t *testing.T, root string) *apphost.Site {
 		ArchiveRoot:      filepath.Join(root, "archive"),
 		RulesPath:        filepath.Join(root, "config", "subscriptions.json"),
 		WriterPolicyPath: filepath.Join(root, "config", "writer_policy.json"),
-		NetPath:          filepath.Join(root, "config", "aip2p_net.inf"),
+		NetPath:          filepath.Join(root, "config", "haonews_net.inf"),
 		Project:          "hao.news",
 		Version:          "test",
 	}
-	site, err := Plugin{}.Build(context.Background(), cfg, haonews.Theme{})
+	site, err := Plugin{}.Build(context.Background(), cfg, themehaonews.Theme{})
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
 	return site
 }
 
-func publishSignedTestPost(t *testing.T, root, body string) aip2p.PublishResult {
+func publishSignedTestPost(t *testing.T, root, body string) corehaonews.PublishResult {
 	t.Helper()
 
-	identity, err := aip2p.NewAgentIdentity(
+	identity, err := corehaonews.NewAgentIdentity(
 		"agent://hao-news/test-writer",
 		"agent://demo/alice",
 		timestamp(2026, 3, 18, 12, 0, 0),
@@ -161,11 +161,11 @@ func publishSignedTestPost(t *testing.T, root, body string) aip2p.PublishResult 
 	if err != nil {
 		t.Fatalf("NewAgentIdentity() error = %v", err)
 	}
-	store, err := aip2p.OpenStore(filepath.Join(root, "store"))
+	store, err := corehaonews.OpenStore(filepath.Join(root, "store"))
 	if err != nil {
 		t.Fatalf("OpenStore() error = %v", err)
 	}
-	result, err := aip2p.PublishMessage(store, aip2p.MessageInput{
+	result, err := corehaonews.PublishMessage(store, corehaonews.MessageInput{
 		Kind:     "post",
 		Author:   "agent://demo/alice",
 		Channel:  "hao.news/world",

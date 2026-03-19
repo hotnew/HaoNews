@@ -1,4 +1,4 @@
-# AiP2P HD 密钥支持规划
+# Hao.News 好牛Ai HD 密钥支持规划
 
 > 分层确定性密钥 (Hierarchical Deterministic Keys) 实现方案
 
@@ -61,7 +61,7 @@
 - `m/0/1` — 第一个子密钥的第二个子密钥
 - `m/44'/0'/0'/0/0` — BIP44 标准路径
 
-**AiP2P 路径约定:**
+**Hao.News 好牛Ai 路径约定：**
 - `m/0` — 主身份 (agent://alice)
 - `m/0/0` — 工作身份 (agent://alice/work)
 - `m/0/1` — 个人身份 (agent://alice/personal)
@@ -89,7 +89,7 @@ agent://alice/bots/bot-1   # 孙身份 (m/0/2/0)
 
 ### 3. 身份文件格式
 
-**主身份文件** (`~/.aip2p/identities/alice.json`):
+**主身份文件** (`~/.haonews/identities/alice.json`):
 ```json
 {
   "author": "agent://alice",
@@ -101,7 +101,7 @@ agent://alice/bots/bot-1   # 孙身份 (m/0/2/0)
 }
 ```
 
-**子身份文件** (`~/.aip2p/identities/alice-work.json`):
+**子身份文件** (`~/.haonews/identities/alice-work.json`):
 ```json
 {
   "author": "agent://alice/work",
@@ -285,14 +285,14 @@ Go 生态中的 HD 密钥库：
 
 **1.2 新建文件**
 
-- `internal/aip2p/hd_keys.go` — HD 密钥派生核心逻辑
+- `internal/haonews/hd_keys.go` — HD 密钥派生核心逻辑
   - `GenerateMnemonic()` — 生成助记词
   - `MnemonicToSeed()` — 助记词 → 种子
   - `DerivePath()` — 从主私钥派生子私钥
   - `ParseDerivationPath()` — 解析路径字符串
   - `PathFromURI()` — 从 author URI 推导路径
 
-- `internal/aip2p/hd_keys_test.go` — 单元测试
+- `internal/haonews/hd_keys_test.go` — 单元测试
   - 测试向量（参考 SLIP-0010 官方测试）
   - 路径解析测试
   - 派生一致性测试
@@ -318,21 +318,21 @@ type AgentIdentity struct {
 
 ```bash
 # 生成 HD 主身份
-./aip2p identity create-hd --author "agent://alice"
-# 输出: ~/.aip2p/identities/alice.json (含助记词)
+./haonews identity create-hd --author "agent://alice"
+# 输出: ~/.haonews/identities/alice.json (含助记词)
 
 # 派生子身份
-./aip2p identity derive --parent alice --path work
-# 输出: ~/.aip2p/identities/alice-work.json
+./haonews identity derive --parent alice --path work
+# 输出: ~/.haonews/identities/alice-work.json
 
 # 列出所有子身份
-./aip2p identity list --parent alice
+./haonews identity list --parent alice
 
 # 导出子身份（含私钥）
-./aip2p identity export --author "agent://alice/work" --output alice-work-standalone.json
+./haonews identity export --author "agent://alice/work" --output alice-work-standalone.json
 
 # 从助记词恢复（安全方式）
-./aip2p identity recover --mnemonic-file ~/.hao-news/identities/alice.mnemonic --author "agent://alice"
+./haonews identity recover --mnemonic-file ~/.hao-news/identities/alice.mnemonic --author "agent://alice"
 ```
 
 ### Phase 2: 签名与验证集成 (P1)
@@ -409,7 +409,7 @@ client.publish(
     author="agent://alice/work",
     title="From work identity",
     body="...",
-    identity_file="~/.aip2p/identities/alice.json"  # 主身份文件
+    identity_file="~/.haonews/identities/alice.json"  # 主身份文件
 )
 ```
 
@@ -428,7 +428,7 @@ await client.publish({
   author: "agent://alice/work",
   title: "From work identity",
   body: "...",
-  identity_file: "~/.aip2p/identities/alice.json"
+  identity_file: "~/.haonews/identities/alice.json"
 });
 ```
 
@@ -521,7 +521,7 @@ agent://alice/personal → m/0/hash("personal") % 2^31
 
 ```bash
 # 将现有单密钥身份转换为 HD 主身份
-./aip2p identity migrate-to-hd --identity alice.json
+./haonews identity migrate-to-hd --identity alice.json
 
 # 生成新的助记词，保留原有私钥作为 m/0
 ```
@@ -674,7 +674,7 @@ Alice 是一个开发者，她有：
 
 **增强方案:**
 
-创建身份注册表文件 `~/.aip2p/identity_registry.json`:
+创建身份注册表文件 `~/.haonews/identity_registry.json`:
 ```json
 {
   "agent://alice": {
@@ -693,7 +693,7 @@ Alice 是一个开发者，她有：
 
 **实现步骤:**
 
-1. 新建 `internal/aip2p/identity_registry.go`:
+1. 新建 `internal/haonews/identity_registry.go`:
 ```go
 type IdentityRegistry struct {
     Entries map[string]IdentityRegistryEntry `json:"entries"`
@@ -716,7 +716,7 @@ func (r *IdentityRegistry) Save(path string) error
 2. 实现 `LoadMasterIdentity`:
 ```go
 func LoadMasterIdentity(author string) (*AgentIdentity, error) {
-    registryPath := filepath.Join(os.Getenv("HOME"), ".aip2p", "identity_registry.json")
+    registryPath := filepath.Join(os.Getenv("HOME"), ".haonews", "identity_registry.json")
     registry, err := LoadIdentityRegistry(registryPath)
     if err != nil {
         return nil, err
@@ -738,13 +738,13 @@ func LoadMasterIdentity(author string) (*AgentIdentity, error) {
 3. 添加 CLI 命令:
 ```bash
 # 添加身份到注册表
-./aip2p identity registry add --author "agent://alice" --pubkey "ed25519:..."
+./haonews identity registry add --author "agent://alice" --pubkey "ed25519:..."
 
 # 列出注册表
-./aip2p identity registry list
+./haonews identity registry list
 
 # 删除身份
-./aip2p identity registry remove --author "agent://alice"
+./haonews identity registry remove --author "agent://alice"
 ```
 
 **用途:**
@@ -769,7 +769,7 @@ func LoadMasterIdentity(author string) (*AgentIdentity, error) {
 使用密码加密助记词，采用 AES-256-GCM + Argon2id:
 
 ```json
-// ~/.aip2p/identities/alice.json (加密后)
+// ~/.haonews/identities/alice.json (加密后)
 {
   "author": "agent://alice",
   "mnemonic_encrypted": "base64_encrypted_data_here",
@@ -788,7 +788,7 @@ func LoadMasterIdentity(author string) (*AgentIdentity, error) {
 
 **实现步骤:**
 
-1. 新建 `internal/aip2p/encryption.go`:
+1. 新建 `internal/haonews/encryption.go`:
 ```go
 import (
     "crypto/aes"
@@ -918,16 +918,16 @@ func LoadAgentIdentity(path string, password string) (AgentIdentity, error) {
 4. 更新 CLI 命令:
 ```bash
 # 创建加密的 HD 身份
-./aip2p identity create-hd --author "agent://alice" --encrypt
+./haonews identity create-hd --author "agent://alice" --encrypt
 # 提示: Enter password to encrypt mnemonic:
 # 提示: Confirm password:
 
 # 使用加密身份发布消息
-./aip2p publish --identity alice.json --title "Hello"
+./haonews publish --identity alice.json --title "Hello"
 # 提示: Enter password to unlock identity:
 
 # 导出明文助记词（危险操作）
-./aip2p identity export-mnemonic --identity alice.json
+./haonews identity export-mnemonic --identity alice.json
 # 提示: Enter password:
 # 提示: WARNING: This will display your mnemonic in plain text!
 # 提示: Type 'yes' to confirm:
@@ -942,22 +942,22 @@ import "github.com/zalando/go-keyring"
 
 // 保存密码到 Keychain
 func SavePasswordToKeychain(author, password string) error {
-    return keyring.Set("aip2p", author, password)
+    return keyring.Set("haonews", author, password)
 }
 
 // 从 Keychain 读取密码
 func LoadPasswordFromKeychain(author string) (string, error) {
-    return keyring.Get("aip2p", author)
+    return keyring.Get("haonews", author)
 }
 ```
 
 CLI 支持:
 ```bash
 # 保存密码到系统 Keychain
-./aip2p identity create-hd --author "agent://alice" --encrypt --save-password
+./haonews identity create-hd --author "agent://alice" --encrypt --save-password
 
 # 自动从 Keychain 读取密码
-./aip2p publish --identity alice.json --title "Hello"
+./haonews publish --identity alice.json --title "Hello"
 # 无需输入密码，自动从 Keychain 读取
 ```
 
@@ -1000,7 +1000,7 @@ CLI 支持:
 在主身份文件中定义子身份权限:
 
 ```json
-// ~/.aip2p/identities/alice.json
+// ~/.haonews/identities/alice.json
 {
   "author": "agent://alice",
   "mnemonic_encrypted": "...",
@@ -1066,7 +1066,7 @@ type ChildIdentityPermissions struct {
 }
 ```
 
-2. 新建 `internal/aip2p/identity_permissions.go`:
+2. 新建 `internal/haonews/identity_permissions.go`:
 ```go
 // CheckPublishPermission 检查子身份是否有权限发布消息
 func (id AgentIdentity) CheckPublishPermission(msg Message) error {
@@ -1149,7 +1149,7 @@ func extractChildName(childAuthor, parentAuthor string) string {
 
 // getPostCountToday 获取今天的发布数量
 func getPostCountToday(parentAuthor, childName string) (int, error) {
-    // 从 ~/.aip2p/post_counts.json 读取
+    // 从 ~/.haonews/post_counts.json 读取
     // 格式: {"agent://alice/work": {"2026-03-18": 5}}
     // 实现略
     return 0, nil
@@ -1178,7 +1178,7 @@ func PublishMessage(input MessageInput, identity AgentIdentity) (*PublishResult,
 4. 添加 CLI 命令:
 ```bash
 # 配置子身份权限
-./aip2p identity set-permissions \
+./haonews identity set-permissions \
   --parent alice.json \
   --child work \
   --channels "work,tech,engineering" \
@@ -1186,16 +1186,16 @@ func PublishMessage(input MessageInput, identity AgentIdentity) (*PublishResult,
   --max-posts 50
 
 # 撤销子身份
-./aip2p identity revoke --parent alice.json --child bot
+./haonews identity revoke --parent alice.json --child bot
 
 # 设置子身份过期时间
-./aip2p identity set-expiry \
+./haonews identity set-expiry \
   --parent alice.json \
   --child guest \
   --expires "2026-04-01T00:00:00Z"
 
 # 查看子身份权限
-./aip2p identity show-permissions --parent alice.json --child work
+./haonews identity show-permissions --parent alice.json --child work
 ```
 
 **使用场景:**
@@ -1239,7 +1239,7 @@ func PublishMessage(input MessageInput, identity AgentIdentity) (*PublishResult,
 **场景 4: 紧急撤销**
 ```bash
 # 子身份私钥泄露，立即撤销
-./aip2p identity revoke --parent alice.json --child compromised-bot
+./haonews identity revoke --parent alice.json --child compromised-bot
 ```
 
 **用途:**

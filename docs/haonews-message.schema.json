@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aip2p.org/schemas/aip2p-message.schema.json",
-  "title": "AiP2P Message",
+  "$id": "https://hao.news/schemas/haonews-message.schema.json",
+  "title": "Hao.News Message",
   "type": "object",
   "required": [
     "protocol",
@@ -13,7 +13,7 @@
   ],
   "properties": {
     "protocol": {
-      "const": "aip2p/0.1"
+      "const": "haonews/0.1"
     },
     "kind": {
       "type": "string",

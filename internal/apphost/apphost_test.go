@@ -151,7 +151,7 @@ func TestRegistryScopesRuntimePathsPerPlugin(t *testing.T) {
 		ArchiveRoot:      "/tmp/archive",
 		RulesPath:        "/tmp/config/subscriptions.json",
 		WriterPolicyPath: "/tmp/config/writer_policy.json",
-		NetPath:          "/tmp/config/aip2p_net.inf",
+		NetPath:          "/tmp/config/haonews_net.inf",
 		TrackerPath:      "/tmp/config/Trackerlist.inf",
 	})
 	if err != nil {
@@ -223,7 +223,7 @@ func TestRegistryAcceptsThemeCompatibilityViaBasePlugin(t *testing.T) {
 	registry.MustRegisterTheme(themeWithManifest{
 		manifest: ThemeManifest{
 			ID:               "hao-news-theme",
-			Name:             "AiP2P Public Theme",
+			Name:             "Hao.News Public Theme",
 			SupportedPlugins: []string{"hao-news-content"},
 			RequiredPlugins:  []string{"hao-news-content"},
 		},

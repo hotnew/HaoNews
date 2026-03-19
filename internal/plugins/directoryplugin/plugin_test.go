@@ -39,7 +39,7 @@ func (testBasePlugin) Build(context.Context, apphost.Config, apphost.WebTheme) (
 type testTheme struct{}
 
 func (testTheme) Manifest() apphost.ThemeManifest {
-	return apphost.ThemeManifest{ID: "hao-news-theme", Name: "AiP2P Public Theme"}
+	return apphost.ThemeManifest{ID: "hao-news-theme", Name: "Hao.News Public Theme"}
 }
 
 func (testTheme) ParseTemplates(template.FuncMap) (*template.Template, error) {
@@ -52,7 +52,7 @@ func (testTheme) StaticFS() (fs.FS, error) {
 
 func TestLoadBuildsDelegatingPlugin(t *testing.T) {
 	root := t.TempDir()
-	writePluginFile(t, root, "aip2p.plugin.json", "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"hao-news-theme\"\n}\n")
+	writePluginFile(t, root, "haonews.plugin.json", "{\n  \"id\": \"sample-content\",\n  \"name\": \"Sample Content\",\n  \"base_plugin\": \"hao-news-content\",\n  \"default_theme\": \"hao-news-theme\"\n}\n")
 
 	plugin, err := Load(root, testResolver{plugin: testBasePlugin{}})
 	if err != nil {

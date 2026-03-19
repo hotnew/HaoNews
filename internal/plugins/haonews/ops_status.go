@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"hao.news/internal/aip2p"
+	"hao.news/internal/haonews"
 )
 
 func (a *App) nodeStatus(index Index) NodeStatus {
@@ -19,7 +19,7 @@ func (a *App) nodeStatus(index Index) NodeStatus {
 		storeTone = "warn"
 	}
 	torrentCount := 0
-	store := &aip2p.Store{TorrentDir: filepath.Join(a.storeRoot, "torrents")}
+	store := &haonews.Store{TorrentDir: filepath.Join(a.storeRoot, "torrents")}
 	if count, err := store.TorrentCount(); err == nil {
 		torrentCount = count
 	}
@@ -80,7 +80,7 @@ func (a *App) nodeStatus(index Index) NodeStatus {
 	}
 	networkIDValue := "not configured"
 	networkIDTone := "warn"
-	networkIDDetail := "Add a stable 256-bit network_id so same-name projects do not share the same AiP2P discovery space."
+	networkIDDetail := "Add a stable 256-bit network_id so same-name projects do not share the same Hao.News discovery space."
 	if netErr != nil {
 		networkIDValue = "config error"
 		networkIDTone = "bad"
@@ -88,7 +88,7 @@ func (a *App) nodeStatus(index Index) NodeStatus {
 	} else if netCfg.NetworkID != "" {
 		networkIDValue = netCfg.NetworkID
 		networkIDTone = "good"
-		networkIDDetail = "This node is pinned to one AiP2P network namespace even if other projects reuse the same human-readable name."
+		networkIDDetail = "This node is pinned to one Hao.News network namespace even if other projects reuse the same human-readable name."
 	}
 
 	summary := "offline"
@@ -102,7 +102,7 @@ func (a *App) nodeStatus(index Index) NodeStatus {
 	case len(netCfg.LibP2PBootstrap) > 0 && len(netCfg.DHTRouters) > 0:
 		summary = "bootstrap ready"
 		summaryTone = "good"
-		summaryDetail = "libp2p and BitTorrent discovery profiles are loaded. AiP2P Public is still in UI/index mode until the sync daemon is running."
+		summaryDetail = "libp2p and BitTorrent discovery profiles are loaded. Hao.News Public is still in UI/index mode until the sync daemon is running."
 	case len(netCfg.LibP2PBootstrap) > 0 || len(netCfg.DHTRouters) > 0:
 		summary = "partially ready"
 		summaryTone = "warn"
@@ -118,9 +118,9 @@ func (a *App) nodeStatus(index Index) NodeStatus {
 		Entries: []NodeStatusEntry{
 			{Label: "Overall", Value: summary, Detail: summaryDetail, Tone: summaryTone},
 			{Label: "HTTP UI", Value: "online " + a.httpListenAddr(), Detail: "The local dashboard is reachable on this node.", Tone: "good"},
-			{Label: "Bundle store", Value: fmt.Sprintf("%s · %d bundles", storeState, len(index.Bundles)), Detail: "AiP2P News is reading from the local immutable bundle store.", Tone: storeTone},
+			{Label: "Bundle store", Value: fmt.Sprintf("%s · %d bundles", storeState, len(index.Bundles)), Detail: "Hao.News News is reading from the local immutable bundle store.", Tone: storeTone},
 			{Label: "Torrent refs", Value: fmt.Sprintf("%d available", torrentCount), Detail: "Immutable torrent references currently mirrored on this node.", Tone: "good"},
-			{Label: "Sync daemon", Value: "not running", Detail: "Run `aip2p sync` to turn bootstrap configuration into a live network session.", Tone: "warn"},
+			{Label: "Sync daemon", Value: "not running", Detail: "Run `haonews sync` to turn bootstrap configuration into a live network session.", Tone: "warn"},
 			{Label: "libp2p pubsub", Value: "not running", Detail: "Pubsub topic joins start when the sync daemon is running.", Tone: "warn"},
 			{Label: "Discovery file", Value: discoveryValue, Detail: discoveryDetail, Tone: discoveryTone},
 			{Label: "Network ID", Value: networkIDValue, Detail: networkIDDetail, Tone: networkIDTone},
@@ -219,7 +219,7 @@ func buildLiveNodeStatus(index Index, storeState, storeTone string, torrentCount
 
 	mdnsValue := "enabled"
 	mdnsTone := "warn"
-	mdnsDetail := "mDNS is listening for AiP2P peers on the local network."
+	mdnsDetail := "mDNS is listening for Hao.News peers on the local network."
 	if !syncStatus.LibP2P.MDNS.Enabled {
 		mdnsValue = "disabled"
 		mdnsDetail = "Local network peer discovery is not active."
@@ -296,7 +296,7 @@ func buildLiveNodeStatus(index Index, storeState, storeTone string, torrentCount
 		Entries: []NodeStatusEntry{
 			{Label: "Overall", Value: summary, Detail: summaryDetail, Tone: summaryTone},
 			{Label: "HTTP UI", Value: "online " + listenAddr, Detail: "The local dashboard is reachable on this node.", Tone: "good"},
-			{Label: "Bundle store", Value: fmt.Sprintf("%s · %d bundles", storeState, len(index.Bundles)), Detail: "AiP2P News is reading from the local immutable bundle store.", Tone: storeTone},
+			{Label: "Bundle store", Value: fmt.Sprintf("%s · %d bundles", storeState, len(index.Bundles)), Detail: "Hao.News News is reading from the local immutable bundle store.", Tone: storeTone},
 			{Label: "Torrent refs", Value: fmt.Sprintf("%d available", torrentCount), Detail: "Immutable torrent references currently mirrored on this node.", Tone: "good"},
 			{Label: "Sync daemon", Value: syncDaemonValue, Detail: syncDaemonDetail, Tone: "good"},
 			{Label: "libp2p pubsub", Value: pubsubValue, Detail: pubsubDetail, Tone: pubsubTone},

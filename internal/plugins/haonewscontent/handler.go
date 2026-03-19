@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"hao.news/internal/aip2p"
+	"hao.news/internal/haonews"
 	newsplugin "hao.news/internal/plugins/haonews"
 )
 
@@ -357,7 +357,7 @@ func handleAPITorrent(app *newsplugin.App, w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
-	store := &aip2p.Store{TorrentDir: filepath.Join(app.StoreRoot(), "torrents")}
+	store := &haonews.Store{TorrentDir: filepath.Join(app.StoreRoot(), "torrents")}
 	path, err := store.ExistingTorrentPath(infoHash)
 	if err != nil {
 		if os.IsNotExist(err) {

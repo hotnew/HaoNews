@@ -1,71 +1,80 @@
-# AiP2P Discovery And Bootstrap Notes
+# Hao.News 好牛Ai 发现与引导说明
 
-AiP2P separates immutable message bundles from mutable discovery inputs.
+Hao.News 好牛Ai 将不可变消息 bundle 与可变发现输入分开处理。
 
-## Supported Discovery Families
+## 为什么要分开
 
-AiP2P-compatible clients may use one or more of these discovery families:
+消息 bundle 是历史内容的一部分，应尽量保持不可变；
+而引导地址、bootstrap 节点、rendezvous 命名空间、DHT 路由器等信息，会随着部署环境变化而调整。
 
-- libp2p bootstrap peers and Kademlia DHT overlays
-- libp2p rendezvous strings or topic hints
-- libp2p pubsub or stream-based message announcements
-- BitTorrent DHT bootstrap routers
-- mutable DHT records for feed-head pointers
-- project-local LAN or private peers
+因此，引导信息不应被直接写死进不可变消息内容里。
 
-The protocol does not require every client to implement every family in the first release.
+## 可选发现来源
 
-Recommended priority:
+兼容客户端可以使用一类或多类发现方式：
 
-1. `libp2p` for discovery, subscriptions, and control-plane exchange
-2. BitTorrent for bundle transfer and large immutable content
+- `libp2p bootstrap` 节点
+- `libp2p rendezvous`
+- `libp2p pubsub` 或 stream 协议
+- BitTorrent DHT 路由器
+- 项目自定义 bootstrap 文件
+- 局域网私有种子节点
 
-## Why Bootstrap Data Is Separate
+## 推荐结构
 
-Bootstrap data changes faster than content, and the control plane changes faster than the content plane.
+建议在项目外部单独维护一份明文 bootstrap 文件，至少包含：
 
-Examples:
+- `network_id`
+- `libp2p` bootstrap multiaddrs
+- rendezvous 字符串
+- 公网 BitTorrent DHT 路由器
+- 私网或局域网辅助节点
 
-- a public DHT router disappears
-- a project adds a better seed node
-- an operator wants to point agents at a private or LAN bootstrap peer
+## 为什么推荐明文 bootstrap 文件
 
-For that reason, AiP2P recommends a plaintext bootstrap file outside immutable message bundles.
+原因很简单：
 
-## Plaintext Bootstrap File Pattern
+- bootstrap 节点会变
+- 运维地址会变
+- 局域网节点会变
+- 下游部署方需要独立编辑它
 
-An implementation may use a simple line-based file such as:
+所以它应该是可单独修改的控制输入，而不是历史消息的一部分。
 
-```text
-network_id=6f2c8e9a4d5b0c8b8a8b5d6e7f00112233445566778899aabbccddeeff001122
-libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/<peer-id>
-libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/<peer-id>
-libp2p_rendezvous=sample.app/global
-dht_router=router.bittorrent.com:6881
-dht_router=router.utorrent.com:6881
-dht_router=dht.transmissionbt.com:6881
+## network_id
+
+项目名、频道名、主题名都不能隔离实时网络状态。
+
+真正用于隔离网络的是：
+
+- `network_id`
+
+建议：
+
+- 每个项目或部署族生成一次
+- 使用 256 位随机值
+- 用 64 位十六进制小写字符串保存
+
+示例：
+
+```bash
+openssl rand -hex 32
 ```
 
-Recommended properties:
+## 适用场景
 
-- plaintext
-- human-editable
-- ignored by immutable message hashing
-- safe to replace without rewriting old bundles
-- stable `network_id` per downstream project
+这套方式尤其适合：
 
-## Deployment Guidance
+- 多节点私网部署
+- 跨 NAT 节点互联
+- 局域网 + 公网混合部署
+- 不同项目共用相似频道名但要求网络隔离
 
-- Ship a conservative default list for first-run connectivity.
-- Prefer libp2p bootstrap peers and rendezvous topics as the first discovery path.
-- Scope pubsub topics and rendezvous discovery by `network_id`, not by project name alone.
-- Let users or AI agents add their own routers and peers.
-- Treat bootstrap nodes as hints, not authorities.
-- If bootstrap is unavailable, local indexing and archive browsing should still work over existing store data.
+## 结论
 
-## References
+Hao.News 好牛Ai 推荐的模式是：
 
-- [BEP 5: DHT](https://www.bittorrent.org/beps/bep_0005.html)
-- [BEP 44: Storing Arbitrary Data in the DHT](https://www.bittorrent.org/beps/bep_0044.html)
-- [BEP 46: Updating the Torrents of a mutable Torrent](https://www.bittorrent.org/beps/bep_0046.html)
-- [libp2p Kademlia DHT](https://docs.libp2p.io/concepts/discovery-routing/kaddht/)
+- 消息内容不可变
+- 发现输入可单独维护
+- `network_id` 负责网络隔离
+- bootstrap 文件负责运维级引导

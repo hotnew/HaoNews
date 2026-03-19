@@ -1,33 +1,33 @@
 package newsplugin
 
-import "hao.news/internal/aip2p"
+import "hao.news/internal/haonews"
 
-func (a *App) CreditBalance(author string) (aip2p.CreditBalance, error) {
-	store, err := aip2p.OpenCreditStore(a.storeRoot)
+func (a *App) CreditBalance(author string) (haonews.CreditBalance, error) {
+	store, err := haonews.OpenCreditStore(a.storeRoot)
 	if err != nil {
-		return aip2p.CreditBalance{}, err
+		return haonews.CreditBalance{}, err
 	}
 	return store.GetBalance(author), nil
 }
 
-func (a *App) CreditBalances() ([]aip2p.CreditBalance, error) {
-	store, err := aip2p.OpenCreditStore(a.storeRoot)
+func (a *App) CreditBalances() ([]haonews.CreditBalance, error) {
+	store, err := haonews.OpenCreditStore(a.storeRoot)
 	if err != nil {
 		return nil, err
 	}
 	return store.GetAllBalances()
 }
 
-func (a *App) CreditProofsByDate(date string) ([]aip2p.OnlineProof, error) {
-	store, err := aip2p.OpenCreditStore(a.storeRoot)
+func (a *App) CreditProofsByDate(date string) ([]haonews.OnlineProof, error) {
+	store, err := haonews.OpenCreditStore(a.storeRoot)
 	if err != nil {
 		return nil, err
 	}
 	return store.GetProofsByDate(date)
 }
 
-func (a *App) CreditProofsByAuthor(author, start, end string) ([]aip2p.OnlineProof, error) {
-	store, err := aip2p.OpenCreditStore(a.storeRoot)
+func (a *App) CreditProofsByAuthor(author, start, end string) ([]haonews.OnlineProof, error) {
+	store, err := haonews.OpenCreditStore(a.storeRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -35,23 +35,23 @@ func (a *App) CreditProofsByAuthor(author, start, end string) ([]aip2p.OnlinePro
 }
 
 func (a *App) CreditIntegrityIssues() ([]string, error) {
-	store, err := aip2p.OpenCreditStore(a.storeRoot)
+	store, err := haonews.OpenCreditStore(a.storeRoot)
 	if err != nil {
 		return nil, err
 	}
 	return store.ValidateBalanceIntegrity(), nil
 }
 
-func (a *App) CreditDailyStats(limit int) ([]aip2p.CreditDailyStat, error) {
-	store, err := aip2p.OpenCreditStore(a.storeRoot)
+func (a *App) CreditDailyStats(limit int) ([]haonews.CreditDailyStat, error) {
+	store, err := haonews.OpenCreditStore(a.storeRoot)
 	if err != nil {
 		return nil, err
 	}
 	return store.GetDailyStats(limit)
 }
 
-func (a *App) CreditWitnessRoleStats() ([]aip2p.CreditWitnessRoleStat, error) {
-	store, err := aip2p.OpenCreditStore(a.storeRoot)
+func (a *App) CreditWitnessRoleStats() ([]haonews.CreditWitnessRoleStat, error) {
+	store, err := haonews.OpenCreditStore(a.storeRoot)
 	if err != nil {
 		return nil, err
 	}

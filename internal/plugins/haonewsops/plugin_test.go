@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"hao.news/internal/aip2p"
 	"hao.news/internal/apphost"
+	corehaonews "hao.news/internal/haonews"
 	newsplugin "hao.news/internal/plugins/haonews"
-	"hao.news/internal/themes/haonews"
+	themehaonews "hao.news/internal/themes/haonews"
 )
 
 func TestPluginBuildServesNetworkPage(t *testing.T) {
@@ -47,7 +47,7 @@ func TestPluginBuildServesCreditPage(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	seedCreditProof(t, root, "agent://alice/credit/online", aip2p.AlignToWindow(time.Now().UTC()).Add(-10*time.Minute))
+	seedCreditProof(t, root, "agent://alice/credit/online", corehaonews.AlignToWindow(time.Now().UTC()).Add(-10*time.Minute))
 
 	site := buildOpsSiteAtRoot(t, root)
 	req := httptest.NewRequest(http.MethodGet, "/credit", nil)
@@ -76,8 +76,8 @@ func TestPluginBuildServesCreditAuthorView(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	seedCreditProof(t, root, "agent://alice/credit/online", aip2p.AlignToWindow(time.Now().UTC()).Add(-20*time.Minute))
-	seedCreditProof(t, root, "agent://alice/credit/online", aip2p.AlignToWindow(time.Now().UTC()).Add(-10*time.Minute))
+	seedCreditProof(t, root, "agent://alice/credit/online", corehaonews.AlignToWindow(time.Now().UTC()).Add(-20*time.Minute))
+	seedCreditProof(t, root, "agent://alice/credit/online", corehaonews.AlignToWindow(time.Now().UTC()).Add(-10*time.Minute))
 
 	site := buildOpsSiteAtRoot(t, root)
 	req := httptest.NewRequest(http.MethodGet, "/credit?author=agent://alice/credit/online&start=2026-03-01&end=2026-03-31", nil)
@@ -103,7 +103,7 @@ func TestPluginBuildServesCreditPagePagination(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	day := aip2p.AlignToWindow(time.Now().UTC()).Add(-10 * time.Minute)
+	day := corehaonews.AlignToWindow(time.Now().UTC()).Add(-10 * time.Minute)
 	seedCreditProof(t, root, "agent://alice/credit/online", day)
 	seedCreditProof(t, root, "agent://bob/credit/online", day)
 
@@ -133,8 +133,8 @@ func TestPluginBuildServesCreditBalanceAPI(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	seedCreditProof(t, root, "agent://alice/credit/online", aip2p.AlignToWindow(time.Now().UTC()).Add(-20*time.Minute))
-	seedCreditProof(t, root, "agent://alice/credit/online", aip2p.AlignToWindow(time.Now().UTC()).Add(-10*time.Minute))
+	seedCreditProof(t, root, "agent://alice/credit/online", corehaonews.AlignToWindow(time.Now().UTC()).Add(-20*time.Minute))
+	seedCreditProof(t, root, "agent://alice/credit/online", corehaonews.AlignToWindow(time.Now().UTC()).Add(-10*time.Minute))
 
 	site := buildOpsSiteAtRoot(t, root)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/credit/balance?author=agent://alice/credit/online", nil)
@@ -144,9 +144,9 @@ func TestPluginBuildServesCreditBalanceAPI(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var payload struct {
-		Scope   string              `json:"scope"`
-		Author  string              `json:"author"`
-		Balance aip2p.CreditBalance `json:"balance"`
+		Scope   string                    `json:"scope"`
+		Author  string                    `json:"author"`
+		Balance corehaonews.CreditBalance `json:"balance"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
@@ -163,7 +163,7 @@ func TestPluginBuildServesCreditProofsAPI(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	windowStart := aip2p.AlignToWindow(time.Now().UTC()).Add(-10 * time.Minute)
+	windowStart := corehaonews.AlignToWindow(time.Now().UTC()).Add(-10 * time.Minute)
 	proof := seedCreditProof(t, root, "agent://alice/credit/online", windowStart)
 
 	site := buildOpsSiteAtRoot(t, root)
@@ -176,7 +176,7 @@ func TestPluginBuildServesCreditProofsAPI(t *testing.T) {
 	var payload struct {
 		Scope      string                     `json:"scope"`
 		Date       string                     `json:"date"`
-		Proofs     []aip2p.OnlineProof        `json:"proofs"`
+		Proofs     []corehaonews.OnlineProof  `json:"proofs"`
 		Total      int                        `json:"total"`
 		Pagination newsplugin.PaginationState `json:"pagination"`
 	}
@@ -198,7 +198,7 @@ func TestPluginBuildServesCreditProofsAPIPagination(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	day := aip2p.AlignToWindow(time.Now().UTC()).Add(-10 * time.Minute)
+	day := corehaonews.AlignToWindow(time.Now().UTC()).Add(-10 * time.Minute)
 	seedCreditProof(t, root, "agent://alice/credit/online", day)
 	seedCreditProof(t, root, "agent://bob/credit/online", day)
 
@@ -210,7 +210,7 @@ func TestPluginBuildServesCreditProofsAPIPagination(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var payload struct {
-		Proofs     []aip2p.OnlineProof        `json:"proofs"`
+		Proofs     []corehaonews.OnlineProof  `json:"proofs"`
 		Total      int                        `json:"total"`
 		Pagination newsplugin.PaginationState `json:"pagination"`
 	}
@@ -232,8 +232,8 @@ func TestPluginBuildServesCreditStatsAPI(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	seedCreditProof(t, root, "agent://alice/credit/online", aip2p.AlignToWindow(time.Now().UTC()).Add(-20*time.Minute))
-	seedCreditProof(t, root, "agent://bob/credit/online", aip2p.AlignToWindow(time.Now().UTC()).Add(-10*time.Minute))
+	seedCreditProof(t, root, "agent://alice/credit/online", corehaonews.AlignToWindow(time.Now().UTC()).Add(-20*time.Minute))
+	seedCreditProof(t, root, "agent://bob/credit/online", corehaonews.AlignToWindow(time.Now().UTC()).Add(-10*time.Minute))
 
 	site := buildOpsSiteAtRoot(t, root)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/credit/stats", nil)
@@ -243,12 +243,12 @@ func TestPluginBuildServesCreditStatsAPI(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var payload struct {
-		Scope        string                        `json:"scope"`
-		Totals       map[string]any                `json:"totals"`
-		Balances     []aip2p.CreditBalance         `json:"balances"`
-		Issues       []string                      `json:"issues"`
-		Daily        []aip2p.CreditDailyStat       `json:"daily"`
-		WitnessRoles []aip2p.CreditWitnessRoleStat `json:"witness_roles"`
+		Scope        string                              `json:"scope"`
+		Totals       map[string]any                      `json:"totals"`
+		Balances     []corehaonews.CreditBalance         `json:"balances"`
+		Issues       []string                            `json:"issues"`
+		Daily        []corehaonews.CreditDailyStat       `json:"daily"`
+		WitnessRoles []corehaonews.CreditWitnessRoleStat `json:"witness_roles"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
@@ -290,40 +290,40 @@ func buildOpsSiteAtRoot(t *testing.T, root string) *apphost.Site {
 		ArchiveRoot:      filepath.Join(root, "archive"),
 		RulesPath:        filepath.Join(root, "config", "subscriptions.json"),
 		WriterPolicyPath: filepath.Join(root, "config", "writer_policy.json"),
-		NetPath:          filepath.Join(root, "config", "aip2p_net.inf"),
+		NetPath:          filepath.Join(root, "config", "haonews_net.inf"),
 		Project:          "hao.news",
 		Version:          "test",
 	}
-	site, err := Plugin{}.Build(context.Background(), cfg, haonews.Theme{})
+	site, err := Plugin{}.Build(context.Background(), cfg, themehaonews.Theme{})
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
 	return site
 }
 
-func seedCreditProof(t *testing.T, root, author string, windowStart time.Time) aip2p.OnlineProof {
+func seedCreditProof(t *testing.T, root, author string, windowStart time.Time) corehaonews.OnlineProof {
 	t.Helper()
 
-	store, err := aip2p.OpenCreditStore(filepath.Join(root, "store"))
+	store, err := corehaonews.OpenCreditStore(filepath.Join(root, "store"))
 	if err != nil {
 		t.Fatalf("OpenCreditStore() error = %v", err)
 	}
-	node, err := aip2p.NewAgentIdentity("agent://news/node-01", author, time.Now().UTC())
+	node, err := corehaonews.NewAgentIdentity("agent://news/node-01", author, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("NewAgentIdentity(node) error = %v", err)
 	}
-	witness, err := aip2p.NewAgentIdentity("agent://news/witness-01", "agent://witness/credit/online", time.Now().UTC())
+	witness, err := corehaonews.NewAgentIdentity("agent://news/witness-01", "agent://witness/credit/online", time.Now().UTC())
 	if err != nil {
 		t.Fatalf("NewAgentIdentity(witness) error = %v", err)
 	}
-	proof, err := aip2p.NewOnlineProof(node, windowStart, []string{"abc123"}, "hao-news-mainnet")
+	proof, err := corehaonews.NewOnlineProof(node, windowStart, []string{"abc123"}, "hao-news-mainnet")
 	if err != nil {
 		t.Fatalf("NewOnlineProof() error = %v", err)
 	}
-	if err := aip2p.SignProof(proof, node); err != nil {
+	if err := corehaonews.SignProof(proof, node); err != nil {
 		t.Fatalf("SignProof() error = %v", err)
 	}
-	if err := aip2p.AddWitnessSignature(proof, witness, "dht_neighbor"); err != nil {
+	if err := corehaonews.AddWitnessSignature(proof, witness, "dht_neighbor"); err != nil {
 		t.Fatalf("AddWitnessSignature() error = %v", err)
 	}
 	if err := store.SaveProof(*proof); err != nil {
