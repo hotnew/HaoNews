@@ -1,0 +1,8 @@
+{
+  "id": "hao-news-live",
+  "name": "Hao.News Live",
+  "version": "0.1.0",
+  "plugin_kind": "live",
+  "description": "Live room plugin for Hao.News with local room list, room detail pages, and JSON APIs.",
+  "default_theme": "hao-news-theme"
+}

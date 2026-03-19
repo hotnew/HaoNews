@@ -9,6 +9,7 @@ import (
 	haonewsarchive "hao.news/internal/plugins/haonewsarchive"
 	haonewscontent "hao.news/internal/plugins/haonewscontent"
 	haonewsgovernance "hao.news/internal/plugins/haonewsgovernance"
+	haonewslive "hao.news/internal/plugins/haonewslive"
 	haonewsops "hao.news/internal/plugins/haonewsops"
 	"hao.news/internal/themes/haonews"
 )
@@ -20,6 +21,7 @@ func DefaultRegistry() *apphost.Registry {
 	registry := apphost.NewRegistry()
 	registry.MustRegisterTheme(haonews.Theme{})
 	registry.MustRegisterPlugin(haonewscontent.Plugin{})
+	registry.MustRegisterPlugin(haonewslive.Plugin{})
 	registry.MustRegisterPlugin(haonewsarchive.Plugin{})
 	registry.MustRegisterPlugin(haonewsgovernance.Plugin{})
 	registry.MustRegisterPlugin(haonewsops.Plugin{})

@@ -3,6 +3,6 @@
   "name": "Hao.News Public App",
   "version": "0.1.0",
   "description": "The built-in Hao.News sample application composed from the hao-news-* plugin set and the hao-news-theme theme.",
-  "plugins": ["hao-news-content", "hao-news-governance", "hao-news-archive", "hao-news-ops"],
+  "plugins": ["hao-news-content", "hao-news-live", "hao-news-governance", "hao-news-archive", "hao-news-ops"],
   "theme": "hao-news-theme"
 }

@@ -1,0 +1,77 @@
+{{define "live.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Live</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard">
+        <p class="eyebrow">实时协作房间</p>
+        <div class="hero-heading">
+          <div>
+            <h1>Live</h1>
+            <p class="hero-copy">这里显示本地已知的 Live 房间。当前版本先展示本机创建、加入或归档过的房间记录，用于后续实时协作和归档回流。</p>
+          </div>
+          <div class="hero-actions">
+            <a class="button-link" href="/api/live/rooms">JSON 接口</a>
+            <a class="button-link button-link-muted" href="/">返回信息流</a>
+          </div>
+        </div>
+        <div class="hero-stats hero-stats-wide">
+          {{range .SummaryStats}}
+            <div class="hero-stat-card">
+              <span class="stat-label">{{.Label}}</span>
+              <strong>{{.Value}}</strong>
+            </div>
+          {{end}}
+        </div>
+      </header>
+
+      <main class="feed">
+        {{if .Rooms}}
+          <section class="directory-grid">
+            {{range .Rooms}}
+              <article class="directory-card">
+                <div class="card-meta">
+                  <span>{{.EventCount}} 条事件</span>
+                  {{if .Channel}}<span>{{.Channel}}</span>{{end}}
+                  {{if .Active}}<span>{{.ActiveParticipants}} 人在线</span>{{else if gt .TotalParticipants 0}}<span>当前离线</span>{{end}}
+                  {{if .Archive}}<span>已归档</span>{{end}}
+                </div>
+                <h2><a href="/live/{{.RoomID}}">{{if .Title}}{{.Title}}{{else}}{{.RoomID}}{{end}}</a></h2>
+                <p class="micro-copy">创建者：<code>{{.Creator}}</code></p>
+                <p class="micro-copy">房间 ID：<code>{{.RoomID}}</code></p>
+                {{if gt .TotalParticipants 0}}
+                  <p class="micro-copy">参与者：{{.TotalParticipants}}，在线：{{.ActiveParticipants}}</p>
+                {{end}}
+                {{if .Archive}}
+                  <p class="micro-copy">归档文章：<a href="{{.Archive.ViewerURL}}">{{.Archive.InfoHash}}</a></p>
+                {{end}}
+                <div class="story-links">
+                  <a href="/live/{{.RoomID}}">打开房间</a>
+                  <a href="/api/live/rooms/{{.RoomID}}">查看 JSON</a>
+                  {{if .Archive}}<a href="{{.Archive.ViewerURL}}">查看归档</a>{{end}}
+                </div>
+              </article>
+            {{end}}
+          </section>
+        {{else}}
+          <section class="empty-state">
+            <h2>暂无本地 Live 房间</h2>
+            <p>先执行 <code>haonews live host</code> 或 <code>haonews live join</code>，本页才会出现房间记录。</p>
+          </section>
+        {{end}}
+      </main>
+    </div>
+  </div>
+{{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

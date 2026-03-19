@@ -3,5 +3,5 @@
   "name": "Hao.News Public Theme",
   "version": "0.1.0",
   "description": "The built-in Hao.News public theme based on the current hao-news UI.",
-  "supported_plugins": ["hao-news-content", "hao-news-archive", "hao-news-governance", "hao-news-ops"]
+  "supported_plugins": ["hao-news-content", "hao-news-live", "hao-news-archive", "hao-news-governance", "hao-news-ops"]
 }

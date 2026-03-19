@@ -13,6 +13,7 @@ func TestOptionsForPluginsExpandsNavigationForCombinedApp(t *testing.T) {
 		Plugin: archivePluginID,
 		Plugins: []string{
 			contentPluginID,
+			livePluginID,
 			governancePluginID,
 			archivePluginID,
 			opsPluginID,
@@ -20,6 +21,9 @@ func TestOptionsForPluginsExpandsNavigationForCombinedApp(t *testing.T) {
 	})
 	if !options.ContentRoutes || !options.ContentAPIRoutes {
 		t.Fatal("expected content routes in combined app options")
+	}
+	if !options.LiveRoutes {
+		t.Fatal("expected live routes in combined app options")
 	}
 	if !options.ArchiveRoutes || !options.HistoryAPIRoutes {
 		t.Fatal("expected archive routes in combined app options")
@@ -48,13 +52,14 @@ func TestPageNavMatchesInstalledPluginSet(t *testing.T) {
 		Plugin: archivePluginID,
 		Plugins: []string{
 			contentPluginID,
+			livePluginID,
 			governancePluginID,
 			archivePluginID,
 			opsPluginID,
 		},
 	})}
 	combinedNav := combined.pageNav("/archive")
-	for _, name := range []string{"首页", "来源", "话题", "网络", "策略", "归档"} {
+	for _, name := range []string{"首页", "来源", "话题", "Live", "网络", "策略", "归档"} {
 		if !hasNavItem(combinedNav, name) {
 			t.Fatalf("combined nav missing %q", name)
 		}

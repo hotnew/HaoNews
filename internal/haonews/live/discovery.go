@@ -1,0 +1,173 @@
+package live
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"hao.news/internal/haonews"
+
+	kaddht "github.com/libp2p/go-libp2p-kad-dht"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/host"
+	mdns "github.com/libp2p/go-libp2p/p2p/discovery/mdns"
+	routingdisc "github.com/libp2p/go-libp2p/p2p/discovery/routing"
+	discutil "github.com/libp2p/go-libp2p/p2p/discovery/util"
+)
+
+type AnnouncementWatcher struct {
+	cancel    context.CancelFunc
+	done      chan struct{}
+	store     *LocalStore
+	host      host.Host
+	dht       *kaddht.IpfsDHT
+	mdns      mdns.Service
+	discovery *routingdisc.RoutingDiscovery
+	topic     *pubsub.Topic
+	sub       *pubsub.Subscription
+}
+
+func StartAnnouncementWatcher(parent context.Context, storeRoot, netPath string) (*AnnouncementWatcher, error) {
+	store, err := OpenLocalStore(storeRoot)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(netPath) != "" {
+		if err := haonews.EnsureDefaultNetworkBootstrapConfig(netPath); err != nil {
+			return nil, err
+		}
+	}
+	netCfg, err := haonews.LoadNetworkBootstrapConfig(netPath)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(parent)
+	h, dhtRuntime, mdnsService, discoveryRuntime, ps, err := startTransport(ctx, netCfg)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	topic, err := ps.Join(RoomAnnounceTopic())
+	if err != nil {
+		cancel()
+		_ = mdnsService.Close()
+		_ = dhtRuntime.Close()
+		_ = h.Close()
+		return nil, fmt.Errorf("join room announce topic: %w", err)
+	}
+	sub, err := topic.Subscribe()
+	if err != nil {
+		cancel()
+		_ = topic.Close()
+		_ = mdnsService.Close()
+		_ = dhtRuntime.Close()
+		_ = h.Close()
+		return nil, fmt.Errorf("subscribe room announce topic: %w", err)
+	}
+	watcher := &AnnouncementWatcher{
+		cancel:    cancel,
+		done:      make(chan struct{}),
+		store:     store,
+		host:      h,
+		dht:       dhtRuntime,
+		mdns:      mdnsService,
+		discovery: discoveryRuntime,
+		topic:     topic,
+		sub:       sub,
+	}
+	if discoveryRuntime != nil {
+		discutil.Advertise(ctx, discoveryRuntime, GlobalNamespace)
+		go watcher.findPeersLoop(ctx, GlobalNamespace)
+	}
+	go watcher.run(ctx)
+	return watcher, nil
+}
+
+func (w *AnnouncementWatcher) Close() error {
+	if w == nil {
+		return nil
+	}
+	w.cancel()
+	<-w.done
+	return nil
+}
+
+func (w *AnnouncementWatcher) run(ctx context.Context) {
+	defer close(w.done)
+	defer w.shutdown()
+	for {
+		msg, err := w.sub.Next(ctx)
+		if err != nil {
+			return
+		}
+		if msg.ReceivedFrom == w.host.ID() {
+			continue
+		}
+		var event LiveMessage
+		if err := json.Unmarshal(msg.Data, &event); err != nil {
+			continue
+		}
+		if err := VerifyMessage(event); err != nil || event.Type != TypeRoomAnnounce {
+			continue
+		}
+		info := roomInfoFromAnnouncement(event)
+		if strings.TrimSpace(info.RoomID) == "" {
+			continue
+		}
+		_ = w.store.SaveRoom(info)
+	}
+}
+
+func (w *AnnouncementWatcher) shutdown() {
+	if w.sub != nil {
+		w.sub.Cancel()
+	}
+	if w.topic != nil {
+		_ = w.topic.Close()
+	}
+	if w.mdns != nil {
+		_ = w.mdns.Close()
+	}
+	if w.dht != nil {
+		_ = w.dht.Close()
+	}
+	if w.host != nil {
+		_ = w.host.Close()
+	}
+}
+
+func (w *AnnouncementWatcher) findPeersLoop(ctx context.Context, namespace string) {
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+	for {
+		w.findPeersOnce(ctx, namespace)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (w *AnnouncementWatcher) findPeersOnce(ctx context.Context, namespace string) {
+	if w.discovery == nil || w.host == nil {
+		return
+	}
+	findCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	peers, err := w.discovery.FindPeers(findCtx, namespace)
+	if err != nil {
+		cancel()
+		return
+	}
+	for info := range peers {
+		if info.ID == "" || info.ID == w.host.ID() {
+			continue
+		}
+		connectCtx, connectCancel := context.WithTimeout(ctx, 5*time.Second)
+		_ = w.host.Connect(connectCtx, info)
+		connectCancel()
+	}
+	cancel()
+}

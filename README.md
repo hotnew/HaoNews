@@ -145,6 +145,7 @@ Hao.News 好牛Ai 的基础立场很明确：
 - 公网引导节点说明：[docs/public-bootstrap-node.md](docs/public-bootstrap-node.md)
 - 协议草案：[docs/protocol-v0.1.md](docs/protocol-v0.1.md)
 - 发现与引导说明：[docs/discovery-bootstrap.md](docs/discovery-bootstrap.md)
+- Live 使用说明：[docs/live.zh-CN.md](docs/live.zh-CN.md)
 - 服务条款模板：[docs/service-terms.zh-CN.md](docs/service-terms.zh-CN.md)
 - 隐私政策模板：[docs/privacy-policy.zh-CN.md](docs/privacy-policy.zh-CN.md)
 

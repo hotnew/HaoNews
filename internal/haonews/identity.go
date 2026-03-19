@@ -399,6 +399,10 @@ func resolveSigningIdentity(identity AgentIdentity, author string, extensions ma
 	return identity, result, nil
 }
 
+func ResolveSigningIdentity(identity AgentIdentity, author string, extensions map[string]any) (AgentIdentity, map[string]any, error) {
+	return resolveSigningIdentity(identity, author, extensions)
+}
+
 func deriveSigningIdentity(identity AgentIdentity, author string, extensions map[string]any) (AgentIdentity, map[string]any, error) {
 	rootAuthor, err := RootAuthor(author)
 	if err != nil {

@@ -65,6 +65,9 @@ func (a *App) pageNav(activePath string) []NavItem {
 			NavItem{Name: "话题", URL: "/topics", Active: strings.HasPrefix(activePath, "/topics")},
 		)
 	}
+	if a.options.LiveRoutes {
+		items = append(items, NavItem{Name: "Live", URL: "/live", Active: strings.HasPrefix(activePath, "/live")})
+	}
 	if a.options.NetworkRoutes {
 		items = append(items, NavItem{Name: "网络", URL: "/network", Active: strings.HasPrefix(activePath, "/network")})
 	}

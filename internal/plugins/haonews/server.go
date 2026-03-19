@@ -41,6 +41,7 @@ type App struct {
 type AppOptions struct {
 	ContentRoutes      bool
 	ContentAPIRoutes   bool
+	LiveRoutes         bool
 	ArchiveRoutes      bool
 	HistoryAPIRoutes   bool
 	NetworkRoutes      bool

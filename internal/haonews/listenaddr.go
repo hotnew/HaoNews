@@ -81,6 +81,10 @@ func resolveLibP2PListenAddrs(addrs []string) ([]string, error) {
 	return out, nil
 }
 
+func ResolveLibP2PListenAddrs(addrs []string) ([]string, error) {
+	return resolveLibP2PListenAddrs(addrs)
+}
+
 func parseLibP2PListenSpec(index int, raw string) (libp2pListenSpec, bool) {
 	trimmed := strings.Trim(strings.TrimSpace(raw), "/")
 	parts := strings.Split(trimmed, "/")

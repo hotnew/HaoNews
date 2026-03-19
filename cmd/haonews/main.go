@@ -19,6 +19,7 @@ import (
 	"hao.news/internal/builtin"
 	"hao.news/internal/extensions"
 	"hao.news/internal/haonews"
+	"hao.news/internal/haonews/live"
 	"hao.news/internal/host"
 	"hao.news/internal/scaffold"
 	"hao.news/internal/themes/directorytheme"
@@ -55,6 +56,8 @@ func run(args []string) error {
 		return runSync(args[1:])
 	case "credit":
 		return runCredit(args[1:])
+	case "live":
+		return runLive(args[1:])
 	case "serve":
 		return runServe(args[1:])
 	case "plugins":
@@ -198,6 +201,204 @@ func runCredit(args []string) error {
 	default:
 		return errors.New("usage: haonews credit <balance|proofs|stats|derive-key|clean|archive> [flags]")
 	}
+}
+
+func runLive(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: haonews live <host|join|list|archive|task-update> [flags]")
+	}
+	switch args[0] {
+	case "host":
+		return runLiveHost(args[1:])
+	case "join":
+		return runLiveJoin(args[1:])
+	case "list":
+		return runLiveList(args[1:])
+	case "archive":
+		return runLiveArchive(args[1:])
+	case "task-update":
+		return runLiveTaskUpdate(args[1:])
+	default:
+		return errors.New("usage: haonews live <host|join|list|archive|task-update> [flags]")
+	}
+}
+
+func runLiveHost(args []string) error {
+	fs := flag.NewFlagSet("live host", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	storeRoot := fs.String("store", ".haonews", "store root")
+	netPath := fs.String("net", "", "network bootstrap config path")
+	identityFile := fs.String("identity-file", "", "path to a signing identity JSON file")
+	author := fs.String("author", "", "author id override")
+	roomID := fs.String("room-id", "", "room id override")
+	title := fs.String("title", "", "live room title")
+	channel := fs.String("channel", "hao.news/live", "archive channel hint")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*identityFile) == "" {
+		return errors.New("identity-file is required")
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	info, err := live.Host(ctx, live.SessionOptions{
+		StoreRoot:    *storeRoot,
+		NetPath:      *netPath,
+		IdentityFile: *identityFile,
+		Author:       *author,
+		RoomID:       *roomID,
+		Title:        *title,
+		Channel:      *channel,
+	}, os.Stdin, os.Stdout)
+	if err != nil {
+		return err
+	}
+	return writeJSON(info)
+}
+
+func runLiveJoin(args []string) error {
+	fs := flag.NewFlagSet("live join", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	storeRoot := fs.String("store", ".haonews", "store root")
+	netPath := fs.String("net", "", "network bootstrap config path")
+	identityFile := fs.String("identity-file", "", "path to a signing identity JSON file")
+	author := fs.String("author", "", "author id override")
+	roomID := fs.String("room-id", "", "room id to join")
+	title := fs.String("title", "", "local title override")
+	channel := fs.String("channel", "hao.news/live", "archive channel hint")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*identityFile) == "" {
+		return errors.New("identity-file is required")
+	}
+	if strings.TrimSpace(*roomID) == "" {
+		return errors.New("room-id is required")
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	info, err := live.Join(ctx, live.SessionOptions{
+		StoreRoot:    *storeRoot,
+		NetPath:      *netPath,
+		IdentityFile: *identityFile,
+		Author:       *author,
+		RoomID:       *roomID,
+		Title:        *title,
+		Channel:      *channel,
+	}, os.Stdin, os.Stdout)
+	if err != nil {
+		return err
+	}
+	return writeJSON(info)
+}
+
+func runLiveList(args []string) error {
+	fs := flag.NewFlagSet("live list", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	storeRoot := fs.String("store", ".haonews", "store root")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	rooms, err := live.List(*storeRoot)
+	if err != nil {
+		return err
+	}
+	if rooms == nil {
+		rooms = []live.RoomSummary{}
+	}
+	return writeJSON(rooms)
+}
+
+func runLiveArchive(args []string) error {
+	fs := flag.NewFlagSet("live archive", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	storeRoot := fs.String("store", ".haonews", "store root")
+	identityFile := fs.String("identity-file", "", "path to a signing identity JSON file")
+	author := fs.String("author", "", "author id override")
+	roomID := fs.String("room-id", "", "room id to archive")
+	channel := fs.String("channel", "hao.news/live", "archive channel")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*identityFile) == "" {
+		return errors.New("identity-file is required")
+	}
+	if strings.TrimSpace(*roomID) == "" {
+		return errors.New("room-id is required")
+	}
+	result, err := live.Archive(live.ArchiveOptions{
+		StoreRoot:    *storeRoot,
+		IdentityFile: *identityFile,
+		Author:       *author,
+		RoomID:       *roomID,
+		Channel:      *channel,
+	})
+	if err != nil {
+		return err
+	}
+	return writeJSON(result)
+}
+
+func runLiveTaskUpdate(args []string) error {
+	fs := flag.NewFlagSet("live task-update", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	storeRoot := fs.String("store", ".haonews", "store root")
+	netPath := fs.String("net", "", "network bootstrap config path")
+	identityFile := fs.String("identity-file", "", "path to a signing identity JSON file")
+	author := fs.String("author", "", "author id override")
+	roomID := fs.String("room-id", "", "room id")
+	taskID := fs.String("task-id", "", "task id")
+	statusValue := fs.String("status", "", "task status")
+	description := fs.String("description", "", "task description")
+	assignedTo := fs.String("assigned-to", "", "comma-separated assignees")
+	progress := fs.Int("progress", -1, "task progress percent")
+	channel := fs.String("channel", "hao.news/live", "archive channel hint")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*identityFile) == "" {
+		return errors.New("identity-file is required")
+	}
+	if strings.TrimSpace(*roomID) == "" {
+		return errors.New("room-id is required")
+	}
+	metadata := map[string]any{}
+	if strings.TrimSpace(*taskID) != "" {
+		metadata["task_id"] = strings.TrimSpace(*taskID)
+	}
+	if strings.TrimSpace(*statusValue) != "" {
+		metadata["status"] = strings.TrimSpace(*statusValue)
+	}
+	if strings.TrimSpace(*description) != "" {
+		metadata["description"] = strings.TrimSpace(*description)
+	}
+	if values := splitCSV(*assignedTo); len(values) > 0 {
+		metadata["assigned_to"] = values
+	}
+	if *progress >= 0 {
+		metadata["progress"] = *progress
+	}
+	if len(metadata) == 0 {
+		return errors.New("at least one task-update field is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	info, err := live.PublishTaskUpdate(ctx, live.SessionOptions{
+		StoreRoot:    *storeRoot,
+		NetPath:      *netPath,
+		IdentityFile: *identityFile,
+		Author:       *author,
+		RoomID:       *roomID,
+		Channel:      *channel,
+	}, metadata)
+	if err != nil {
+		return err
+	}
+	return writeJSON(map[string]any{
+		"room":     info,
+		"metadata": metadata,
+		"type":     live.TypeTaskUpdate,
+	})
 }
 
 func runIdentityRegistry(args []string) error {
@@ -1661,7 +1862,7 @@ func writeJSON(v any) error {
 }
 
 func usageError() error {
-	return errors.New("usage: haonews <identity|credit|publish|verify|show|sync|serve|plugins|themes|apps|create> [flags]")
+	return errors.New("usage: haonews <identity|credit|live|publish|verify|show|sync|serve|plugins|themes|apps|create> [flags]")
 }
 
 func loadJSONObject(inline, path string) (map[string]any, error) {

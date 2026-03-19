@@ -8,6 +8,7 @@ import (
 
 const (
 	contentPluginID    = "hao-news-content"
+	livePluginID       = "hao-news-live"
 	archivePluginID    = "hao-news-archive"
 	governancePluginID = "hao-news-governance"
 	opsPluginID        = "hao-news-ops"
@@ -68,6 +69,9 @@ func OptionsForPlugins(base AppOptions, cfg apphost.Config) AppOptions {
 	if _, ok := seen[contentPluginID]; ok {
 		out.ContentRoutes = true
 		out.ContentAPIRoutes = true
+	}
+	if _, ok := seen[livePluginID]; ok {
+		out.LiveRoutes = true
 	}
 	if _, ok := seen[archivePluginID]; ok {
 		out.ArchiveRoutes = true
