@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -28,6 +29,54 @@ import (
 
 type boolFlag interface {
 	IsBoolFlag() bool
+}
+
+type optionalBoolFlag struct {
+	set   bool
+	value bool
+}
+
+func (f *optionalBoolFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	if !f.set {
+		return ""
+	}
+	if f.value {
+		return "true"
+	}
+	return "false"
+}
+
+func (f *optionalBoolFlag) Set(value string) error {
+	if f == nil {
+		return errors.New("optional bool flag is nil")
+	}
+	if strings.TrimSpace(value) == "" {
+		f.set = true
+		f.value = true
+		return nil
+	}
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		return err
+	}
+	f.set = true
+	f.value = parsed
+	return nil
+}
+
+func (f *optionalBoolFlag) IsBoolFlag() bool {
+	return true
+}
+
+func (f *optionalBoolFlag) IsSet() bool {
+	return f != nil && f.set
+}
+
+func (f *optionalBoolFlag) Value() bool {
+	return f != nil && f.value
 }
 
 const identityOfflineBackupNotice = "Sensitive signing material was saved to the identity file. Back it up offline and do not share this file."
@@ -233,7 +282,8 @@ func runLiveHost(args []string) error {
 	roomID := fs.String("room-id", "", "room id override")
 	title := fs.String("title", "", "live room title")
 	channel := fs.String("channel", "hao.news/live", "archive channel hint")
-	autoArchive := fs.Bool("archive-on-exit", true, "publish archive automatically when the host exits")
+	var autoArchive optionalBoolFlag
+	fs.Var(&autoArchive, "archive-on-exit", "publish archive automatically when the host exits")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -251,7 +301,7 @@ func runLiveHost(args []string) error {
 		Title:        *title,
 		Channel:      *channel,
 		Role:         "host",
-		AutoArchive:  *autoArchive,
+		AutoArchive:  resolveLiveHostAutoArchive(&autoArchive),
 	}, os.Stdin, os.Stdout)
 	if err != nil {
 		return err
@@ -270,7 +320,8 @@ func runLiveJoin(args []string) error {
 	title := fs.String("title", "", "local title override")
 	channel := fs.String("channel", "hao.news/live", "archive channel hint")
 	role := fs.String("role", "participant", "join role: participant or viewer")
-	autoArchive := fs.Bool("archive-on-exit", false, "publish archive automatically when this node exits")
+	var autoArchive optionalBoolFlag
+	fs.Var(&autoArchive, "archive-on-exit", "publish archive automatically when this node exits")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -292,7 +343,7 @@ func runLiveJoin(args []string) error {
 		Title:        *title,
 		Channel:      *channel,
 		Role:         resolvedRole,
-		AutoArchive:  resolvedRole != "viewer" || *autoArchive,
+		AutoArchive:  resolveLiveJoinAutoArchive(resolvedRole, &autoArchive),
 	}, os.Stdin, os.Stdout)
 	if err != nil {
 		return err
@@ -309,6 +360,20 @@ func normalizeLiveJoinRole(role string) string {
 	default:
 		return "participant"
 	}
+}
+
+func resolveLiveHostAutoArchive(flag *optionalBoolFlag) bool {
+	if flag != nil && flag.IsSet() {
+		return flag.Value()
+	}
+	return true
+}
+
+func resolveLiveJoinAutoArchive(role string, flag *optionalBoolFlag) bool {
+	if flag != nil && flag.IsSet() {
+		return flag.Value()
+	}
+	return strings.TrimSpace(role) != "viewer"
 }
 
 func runLiveList(args []string) error {

@@ -92,6 +92,50 @@ func TestParseFlagSetInterspersedKeepsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestOptionalBoolFlagAndJoinAutoArchiveResolution(t *testing.T) {
+	var flagValue optionalBoolFlag
+	if flagValue.IsSet() {
+		t.Fatal("flag should start unset")
+	}
+	if resolveLiveJoinAutoArchive("participant", &flagValue) != true {
+		t.Fatal("participant default should auto-archive")
+	}
+	if resolveLiveJoinAutoArchive("viewer", &flagValue) != false {
+		t.Fatal("viewer default should not auto-archive")
+	}
+	if err := flagValue.Set("false"); err != nil {
+		t.Fatalf("Set(false) error = %v", err)
+	}
+	if !flagValue.IsSet() || flagValue.Value() != false {
+		t.Fatalf("flag after false = %#v", flagValue)
+	}
+	if resolveLiveJoinAutoArchive("participant", &flagValue) != false {
+		t.Fatal("explicit false should disable participant auto-archive")
+	}
+	if err := flagValue.Set(""); err != nil {
+		t.Fatalf("Set(empty) error = %v", err)
+	}
+	if !flagValue.Value() {
+		t.Fatal("empty bool set should resolve to true")
+	}
+	if resolveLiveJoinAutoArchive("viewer", &flagValue) != true {
+		t.Fatal("explicit true should enable viewer auto-archive")
+	}
+}
+
+func TestResolveLiveHostAutoArchive(t *testing.T) {
+	var flagValue optionalBoolFlag
+	if !resolveLiveHostAutoArchive(&flagValue) {
+		t.Fatal("host default should auto-archive")
+	}
+	if err := flagValue.Set("false"); err != nil {
+		t.Fatalf("Set(false) error = %v", err)
+	}
+	if resolveLiveHostAutoArchive(&flagValue) {
+		t.Fatal("host explicit false should disable auto-archive")
+	}
+}
+
 func TestRunPublishRequiresIdentityFile(t *testing.T) {
 	t.Parallel()
 
