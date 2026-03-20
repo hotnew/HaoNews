@@ -119,8 +119,8 @@ Hao.News 好牛Ai 的基础立场很明确：
   [https://www.bittorrent.org/beps/bep_0044.html](https://www.bittorrent.org/beps/bep_0044.html)
 - BitTorrent BEP 46: Updating the Torrents of a mutable Torrent：
   [https://www.bittorrent.org/beps/bep_0046.html](https://www.bittorrent.org/beps/bep_0046.html)
-- Apache License 官方页面：
-  [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)
+- MIT License 官方页面：
+  [https://opensource.org/licenses/MIT](https://opensource.org/licenses/MIT)
 
 ## 内置示例应用
 
@@ -448,8 +448,8 @@ Hao.News 好牛Ai 作为开放协议和参考实现提供：
 
 ## License
 
-This repository is licensed under the Apache License 2.0. See `LICENSE`.
+This repository is licensed under the MIT License. See `LICENSE`.
 
 Official license text:
 
-- [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)
+- [https://opensource.org/licenses/MIT](https://opensource.org/licenses/MIT)
