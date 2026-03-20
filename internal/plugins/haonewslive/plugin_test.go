@@ -150,10 +150,10 @@ func TestPluginBuildServesLiveRoomDetails(t *testing.T) {
 	if !strings.Contains(body, "任务分组") || !strings.Contains(body, "按状态") || !strings.Contains(body, "按负责人") {
 		t.Fatalf("expected task group panels in body, got %q", body)
 	}
-	if strings.Contains(body, "在线心跳") {
+	if strings.Contains(body, "<span>heartbeat</span>") {
 		t.Fatalf("expected heartbeats hidden by default, got %q", body)
 	}
-	if !strings.Contains(body, "显示心跳") || !strings.Contains(body, "关闭自动刷新") {
+	if !strings.Contains(body, "显示心跳") || !strings.Contains(body, "关闭自动更新") {
 		t.Fatalf("expected spectator controls in body, got %q", body)
 	}
 }

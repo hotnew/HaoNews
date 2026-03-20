@@ -5,7 +5,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>好牛Ai Live 房间</title>
-  {{if .AutoRefresh}}<meta http-equiv="refresh" content="5">{{end}}
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -75,9 +74,9 @@
           <p class="panel-label">旁观模式</p>
           <div class="facet-list-inline">
             <a class="facet-chip" href="/live/{{.Room.RoomID}}?show_heartbeats={{if .ShowHeartbeats}}0{{else}}1{{end}}&refresh={{if .AutoRefresh}}1{{else}}0{{end}}">{{if .ShowHeartbeats}}隐藏心跳{{else}}显示心跳{{end}}</a>
-            <a class="facet-chip" href="/live/{{.Room.RoomID}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}&refresh={{if .AutoRefresh}}0{{else}}1{{end}}">{{if .AutoRefresh}}关闭自动刷新{{else}}开启自动刷新{{end}}</a>
+            <a class="facet-chip" href="/live/{{.Room.RoomID}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}&refresh={{if .AutoRefresh}}0{{else}}1{{end}}">{{if .AutoRefresh}}关闭自动更新{{else}}开启自动更新{{end}}</a>
           </div>
-          <p class="micro-copy">旁观者无需身份或公钥。页面默认每 5 秒刷新一次，且默认隐藏心跳。</p>
+          <p class="micro-copy">旁观者无需身份或公钥。页面默认每 5 秒只更新聊天记录区域，且默认隐藏心跳和纯元数据控制事件。</p>
         </section>
 
         {{if .TaskSummaries}}
@@ -126,9 +125,13 @@
           </section>
         {{end}}
 
-        {{if .EventViews}}
-          <section class="panel panel-inline">
-            <p class="panel-label">聊天记录</p>
+        <section class="panel panel-inline">
+          <p class="panel-label">聊天记录</p>
+          <div
+            id="live-room-events"
+            data-api-path="/api/live/rooms/{{.Room.RoomID}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}"
+            data-auto-refresh="{{if .AutoRefresh}}1{{else}}0{{end}}">
+          {{if .EventViews}}
             <div class="live-event-window">
               {{range .EventViews}}
                 <article class="live-event-item">
@@ -162,17 +165,166 @@
                 </article>
               {{end}}
             </div>
-          </section>
-        {{else}}
-          <section class="empty-state">
-            <h2>暂无事件</h2>
-            <p>{{if .ShowHeartbeats}}房间记录存在，但当前还没有可显示的事件。{{else}}当前没有非心跳事件；如需查看在线心跳，可切换到“显示心跳”。{{end}}</p>
-          </section>
-        {{end}}
+          {{else}}
+            <section class="empty-state">
+              <h2>暂无事件</h2>
+              <p>{{if .ShowHeartbeats}}房间记录存在，但当前还没有可显示的事件。{{else}}当前没有非心跳事件；如需查看在线心跳，可切换到“显示心跳”。{{end}}</p>
+            </section>
+          {{end}}
+          </div>
+        </section>
       </main>
     </div>
   </div>
 {{template "sidebarScript" .}}
+<script>
+(() => {
+  const root = document.getElementById("live-room-events");
+  if (!root || root.dataset.autoRefresh !== "1") {
+    return;
+  }
+
+  const apiPath = root.dataset.apiPath;
+  if (!apiPath) {
+    return;
+  }
+
+  const renderFields = (fields) => {
+    if (!Array.isArray(fields) || fields.length === 0) {
+      return null;
+    }
+    const wrapper = document.createElement("div");
+    wrapper.className = "facet-list-inline";
+    for (const field of fields) {
+      const chip = document.createElement("span");
+      chip.className = "facet-chip";
+      chip.textContent = `${field.key}=${field.value}`;
+      wrapper.appendChild(chip);
+    }
+    return wrapper;
+  };
+
+  const renderTask = (task) => {
+    if (!task) {
+      return null;
+    }
+    const wrap = document.createElement("div");
+    const grid = document.createElement("div");
+    grid.className = "summary-grid";
+    const entries = [
+      ["任务 ID", task.task_id],
+      ["状态", task.status],
+      ["负责人", task.assigned_to],
+      ["进度", task.progress],
+    ];
+    for (const [label, value] of entries) {
+      if (!value) {
+        continue;
+      }
+      const item = document.createElement("div");
+      const statLabel = document.createElement("span");
+      statLabel.className = "stat-label";
+      statLabel.textContent = label;
+      const strong = document.createElement("strong");
+      strong.textContent = value;
+      item.appendChild(statLabel);
+      item.appendChild(strong);
+      grid.appendChild(item);
+    }
+    wrap.appendChild(grid);
+    if (task.description) {
+      const desc = document.createElement("p");
+      desc.className = "micro-copy";
+      desc.textContent = task.description;
+      wrap.appendChild(desc);
+    }
+    return wrap;
+  };
+
+  const renderEventViews = (eventViews) => {
+    const previousWindow = root.querySelector(".live-event-window");
+    const shouldStickToTop = !previousWindow || previousWindow.scrollTop < 96;
+    root.replaceChildren();
+    if (!Array.isArray(eventViews) || eventViews.length === 0) {
+      const empty = document.createElement("section");
+      empty.className = "empty-state";
+      const title = document.createElement("h2");
+      title.textContent = "暂无事件";
+      const copy = document.createElement("p");
+      copy.textContent = {{if .ShowHeartbeats}}"房间记录存在，但当前还没有可显示的事件。"{{else}}"当前没有非心跳事件；如需查看在线心跳，可切换到“显示心跳”。"{{end}};
+      empty.appendChild(title);
+      empty.appendChild(copy);
+      root.appendChild(empty);
+      return;
+    }
+
+    const windowEl = document.createElement("div");
+    windowEl.className = "live-event-window";
+    for (const event of eventViews) {
+      const article = document.createElement("article");
+      article.className = "live-event-item";
+
+      const meta = document.createElement("div");
+      meta.className = "card-meta";
+      for (const value of [event.type, event.timestamp, event.sender]) {
+        const span = document.createElement("span");
+        span.textContent = value || "";
+        meta.appendChild(span);
+      }
+      article.appendChild(meta);
+
+      const heading = document.createElement("h2");
+      heading.textContent = event.heading || "";
+      article.appendChild(heading);
+
+      if (event.note) {
+        const note = document.createElement("p");
+        note.className = "micro-copy";
+        note.textContent = event.note;
+        article.appendChild(note);
+      }
+
+      const task = renderTask(event.task);
+      if (task) {
+        article.appendChild(task);
+      }
+
+      const fields = renderFields(event.fields);
+      if (fields) {
+        article.appendChild(fields);
+      }
+
+      windowEl.appendChild(article);
+    }
+    root.appendChild(windowEl);
+    if (shouldStickToTop) {
+      windowEl.scrollTop = 0;
+    }
+  };
+
+  let lastSignature = "";
+  const update = async () => {
+    try {
+      const response = await fetch(apiPath, { headers: { "Accept": "application/json" }, cache: "no-store" });
+      if (!response.ok) {
+        return;
+      }
+      const payload = await response.json();
+      const eventViews = Array.isArray(payload.event_views) ? payload.event_views : [];
+      const signature = JSON.stringify(eventViews);
+      if (signature === lastSignature) {
+        return;
+      }
+      lastSignature = signature;
+      renderEventViews(eventViews);
+    } catch (_) {
+    }
+  };
+
+  update();
+  window.setInterval(update, 5000);
+})();
+</script>
 </body>
 </html>
 {{end}}

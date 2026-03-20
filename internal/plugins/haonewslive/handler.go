@@ -140,12 +140,12 @@ func handleAPILiveRoom(store *live.LocalStore, roomID string, w http.ResponseWri
 }
 
 func filterLiveEvents(events []live.LiveMessage, showHeartbeats bool) []live.LiveMessage {
-	if showHeartbeats {
-		return events
-	}
 	filtered := make([]live.LiveMessage, 0, len(events))
 	for _, event := range events {
-		if strings.TrimSpace(event.Type) == live.TypeHeartbeat {
+		if !showHeartbeats && strings.TrimSpace(event.Type) == live.TypeHeartbeat {
+			continue
+		}
+		if isMetadataOnlyControlEvent(event) {
 			continue
 		}
 		filtered = append(filtered, event)
@@ -207,7 +207,8 @@ func countActiveRooms(rooms []live.RoomSummary) int {
 
 func buildEventViews(events []live.LiveMessage) []liveEventView {
 	views := make([]liveEventView, 0, len(events))
-	for _, event := range events {
+	for idx := len(events) - 1; idx >= 0; idx-- {
+		event := events[idx]
 		view := liveEventView{
 			Type:      event.Type,
 			Timestamp: event.Timestamp,
@@ -224,6 +225,16 @@ func buildEventViews(events []live.LiveMessage) []liveEventView {
 		views = append(views, view)
 	}
 	return views
+}
+
+func isMetadataOnlyControlEvent(event live.LiveMessage) bool {
+	if strings.TrimSpace(event.Payload.Content) != "" {
+		return false
+	}
+	if buildTaskUpdateView(event.Payload.Metadata) != nil {
+		return false
+	}
+	return len(metadataFields(event.Payload.Metadata)) > 0
 }
 
 func buildTaskSummaries(events []live.LiveMessage) []liveTaskSummaryView {

@@ -783,11 +783,14 @@ body.sidebar-collapsed .page-shell {
 }
 
 .live-event-window {
-  max-height: 52rem;
+  height: min(34rem, 65vh);
+  min-height: 22rem;
   overflow-y: auto;
   display: grid;
   gap: 14px;
   padding-right: 6px;
+  align-content: start;
+  scroll-behavior: smooth;
 }
 
 .live-event-item {
