@@ -233,6 +233,9 @@ func dialableLibP2PAddrs(status SyncRuntimeStatus, host string) []string {
 }
 
 func dialableBitTorrentNodes(status SyncRuntimeStatus, host string) []string {
+	if !status.BitTorrentDHT.Enabled {
+		return nil
+	}
 	values := make([]string, 0, 1+len(status.BitTorrentDHT.ListenAddrs))
 	if value := rewriteBitTorrentListenForHost(strings.TrimSpace(status.BitTorrentDHT.ConfiguredListen), host); value != "" {
 		values = append(values, value)

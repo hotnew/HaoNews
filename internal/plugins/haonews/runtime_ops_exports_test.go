@@ -51,27 +51,17 @@ func TestPreferredAdvertiseHostKeepsExplicitLANRequestHost(t *testing.T) {
 func TestDialableBitTorrentNodesUsesPreferredAdvertiseHost(t *testing.T) {
 	t.Parallel()
 
-	prev := listLocalUnicastCandidates
-	listLocalUnicastCandidates = func() []localIPCandidate {
-		return []localIPCandidate{{IP: net.ParseIP("192.168.102.75"), InterfaceName: "en0"}}
-	}
-	t.Cleanup(func() {
-		listLocalUnicastCandidates = prev
-	})
-
 	status := SyncRuntimeStatus{
 		BitTorrentDHT: SyncBitTorrentStatus{
+			Enabled:          false,
 			ConfiguredListen: "0.0.0.0:50585",
 		},
 	}
 
 	host := PreferredAdvertiseHost(status, "127.0.0.1")
 	got := dialableBitTorrentNodes(status, host)
-	if len(got) != 1 {
-		t.Fatalf("len(got) = %d, want 1", len(got))
-	}
-	if got[0] != "192.168.102.75:50585" {
-		t.Fatalf("got[0] = %q, want LAN node", got[0])
+	if len(got) != 0 {
+		t.Fatalf("len(got) = %d, want 0 when bittorrent transport is disabled", len(got))
 	}
 }
 

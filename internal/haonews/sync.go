@@ -83,9 +83,6 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	if err := ensureLANPeer(opts.NetPath, defaultLANPeer); err != nil {
 		return fmt.Errorf("ensure lan peer: %w", err)
 	}
-	if err := ensureLANTorrentPeer(opts.NetPath, defaultLANPeer); err != nil {
-		return fmt.Errorf("ensure lan bt peer: %w", err)
-	}
 	netCfg, err := LoadNetworkBootstrapConfig(opts.NetPath)
 	if err != nil {
 		return fmt.Errorf("load network bootstrap config: %w", err)
@@ -98,46 +95,6 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	if err != nil {
 		return fmt.Errorf("load tracker list: %w", err)
 	}
-	dhtRouters, err := resolveEffectiveDHTRouters(ctx, netCfg)
-	if err != nil && logf != nil {
-		logf("resolve LAN BT/DHT peers: %v", err)
-	}
-
-	cfg := torrent.NewDefaultClientConfig()
-	cfg.DataDir = store.DataDir
-	cfg.Seed = opts.Seed
-	cfg.NoDefaultPortForwarding = true
-	cfg.DisableAcceptRateLimiting = true
-	cfg.DhtStartingNodes = func(network string) anacrolixdht.StartingNodesGetter {
-		return func() ([]anacrolixdht.Addr, error) {
-			return resolveDHTRouters(network, dhtRouters)
-		}
-	}
-	configuredBTListen := ""
-	switch {
-	case strings.TrimSpace(opts.ListenAddr) != "":
-		configuredBTListen = normalizeBitTorrentListen(opts.ListenAddr)
-	case strings.TrimSpace(netCfg.BitTorrentListen) != "":
-		configuredBTListen = normalizeBitTorrentListen(netCfg.BitTorrentListen)
-	}
-	if configuredBTListen != "" {
-		resolvedBTListen, err := resolveBitTorrentListenAddr(configuredBTListen)
-		if err != nil {
-			return fmt.Errorf("resolve bittorrent listen: %w", err)
-		}
-		cfg.SetListenAddr(resolvedBTListen)
-	}
-	client, err := torrent.NewClient(cfg)
-	if err != nil {
-		return fmt.Errorf("create torrent client: %w", err)
-	}
-	defer client.Close()
-	if err := bootstrapTorrentDHT(client, dhtRouters); err != nil && logf != nil {
-		logf("bootstrap torrent dht: %v", err)
-	}
-	if len(dhtRouters) > 0 {
-		client.AddDhtNodes(dhtRouters)
-	}
 
 	libp2pRuntime, err := startLibP2PRuntime(ctx, netCfg, store)
 	if err != nil {
@@ -146,22 +103,20 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	defer libp2pRuntime.Close()
 
 	runtime := &syncRuntime{
-		store:              store,
-		queuePath:          queuePath,
-		mode:               syncMode(opts.Once),
-		seed:               opts.Seed,
-		startedAt:          time.Now().UTC(),
-		torrentClient:      client,
-		libp2p:             libp2pRuntime,
-		netCfg:             netCfg,
-		trackers:           trackers,
-		subscriptions:      subscriptions,
-		announced:          make(map[string]struct{}),
-		announcedProofs:    make(map[string]struct{}),
-		seeded:             make(map[string]struct{}),
-		directTransfer:     opts.DirectTransfer,
-		directPeers:        make(map[string][]peer.ID),
-		configuredBTListen: configuredBTListen,
+		store:           store,
+		queuePath:       queuePath,
+		mode:            syncMode(opts.Once),
+		seed:            opts.Seed,
+		startedAt:       time.Now().UTC(),
+		libp2p:          libp2pRuntime,
+		netCfg:          netCfg,
+		trackers:        trackers,
+		subscriptions:   subscriptions,
+		announced:       make(map[string]struct{}),
+		announcedProofs: make(map[string]struct{}),
+		seeded:          make(map[string]struct{}),
+		directTransfer:  opts.DirectTransfer,
+		directPeers:     make(map[string][]peer.ID),
 	}
 	runtime.creditStore, err = OpenCreditStore(store.Root)
 	if err != nil {
@@ -190,9 +145,9 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 		logf("sync queue: %s", queuePath)
 		if netCfg.Exists {
 			logf("network bootstrap file: %s", netCfg.FileName())
-			logf("configured DHT routers: %d", len(dhtRouters))
 			logf("configured libp2p peers: %d", len(netCfg.LibP2PBootstrap))
 			logf("configured libp2p rendezvous namespaces: %d", len(netCfg.LibP2PRendezvous))
+			logf("bittorrent transport: disabled")
 		} else if strings.TrimSpace(opts.NetPath) != "" {
 			logf("network bootstrap file not found: %s", opts.NetPath)
 		}
@@ -204,9 +159,6 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	if opts.Once {
 		if err := runtime.probeLANAnchors(ctx, logf); err != nil && logf != nil {
 			logf("probe LAN anchors: %v", err)
-		}
-		if err := runtime.seedLocalTorrents(logf); err != nil && logf != nil {
-			logf("seed local torrents: %v", err)
 		}
 		if err := runtime.announceLocalBundles(ctx, logf); err != nil && logf != nil {
 			logf("announce local bundles: %v", err)
@@ -234,9 +186,6 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	for {
 		if err := runtime.maybeProbeLANAnchors(ctx, logf); err != nil && logf != nil {
 			logf("probe LAN anchors: %v", err)
-		}
-		if err := runtime.seedLocalTorrents(logf); err != nil && logf != nil {
-			logf("seed local torrents: %v", err)
 		}
 		if err := runtime.announceLocalBundles(ctx, logf); err != nil && logf != nil {
 			logf("announce local bundles: %v", err)
@@ -395,7 +344,7 @@ func (r *syncRuntime) writeStatus(ctx context.Context) error {
 		SyncActivity: activity,
 	}
 	status.LibP2P = r.libp2p.Status(ctx)
-	status.BitTorrentDHT = torrentStatus(r.torrentClient, effectiveDHTRouterCount(r.netCfg), r.configuredBTListen)
+	status.BitTorrentDHT = torrentStatus(nil, 0, "")
 	status.PubSub = r.pubsub.Status()
 	return writeSyncStatus(r.store, status)
 }
@@ -414,7 +363,7 @@ func (r *syncRuntime) processQueue(ctx context.Context, direct []string, timeout
 		logf("write sync status: %v", err)
 	}
 	for _, ref := range refs {
-		result := syncRef(ctx, r.torrentClient, r.store, ref, timeout, r.netCfg.LANPeers, r.trackers, r.subscriptions, r.directTransfer, r.libp2p, r.directPeerIDs(ref.InfoHash))
+		result := syncRef(ctx, nil, r.store, ref, timeout, r.netCfg.LANPeers, r.trackers, r.subscriptions, r.directTransfer, r.libp2p, r.directPeerIDs(ref.InfoHash))
 		if result.Status == "imported" && result.ContentDir != "" {
 			if err := r.importCreditBundle(result.ContentDir, logf); err != nil && logf != nil {
 				logf("import credit bundle: %v", err)
@@ -479,10 +428,7 @@ func (r *syncRuntime) announceLocalBundles(ctx context.Context, logf func(string
 	if r.pubsub == nil {
 		return nil
 	}
-	if err := ensureHistoryManifests(r.store, r.netCfg, r.torrentClient.ListenAddrs()); err != nil {
-		return err
-	}
-	if err := r.seedLocalTorrents(logf); err != nil {
+	if err := ensureHistoryManifests(r.store, r.netCfg, nil); err != nil {
 		return err
 	}
 	announcements, err := localAnnouncements(r.store)
@@ -496,7 +442,6 @@ func (r *syncRuntime) announceLocalBundles(ctx context.Context, logf func(string
 		if announcement.NetworkID == "" {
 			announcement.NetworkID = r.netCfg.NetworkID
 		}
-		announcement.Magnet = withPeerHints(announcement.Magnet, r.torrentClient.ListenAddrs(), r.netCfg.LANPeers)
 		alwaysPublish := strings.EqualFold(announcement.Kind, historyManifestKind)
 		if !alwaysPublish {
 			r.mu.Lock()
@@ -528,6 +473,9 @@ func (r *syncRuntime) announceLocalBundles(ctx context.Context, logf func(string
 }
 
 func (r *syncRuntime) seedLocalTorrents(logf func(string, ...any)) error {
+	if r == nil || r.torrentClient == nil {
+		return nil
+	}
 	return r.store.WalkTorrentFiles(func(infoHash, path string) error {
 		r.mu.Lock()
 		_, seen := r.seeded[infoHash]
@@ -859,13 +807,8 @@ func (r *syncRuntime) probeLANAnchors(ctx context.Context, logf func(string, ...
 	}
 
 	if len(r.netCfg.LANTorrentPeers) > 0 {
-		probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		routers, err := resolveLANTorrentRouters(probeCtx, r.netCfg)
-		cancel()
-		if err != nil {
-			errs = append(errs, err.Error())
-		} else if logf != nil {
-			logf("LAN BT anchors healthy: %d", len(routers))
+		if logf != nil {
+			logf("LAN BT anchors: disabled")
 		}
 	}
 
@@ -876,6 +819,14 @@ func (r *syncRuntime) probeLANAnchors(ctx context.Context, logf func(string, ...
 }
 
 func torrentStatus(client *torrent.Client, configuredRouters int, configuredListen string) SyncBitTorrentStatus {
+	if client == nil {
+		return SyncBitTorrentStatus{
+			Enabled:           false,
+			ConfiguredListen:  configuredListen,
+			ConfiguredRouters: configuredRouters,
+			LastError:         "disabled",
+		}
+	}
 	listenAddrs := make([]string, 0, len(client.ListenAddrs()))
 	for _, addr := range client.ListenAddrs() {
 		listenAddrs = append(listenAddrs, addr.String())
@@ -1443,8 +1394,6 @@ func syncRef(
 	defer cancel()
 
 	var (
-		t                  *torrent.Torrent
-		err                error
 		directAttempted    bool
 		directFailureNotes []string
 	)
@@ -1496,134 +1445,31 @@ func syncRef(
 			}
 		}
 	}
-	if ref.InfoHash != "" && hasLocalTorrent(store, ref.InfoHash) {
-		torrentPath, pathErr := store.ExistingTorrentPath(ref.InfoHash)
-		if pathErr != nil {
-			return SyncItemResult{
-				Ref:       ref.Raw,
-				InfoHash:  ref.InfoHash,
-				Status:    "failed",
-				Transport: "bittorrent",
-				Message:   fmt.Sprintf("locate existing torrent file: %v", pathErr),
-			}
+	contentDir, fallbackErr := fetchBundleFallback(runCtx, store, ref, lanPeers, rules.MaxBundleMB)
+	if fallbackErr == nil {
+		message := "bundle imported via HTTP fallback"
+		if directAttempted && len(directFailureNotes) > 0 {
+			message = "libp2p direct transfer failed; bundle imported via HTTP fallback"
 		}
-		t, err = addTorrentFileWithTrackers(client, torrentPath, trackers)
-		if err != nil {
-			return SyncItemResult{
-				Ref:       ref.Raw,
-				InfoHash:  ref.InfoHash,
-				Status:    "failed",
-				Transport: "bittorrent",
-				Message:   fmt.Sprintf("load existing torrent file: %v", err),
-			}
-		}
-	}
-	if t == nil {
-		t, err = addMagnetWithTrackers(client, ref.Magnet, trackers)
-		if err != nil {
-			return SyncItemResult{
-				Ref:       ref.Raw,
-				Status:    "failed",
-				Transport: "bittorrent",
-				Message:   fmt.Sprintf("add magnet: %v", err),
-			}
-		}
-	}
-
-	select {
-	case <-runCtx.Done():
-		path, fallbackErr := fetchTorrentFallback(ctx, store, ref, lanPeers)
-		if fallbackErr != nil {
-			return SyncItemResult{
-				Ref:       ref.Raw,
-				InfoHash:  ref.InfoHash,
-				Status:    "failed",
-				Transport: "bittorrent",
-				Message:   "timed out waiting for metadata; torrent fallback failed: " + fallbackErr.Error(),
-			}
-		}
-		t, err = addTorrentFileWithTrackers(client, path, trackers)
-		if err != nil {
-			return SyncItemResult{
-				Ref:       ref.Raw,
-				InfoHash:  ref.InfoHash,
-				Status:    "failed",
-				Transport: "bittorrent",
-				Message:   fmt.Sprintf("load fallback torrent file: %v", err),
-			}
-		}
-	case <-t.GotInfo():
-	}
-
-	infoHash := strings.ToLower(t.InfoHash().HexString())
-	if info := t.Info(); info != nil && !withinMaxBundleSize(info.TotalLength(), rules.MaxBundleMB) {
-		t.Drop()
 		return SyncItemResult{
-			Ref:       ref.Raw,
-			InfoHash:  infoHash,
-			Status:    "skipped",
-			Transport: "bittorrent",
-			Message:   fmt.Sprintf("bundle exceeds max_bundle_mb limit (%d MB)", rules.MaxBundleMB),
+			Ref:        ref.Raw,
+			InfoHash:   ref.InfoHash,
+			ContentDir: contentDir,
+			Status:     "imported",
+			Transport:  "http",
+			Message:    message,
 		}
 	}
-	t.DownloadAll()
-
-	select {
-	case <-runCtx.Done():
-		return SyncItemResult{
-			Ref:       ref.Raw,
-			InfoHash:  infoHash,
-			Status:    "failed",
-			Transport: "bittorrent",
-			Message:   "timed out waiting for bundle download",
-		}
-	case <-t.Complete().On():
-	}
-
-	contentDir := filepath.Join(store.DataDir, t.Name())
-	msg, _, err := LoadMessage(contentDir)
-	if err != nil {
-		return SyncItemResult{
-			Ref:       ref.Raw,
-			InfoHash:  infoHash,
-			Status:    "failed",
-			Transport: "bittorrent",
-			Message:   fmt.Sprintf("validate downloaded bundle: %v", err),
-		}
-	}
-	dayCounts := localBundleDayCounts(store, contentDir)
-	if !reserveDailyQuota(dayCounts, msg.CreatedAt, rules.MaxItemsPerDay) {
-		t.Drop()
-		_ = os.RemoveAll(contentDir)
-		_ = store.RemoveTorrent(infoHash)
-		return SyncItemResult{
-			Ref:       ref.Raw,
-			InfoHash:  infoHash,
-			Status:    "skipped",
-			Transport: "bittorrent",
-			Message:   fmt.Sprintf("bundle exceeds max_items_per_day limit (%d)", rules.MaxItemsPerDay),
-		}
-	}
-	if err := writeTorrentFile(store.TorrentPath(infoHash), t.Metainfo()); err != nil {
-		return SyncItemResult{
-			Ref:       ref.Raw,
-			InfoHash:  infoHash,
-			Status:    "failed",
-			Transport: "bittorrent",
-			Message:   fmt.Sprintf("write torrent file: %v", err),
-		}
-	}
-	message := "bundle downloaded and indexed in local store"
+	message := "http fallback failed: " + fallbackErr.Error()
 	if directAttempted && len(directFailureNotes) > 0 {
-		message = "libp2p direct transfer fell back to bittorrent; " + message
+		message = "libp2p direct transfer failed; " + message
 	}
 	return SyncItemResult{
-		Ref:        ref.Raw,
-		InfoHash:   infoHash,
-		ContentDir: contentDir,
-		Status:     "imported",
-		Transport:  "bittorrent",
-		Message:    message,
+		Ref:       ref.Raw,
+		InfoHash:  ref.InfoHash,
+		Status:    "failed",
+		Transport: "http",
+		Message:   message,
 	}
 }
 

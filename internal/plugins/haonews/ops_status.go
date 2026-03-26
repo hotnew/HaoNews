@@ -42,18 +42,9 @@ func (a *App) nodeStatus(index Index) NodeStatus {
 		discoveryTone = "good"
 		discoveryDetail = "Bootstrap profile is present on this node."
 	}
-	dhtValue := "not configured"
+	dhtValue := "disabled"
 	dhtTone := "warn"
-	dhtDetail := "Add dht_router entries to prepare BitTorrent-assisted discovery."
-	if netErr != nil {
-		dhtValue = "config error"
-		dhtTone = "bad"
-		dhtDetail = "BitTorrent router config could not be parsed."
-	} else if len(netCfg.DHTRouters) > 0 {
-		dhtValue = fmt.Sprintf("%d bootstrap routers configured", len(netCfg.DHTRouters))
-		dhtTone = "good"
-		dhtDetail = "Router list is ready. Live DHT traffic will come from the sync daemon."
-	}
+	dhtDetail := "BitTorrent transport is temporarily disabled. Hao.News now prefers libp2p plus HTTP fallback."
 	libp2pValue := "not configured"
 	libp2pTone := "warn"
 	libp2pDetail := "Add libp2p_bootstrap peers to prepare the live control plane."
@@ -99,14 +90,10 @@ func (a *App) nodeStatus(index Index) NodeStatus {
 		summary = "config error"
 		summaryTone = "bad"
 		summaryDetail = "hao_news_net.inf exists but could not be parsed."
-	case len(netCfg.LibP2PBootstrap) > 0 && len(netCfg.DHTRouters) > 0:
+	case len(netCfg.LibP2PBootstrap) > 0:
 		summary = "bootstrap ready"
 		summaryTone = "good"
-		summaryDetail = "libp2p and BitTorrent discovery profiles are loaded. Hao.News Public is still in UI/index mode until the sync daemon is running."
-	case len(netCfg.LibP2PBootstrap) > 0 || len(netCfg.DHTRouters) > 0:
-		summary = "partially ready"
-		summaryTone = "warn"
-		summaryDetail = "At least one transport profile is loaded, but the network bootstrap set is incomplete."
+		summaryDetail = "libp2p discovery is configured. Hao.News Public is still in UI/index mode until the sync daemon is running."
 	}
 	return NodeStatus{
 		Summary:       summary,
@@ -168,14 +155,14 @@ func buildLiveNodeStatus(index Index, storeState, storeTone string, torrentCount
 		summary = "backfill stalled"
 		summaryTone = "warn"
 		summaryDetail = fmt.Sprintf("Sync worker is alive, but queue refs have not moved for %s.", queueStallAge.Truncate(time.Second))
-	case syncStatus.LibP2P.ReachableBootstrap > 0 && syncStatus.BitTorrentDHT.GoodNodes > 0:
+	case syncStatus.LibP2P.ReachableBootstrap > 0:
 		summary = "online"
 		summaryTone = "good"
-		summaryDetail = "libp2p bootstrap peers are reachable and BitTorrent DHT has live nodes."
-	case syncStatus.LibP2P.ConnectedBootstrap > 0 || syncStatus.BitTorrentDHT.Nodes > 0:
+		summaryDetail = "libp2p bootstrap peers are reachable."
+	case syncStatus.LibP2P.ConnectedBootstrap > 0:
 		summary = "partial"
 		summaryTone = "warn"
-		summaryDetail = "At least one transport is online, but the full sync path is not yet healthy."
+		summaryDetail = "At least one libp2p path is online, but the full sync path is not yet healthy."
 	}
 
 	libp2pValue := fmt.Sprintf("%d/%d reachable · %d peers", syncStatus.LibP2P.ReachableBootstrap, syncStatus.LibP2P.ConfiguredBootstrap, syncStatus.LibP2P.ConnectedPeers)
@@ -195,15 +182,9 @@ func buildLiveNodeStatus(index Index, storeState, storeTone string, torrentCount
 		rendezvousTone = "good"
 	}
 
-	dhtValue := fmt.Sprintf("%d good / %d total nodes", syncStatus.BitTorrentDHT.GoodNodes, syncStatus.BitTorrentDHT.Nodes)
+	dhtValue := "disabled"
 	dhtTone := "warn"
-	dhtDetail := fmt.Sprintf("%d DHT servers, %d outstanding transactions.", syncStatus.BitTorrentDHT.Servers, syncStatus.BitTorrentDHT.OutstandingTransactions)
-	if syncStatus.BitTorrentDHT.LastError != "" {
-		dhtDetail = summarizeNetworkError(syncStatus.BitTorrentDHT.LastError, "BitTorrent DHT reported a transport problem.")
-	}
-	if syncStatus.BitTorrentDHT.GoodNodes > 0 {
-		dhtTone = "good"
-	}
+	dhtDetail := "BitTorrent transport is temporarily disabled. Sync now uses libp2p direct transfer and HTTP fallback."
 
 	pubsubValue := "disabled"
 	pubsubTone := "warn"

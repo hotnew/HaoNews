@@ -218,6 +218,28 @@ func locateBundleContentDir(store *Store, infoHash string) (string, error) {
 	return contentDir, nil
 }
 
+func BundleTarPayload(store *Store, infoHash string, maxBytes int64) ([]byte, error) {
+	if store == nil {
+		return nil, errors.New("store is required")
+	}
+	infoHash = normalizeInfoHash(infoHash)
+	if !isHexInfoHash(infoHash) {
+		return nil, errors.New("infohash must be 40 hex characters")
+	}
+	contentDir, err := locateBundleContentDir(store, infoHash)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := tarBundleDir(contentDir)
+	if err != nil {
+		return nil, err
+	}
+	if maxBytes > 0 && int64(len(payload)) > maxBytes {
+		return nil, fmt.Errorf("bundle tar payload too large: %d", len(payload))
+	}
+	return payload, nil
+}
+
 func writeBundleTransferRequest(w io.Writer, infoHash string) error {
 	infoHash = normalizeInfoHash(infoHash)
 	if !isHexInfoHash(infoHash) {

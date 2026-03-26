@@ -12,6 +12,7 @@ import (
 	"time"
 
 	libp2p "github.com/libp2p/go-libp2p"
+	crypto "github.com/libp2p/go-libp2p/core/crypto"
 	kaddht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -66,6 +67,11 @@ func startLibP2PRuntime(ctx context.Context, cfg NetworkBootstrapConfig, store *
 	}
 
 	hostOptions := []libp2p.Option{libp2p.Ping(true)}
+	hostKey, err := loadOrCreateLibP2PHostKey(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("load libp2p host key: %w", err)
+	}
+	hostOptions = append(hostOptions, libp2p.Identity(hostKey))
 	configuredListen := append([]string(nil), cfg.LibP2PListen...)
 	if len(configuredListen) > 0 {
 		resolvedListen, err := resolveLibP2PListenAddrs(configuredListen)
@@ -353,6 +359,51 @@ func knownGoodLibP2PPeerCachePath(cfg NetworkBootstrapConfig) string {
 		return ""
 	}
 	return filepath.Join(filepath.Dir(cfg.Path), "known_good_libp2p_peers.json")
+}
+
+func libp2pHostKeyPath(cfg NetworkBootstrapConfig) string {
+	if strings.TrimSpace(cfg.Path) == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(cfg.Path), "libp2p_host.key")
+}
+
+func loadOrCreateLibP2PHostKey(cfg NetworkBootstrapConfig) (crypto.PrivKey, error) {
+	path := libp2pHostKeyPath(cfg)
+	if path == "" {
+		priv, _, err := crypto.GenerateEd25519Key(nil)
+		return priv, err
+	}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		priv, err := crypto.UnmarshalPrivateKey(data)
+		if err == nil {
+			return priv, nil
+		}
+		backupPath := path + ".corrupt"
+		_ = os.Rename(path, backupPath)
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	priv, _, err := crypto.GenerateEd25519Key(nil)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := crypto.MarshalPrivateKey(priv)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, encoded, 0o600); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return nil, err
+	}
+	return priv, nil
 }
 
 func loadKnownGoodLibP2PPeerCache(cfg NetworkBootstrapConfig) (*knownGoodLibP2PPeerCache, error) {

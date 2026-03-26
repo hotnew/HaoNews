@@ -42,6 +42,9 @@ func newHandler(app *newsplugin.App, staticFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/torrents/", func(w http.ResponseWriter, r *http.Request) {
 		handleAPITorrent(app, w, r)
 	})
+	mux.HandleFunc("/api/bundles/", func(w http.ResponseWriter, r *http.Request) {
+		handleAPIBundle(app, w, r)
+	})
 	mux.HandleFunc("/api/sources", func(w http.ResponseWriter, r *http.Request) {
 		handleAPISources(app, w, r)
 	})
@@ -369,6 +372,32 @@ func handleAPITorrent(app *newsplugin.App, w http.ResponseWriter, r *http.Reques
 	}
 	w.Header().Set("Content-Type", "application/x-bittorrent")
 	http.ServeFile(w, r, path)
+}
+
+func handleAPIBundle(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
+	infoHash := newsplugin.PathValue("/api/bundles/", r.URL.Path)
+	infoHash = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(infoHash)), ".tar")
+	if infoHash == "" {
+		http.NotFound(w, r)
+		return
+	}
+	store := &haonews.Store{
+		DataDir:    filepath.Join(app.StoreRoot(), "data"),
+		TorrentDir: filepath.Join(app.StoreRoot(), "torrents"),
+	}
+	payload, err := haonews.BundleTarPayload(store, infoHash, 0)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", "inline; filename=\""+infoHash+".tar\"")
+	w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+	_, _ = w.Write(payload)
 }
 
 func handleAPISources(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {

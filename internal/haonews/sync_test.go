@@ -253,9 +253,6 @@ func TestProbeLANAnchorsWritesHealthCache(t *testing.T) {
 	if cache.entry("lan_peer", srv.URL).LastSuccessAt.IsZero() {
 		t.Fatal("expected lan_peer success to be cached")
 	}
-	if cache.entry("lan_bt_peer", srv.URL).LastSuccessAt.IsZero() {
-		t.Fatal("expected lan_bt_peer success to be cached")
-	}
 }
 
 func TestLoadTrackerListParsesDefaultStyleFile(t *testing.T) {

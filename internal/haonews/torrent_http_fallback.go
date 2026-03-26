@@ -3,6 +3,7 @@ package haonews
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -73,6 +74,86 @@ func fetchTorrentFallback(ctx context.Context, store *Store, ref SyncRef, lanPee
 	return "", lastErr
 }
 
+func fetchBundleFallback(ctx context.Context, store *Store, ref SyncRef, lanPeers []string, maxBundleMB int) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("store is required")
+	}
+	if ref.InfoHash == "" {
+		return "", fmt.Errorf("missing infohash for bundle fallback")
+	}
+	maxBytes := int64(maxBundleMB)
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxBundleMB
+	}
+	maxBytes *= 1024 * 1024
+	client := &http.Client{Timeout: 12 * time.Second}
+	var lastErr error
+	for _, endpoint := range candidateBundleURLs(ref, lanPeers) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("status %d from %s", resp.StatusCode, endpoint)
+			_ = resp.Body.Close()
+			continue
+		}
+		if resp.ContentLength > 0 && resp.ContentLength > maxBytes {
+			lastErr = fmt.Errorf("bundle tar too large from %s", endpoint)
+			_ = resp.Body.Close()
+			continue
+		}
+		payload, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+		closeErr := resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if closeErr != nil {
+			lastErr = closeErr
+			continue
+		}
+		if int64(len(payload)) > maxBytes {
+			lastErr = fmt.Errorf("bundle tar too large from %s", endpoint)
+			continue
+		}
+		contentDir, err := untarBundleToStore(payload, store)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		rebuiltInfoHash, err := rebuildTorrentForContentDir(store, contentDir)
+		if err != nil {
+			_ = os.RemoveAll(contentDir)
+			lastErr = err
+			continue
+		}
+		if rebuiltInfoHash != ref.InfoHash {
+			_ = os.RemoveAll(contentDir)
+			_ = store.RemoveTorrent(rebuiltInfoHash)
+			lastErr = fmt.Errorf("bundle infohash mismatch: got %s want %s", rebuiltInfoHash, ref.InfoHash)
+			continue
+		}
+		if _, _, err := LoadMessage(contentDir); err != nil {
+			_ = os.RemoveAll(contentDir)
+			_ = store.RemoveTorrent(ref.InfoHash)
+			lastErr = err
+			continue
+		}
+		return contentDir, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no bundle fallback candidates")
+	}
+	return "", lastErr
+}
+
 func candidateTorrentURLs(ref SyncRef, lanPeers []string) []string {
 	seen := make(map[string]struct{})
 	out := make([]string, 0)
@@ -82,6 +163,38 @@ func candidateTorrentURLs(ref SyncRef, lanPeers []string) []string {
 			return
 		}
 		value := "http://" + net.JoinHostPort(host, "51818") + "/api/torrents/" + ref.InfoHash + ".torrent"
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	for _, host := range lanPeers {
+		add(host)
+	}
+	if strings.TrimSpace(ref.Magnet) != "" {
+		if uri, err := url.Parse(ref.Magnet); err == nil {
+			for _, raw := range uri.Query()["x.pe"] {
+				host, _, err := net.SplitHostPort(raw)
+				if err != nil {
+					continue
+				}
+				add(host)
+			}
+		}
+	}
+	return out
+}
+
+func candidateBundleURLs(ref SyncRef, lanPeers []string) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0)
+	add := func(host string) {
+		host = normalizeTorrentHTTPHost(host)
+		if host == "" || !allowTorrentHTTPHost(host, lanPeers) {
+			return
+		}
+		value := "http://" + net.JoinHostPort(host, "51818") + "/api/bundles/" + ref.InfoHash + ".tar"
 		if _, ok := seen[value]; ok {
 			return
 		}
