@@ -83,12 +83,18 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	if err := ensureNetworkID(opts.NetPath, latestOrgNetworkID); err != nil {
 		return fmt.Errorf("ensure latest.org network id: %w", err)
 	}
-	if err := ensureLANPeer(opts.NetPath, defaultLANPeer); err != nil {
-		return fmt.Errorf("ensure lan peer: %w", err)
-	}
 	netCfg, err := LoadNetworkBootstrapConfig(opts.NetPath)
 	if err != nil {
 		return fmt.Errorf("load network bootstrap config: %w", err)
+	}
+	if netCfg.AllowsLANDiscovery() {
+		if err := ensureLANPeer(opts.NetPath, defaultLANPeer); err != nil {
+			return fmt.Errorf("ensure lan peer: %w", err)
+		}
+		netCfg, err = LoadNetworkBootstrapConfig(opts.NetPath)
+		if err != nil {
+			return fmt.Errorf("reload network bootstrap config: %w", err)
+		}
 	}
 	subscriptions, err := LoadSyncSubscriptions(opts.SubscriptionsPath)
 	if err != nil {

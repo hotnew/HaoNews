@@ -12,6 +12,12 @@ import (
 const latestOrgNetworkID = "b2090347cee0ff1a577b1101d4adbd664c309932d3c2578971c11997fdd2164e"
 const defaultLANPeer = "192.168.102.74"
 
+const (
+	networkModeLAN    = "lan"
+	networkModePublic = "public"
+	networkModeShared = "shared"
+)
+
 func defaultNetworkBootstrapConfig(path string) (string, error) {
 	libp2pPort, err := pickFreeTCPAndUDPPort()
 	if err != nil {
@@ -25,17 +31,21 @@ func defaultNetworkBootstrapConfig(path string) (string, error) {
 # Plaintext file loaded by --net %s
 #
 # Supported keys:
+#   network_mode=lan|public|shared
 #   network_id=<64 hex chars>
 #   libp2p_listen=/ip4/.../tcp/<port>
 #   bittorrent_listen=0.0.0.0:<port>
 #   lan_peer=<host-or-ip>
 #   lan_bt_peer=<host-or-ip>
+#   public_peer=<host-or-domain>
+#   relay_peer=<host-or-domain>
 #   libp2p_bootstrap=/dnsaddr/.../p2p/<peer-id>
 #   libp2p_rendezvous=latest.org/<topic>
 #   libp2p_transfer_max_size=<bytes>
 #   dht_router=host:port
 #
 # Generated on first start. Reuse these ports on later restarts unless you intentionally change them.
+network_mode=lan
 network_id=%s
 libp2p_listen=/ip4/0.0.0.0/tcp/%d
 libp2p_listen=/ip4/0.0.0.0/udp/%d/quic-v1
@@ -70,12 +80,15 @@ dht_router=dht.transmissionbt.com:6881
 type NetworkBootstrapConfig struct {
 	Path                  string
 	Exists                bool
+	NetworkMode           string
 	NetworkID             string
 	BitTorrentListen      string
 	LibP2PListen          []string
 	LibP2PTransferMaxSize int64
 	LANPeers              []string
 	LANTorrentPeers       []string
+	PublicPeers           []string
+	RelayPeers            []string
 	DHTRouters            []string
 	LibP2PBootstrap       []string
 	LibP2PRendezvous      []string
@@ -89,7 +102,7 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return NetworkBootstrapConfig{Path: path}, nil
+			return NetworkBootstrapConfig{Path: path, NetworkMode: networkModeLAN}, nil
 		}
 		return NetworkBootstrapConfig{}, err
 	}
@@ -100,6 +113,8 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 	seenListen := make(map[string]struct{})
 	seenLAN := make(map[string]struct{})
 	seenLANTorrent := make(map[string]struct{})
+	seenPublic := make(map[string]struct{})
+	seenRelay := make(map[string]struct{})
 	seenDHT := make(map[string]struct{})
 	seenLibP2P := make(map[string]struct{})
 	seenRendezvous := make(map[string]struct{})
@@ -118,6 +133,10 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 			continue
 		}
 		switch key {
+		case "network_mode":
+			if cfg.NetworkMode == "" {
+				cfg.NetworkMode = normalizeNetworkMode(value)
+			}
 		case "network_id":
 			if cfg.NetworkID == "" {
 				cfg.NetworkID = normalizeNetworkID(value)
@@ -150,6 +169,18 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 			}
 			seenLANTorrent[value] = struct{}{}
 			cfg.LANTorrentPeers = append(cfg.LANTorrentPeers, value)
+		case "public_peer", "public_http_peer", "public_sync_peer":
+			if _, ok := seenPublic[value]; ok {
+				continue
+			}
+			seenPublic[value] = struct{}{}
+			cfg.PublicPeers = append(cfg.PublicPeers, value)
+		case "relay_peer":
+			if _, ok := seenRelay[value]; ok {
+				continue
+			}
+			seenRelay[value] = struct{}{}
+			cfg.RelayPeers = append(cfg.RelayPeers, value)
 		case "dht_router":
 			if _, ok := seenDHT[value]; ok {
 				continue
@@ -170,7 +201,15 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 			cfg.LibP2PRendezvous = append(cfg.LibP2PRendezvous, value)
 		}
 	}
+	if cfg.NetworkMode == "" {
+		cfg.NetworkMode = networkModeLAN
+	}
 	return cfg, nil
+}
+
+func (c NetworkBootstrapConfig) AllowsLANDiscovery() bool {
+	mode := normalizeNetworkMode(c.NetworkMode)
+	return mode == "" || mode == networkModeLAN || mode == networkModeShared
 }
 
 func effectiveLibP2PTransferMaxSize(value int64) int64 {
@@ -221,6 +260,19 @@ func normalizeNetworkID(value string) string {
 	return value
 }
 
+func normalizeNetworkMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case networkModePublic:
+		return networkModePublic
+	case networkModeShared:
+		return networkModeShared
+	case networkModeLAN:
+		return networkModeLAN
+	default:
+		return ""
+	}
+}
+
 func ensureNetworkID(path, networkID string) error {
 	path = strings.TrimSpace(path)
 	networkID = normalizeNetworkID(networkID)
@@ -264,6 +316,9 @@ func ensureLANPeer(path, lanPeer string) error {
 	if err != nil {
 		return err
 	}
+	if !cfg.AllowsLANDiscovery() {
+		return nil
+	}
 	if len(cfg.LANPeers) > 0 {
 		return nil
 	}
@@ -289,6 +344,9 @@ func ensureLANTorrentPeer(path, lanPeer string) error {
 	cfg, err := LoadNetworkBootstrapConfig(path)
 	if err != nil {
 		return err
+	}
+	if !cfg.AllowsLANDiscovery() {
+		return nil
 	}
 	if len(cfg.LANTorrentPeers) > 0 {
 		return nil

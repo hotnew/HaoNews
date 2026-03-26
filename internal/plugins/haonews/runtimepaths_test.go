@@ -10,7 +10,8 @@ import (
 )
 
 func testDefaultLatestNetINF() (string, error) {
-	return fmt.Sprintf(`network_id=%s
+	return fmt.Sprintf(`network_mode=lan
+network_id=%s
 libp2p_listen=/ip4/0.0.0.0/tcp/41001
 libp2p_listen=/ip4/0.0.0.0/udp/41001/quic-v1
 bittorrent_listen=0.0.0.0:41002
@@ -148,12 +149,46 @@ func TestEnsureRuntimeLayoutCreatesDefaultConfigFiles(t *testing.T) {
 	if !strings.Contains(netText, "network_id="+latestOrgNetworkID) {
 		t.Fatalf("missing hao.news network id in net config: %q", netText)
 	}
+	if !strings.Contains(netText, "network_mode=lan\n") {
+		t.Fatalf("missing network_mode in net config: %q", netText)
+	}
 	trackerData, err := os.ReadFile(filepath.Join(root, "Trackerlist.inf"))
 	if err != nil {
 		t.Fatalf("ReadFile(Trackerlist.inf) error = %v", err)
 	}
 	if !strings.Contains(string(trackerData), "udp://tracker.opentrackr.org:1337/announce") {
 		t.Fatalf("missing default trackers in Trackerlist.inf: %q", string(trackerData))
+	}
+}
+
+func TestEnsureRuntimeLayoutPublicModeDoesNotAppendLANPeers(t *testing.T) {
+	previous := buildDefaultLatestNetINF
+	buildDefaultLatestNetINF = testDefaultLatestNetINF
+	defer func() { buildDefaultLatestNetINF = previous }()
+
+	root := t.TempDir()
+	store := filepath.Join(root, "haonews", ".haonews")
+	archive := filepath.Join(root, "archive")
+	rules := filepath.Join(root, "subscriptions.json")
+	writerPolicy := filepath.Join(root, "writer_policy.json")
+	netPath := filepath.Join(root, "hao_news_net.inf")
+	if err := os.MkdirAll(filepath.Dir(netPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	netText := "network_mode=public\nnetwork_id=" + latestOrgNetworkID + "\n"
+	if err := os.WriteFile(netPath, []byte(netText), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := ensureRuntimeLayout(store, archive, rules, writerPolicy, netPath); err != nil {
+		t.Fatalf("ensureRuntimeLayout() error = %v", err)
+	}
+	data, err := os.ReadFile(netPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if strings.Contains(string(data), "\nlan_peer=") || strings.Contains(string(data), "\nlan_bt_peer=") {
+		t.Fatalf("public mode should not append LAN peers: %q", string(data))
 	}
 }
 

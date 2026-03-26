@@ -123,16 +123,20 @@ func defaultLatestNetINF() (string, error) {
 # Plaintext file loaded by --net ~/.hao-news/hao_news_net.inf
 #
 # Supported keys:
+#   network_mode=lan|public|shared
 #   network_id=<64 hex chars>
 #   libp2p_listen=/ip4/.../tcp/<port>
 #   bittorrent_listen=0.0.0.0:<port>
 #   lan_peer=<host-or-ip>
 #   lan_bt_peer=<host-or-ip>
+#   public_peer=<host-or-domain>
+#   relay_peer=<host-or-domain>
 #   libp2p_bootstrap=/dnsaddr/.../p2p/<peer-id>
 #   libp2p_rendezvous=hao.news/<topic>
 #   dht_router=host:port
 #
 # Generated on first start. Reuse these ports on later restarts unless you intentionally change them.
+network_mode=lan
 network_id=%s
 libp2p_listen=/ip4/0.0.0.0/tcp/%d
 libp2p_listen=/ip4/0.0.0.0/udp/%d/quic-v1
@@ -344,6 +348,9 @@ func appendLANPeerIfMissing(path, lanPeer string) error {
 	if err != nil {
 		return err
 	}
+	if !cfg.AllowsLANDiscovery() {
+		return nil
+	}
 	if len(cfg.LANPeers) > 0 {
 		return nil
 	}
@@ -369,6 +376,9 @@ func appendLANTorrentPeerIfMissing(path, lanPeer string) error {
 	cfg, err := LoadNetworkBootstrapConfig(path)
 	if err != nil {
 		return err
+	}
+	if !cfg.AllowsLANDiscovery() {
+		return nil
 	}
 	if len(cfg.LANTorrentPeers) > 0 {
 		return nil

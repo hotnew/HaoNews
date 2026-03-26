@@ -107,6 +107,7 @@ func TestLoadNetworkBootstrapConfig(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "haonews_net.inf")
 	content := `network_id=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+network_mode=shared
 dht_router=router.bittorrent.com:6881
 dht_router=router.utorrent.com:6881
 libp2p_transfer_max_size=123456
@@ -116,6 +117,8 @@ lan_peer=192.168.102.75
 lan_bt_peer=192.168.102.74
 lan_bt_peer=192.168.102.76
 lan_bt_peer=192.168.102.75
+public_peer=ai.jie.news
+relay_peer=relay.jie.news
 libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -137,11 +140,23 @@ libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVw
 	if cfg.NetworkID == "" {
 		t.Fatal("expected network id to load")
 	}
+	if cfg.NetworkMode != networkModeShared {
+		t.Fatalf("network mode = %q, want shared", cfg.NetworkMode)
+	}
 	if len(cfg.LANPeers) != 3 {
 		t.Fatalf("lan peers = %d, want 3", len(cfg.LANPeers))
 	}
 	if len(cfg.LANTorrentPeers) != 3 {
 		t.Fatalf("lan bt peers = %d, want 3", len(cfg.LANTorrentPeers))
+	}
+	if got := len(cfg.PublicPeers); got != 1 || cfg.PublicPeers[0] != "ai.jie.news" {
+		t.Fatalf("public peers = %#v", cfg.PublicPeers)
+	}
+	if got := len(cfg.RelayPeers); got != 1 || cfg.RelayPeers[0] != "relay.jie.news" {
+		t.Fatalf("relay peers = %#v", cfg.RelayPeers)
+	}
+	if !cfg.AllowsLANDiscovery() {
+		t.Fatal("shared mode should allow LAN discovery")
 	}
 }
 

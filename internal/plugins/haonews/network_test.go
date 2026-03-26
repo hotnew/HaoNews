@@ -12,6 +12,7 @@ func TestLoadNetworkBootstrapConfig(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "hao_news_net.inf")
 	content := `# default bootstrap nodes
+network_mode=public
 network_id=2c2d6cf7b255ba20d6ad01135654933851b02bd00c65c2a6a54b97ab56590475
 bittorrent_listen=0.0.0.0:51413
 libp2p_listen=/ip4/0.0.0.0/tcp/4001
@@ -22,6 +23,8 @@ lan_peer=192.168.102.75
 lan_bt_peer=192.168.102.74
 lan_bt_peer=192.168.102.76
 lan_bt_peer=192.168.102.75
+public_peer=ai.jie.news
+relay_peer=relay.jie.news
 dht_router=router.bittorrent.com:6881
 dht_router=router.utorrent.com:6881
 dht_router=router.bittorrent.com:6881
@@ -52,6 +55,9 @@ libp2p_rendezvous=hao.news/global
 	if cfg.NetworkID != latestOrgNetworkID {
 		t.Fatalf("network id = %q", cfg.NetworkID)
 	}
+	if cfg.NetworkMode != networkModePublic {
+		t.Fatalf("network mode = %q, want public", cfg.NetworkMode)
+	}
 	if got := len(cfg.LibP2PListen); got != 2 {
 		t.Fatalf("libp2p listen = %d, want 2", got)
 	}
@@ -61,8 +67,17 @@ libp2p_rendezvous=hao.news/global
 	if got := len(cfg.LANTorrentPeers); got != 3 {
 		t.Fatalf("lan bt peers = %d, want 3", got)
 	}
+	if got := len(cfg.PublicPeers); got != 1 || cfg.PublicPeers[0] != "ai.jie.news" {
+		t.Fatalf("public peers = %#v", cfg.PublicPeers)
+	}
+	if got := len(cfg.RelayPeers); got != 1 || cfg.RelayPeers[0] != "relay.jie.news" {
+		t.Fatalf("relay peers = %#v", cfg.RelayPeers)
+	}
 	if cfg.FileName() != "hao_news_net.inf" {
 		t.Fatalf("file name = %q, want hao_news_net.inf", cfg.FileName())
+	}
+	if cfg.AllowsLANDiscovery() {
+		t.Fatal("public mode should not allow implicit LAN discovery")
 	}
 }
 
@@ -75,5 +90,8 @@ func TestLoadNetworkBootstrapConfigMissingFileReturnsEmpty(t *testing.T) {
 	}
 	if len(cfg.DHTRouters) != 0 || len(cfg.LibP2PBootstrap) != 0 || len(cfg.LibP2PRendezvous) != 0 {
 		t.Fatalf("unexpected bootstrap entries: %+v", cfg)
+	}
+	if cfg.NetworkMode != networkModeLAN {
+		t.Fatalf("default network mode = %q, want lan", cfg.NetworkMode)
 	}
 }
