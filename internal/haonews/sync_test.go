@@ -438,6 +438,9 @@ func TestMaybeCompleteHistoryBootstrapMarksSteadyMode(t *testing.T) {
 			RecentRefsLimit:      defaultHistoryMaxItems,
 		},
 	}
+	if err := os.WriteFile(queues.HistoryPath, []byte("# history sync refs\nmagnet:?xt=urn:btih:"+strings.Repeat("1", 40)+"&dn=older\n"), 0o644); err != nil {
+		t.Fatalf("write history queue: %v", err)
+	}
 	if err := runtime.maybeCompleteHistoryBootstrap(nil); err != nil {
 		t.Fatalf("maybeCompleteHistoryBootstrap error = %v", err)
 	}

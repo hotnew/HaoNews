@@ -389,10 +389,16 @@ func (r *syncRuntime) processQueue(ctx context.Context, direct []string, timeout
 		return err
 	}
 	refs := append([]SyncRef(nil), realtimeRefs...)
-	if r.historyBootstrap.FirstSyncCompleted {
-		refs = append(refs, historyRefs...)
-	} else if logf != nil && len(historyRefs) > 0 {
-		logf("history bootstrap recent mode: defer %d history refs until realtime path is healthy", len(historyRefs))
+	remainingSlots := maxSyncRefsPerPass - len(refs)
+	if remainingSlots > 0 && len(historyRefs) > 0 {
+		historyBatch := historyRefs
+		if len(historyBatch) > remainingSlots {
+			historyBatch = historyBatch[:remainingSlots]
+		}
+		refs = append(refs, historyBatch...)
+		if !r.historyBootstrap.FirstSyncCompleted && logf != nil {
+			logf("history bootstrap recent mode: process %d realtime refs and %d history refs", len(realtimeRefs), len(historyBatch))
+		}
 	}
 	if len(refs) > maxSyncRefsPerPass {
 		refs = refs[:maxSyncRefsPerPass]
@@ -893,12 +899,15 @@ func (r *syncRuntime) maybeCompleteHistoryBootstrap(logf func(string, ...any)) e
 	if r == nil || r.store == nil || r.historyBootstrap.FirstSyncCompleted {
 		return nil
 	}
+	if !strings.EqualFold(strings.TrimSpace(r.historyBootstrap.HistoryBootstrapMode), "recent") {
+		return nil
+	}
 	realtimeRefs, historyRefs, err := collectSyncRefs(nil, r.queuePath, r.historyQueuePath)
 	if err != nil {
 		return err
 	}
 	r.setQueueRefs(len(realtimeRefs), len(historyRefs))
-	if len(historyRefs) > 0 {
+	if len(realtimeRefs) > 0 {
 		return nil
 	}
 	now := time.Now().UTC()
