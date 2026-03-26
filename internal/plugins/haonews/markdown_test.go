@@ -33,3 +33,34 @@ func TestRenderMarkdownDoesNotRenderRawHTML(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderPostBodyRendersMarkdownByDefault(t *testing.T) {
+	t.Parallel()
+
+	got := string(renderPostBody("# Heading"))
+	if !strings.Contains(got, "<h1>Heading</h1>") {
+		t.Fatalf("renderPostBody() should render markdown, got %q", got)
+	}
+	if strings.Contains(got, "<iframe") {
+		t.Fatalf("renderPostBody() unexpectedly used iframe for markdown: %q", got)
+	}
+}
+
+func TestRenderPostBodyWrapsHTMLDocumentInIframe(t *testing.T) {
+	t.Parallel()
+
+	body := "<!doctype html><html><head><style>body{background:#fff;}</style></head><body><h1>Demo</h1></body></html>"
+	got := string(renderPostBody(body))
+	if !strings.Contains(got, "<iframe") {
+		t.Fatalf("renderPostBody() should use iframe for html body, got %q", got)
+	}
+	if !strings.Contains(got, "data-auto-resize=\"1\"") {
+		t.Fatalf("renderPostBody() should mark html iframe for auto resize, got %q", got)
+	}
+	if !strings.Contains(got, "allow-same-origin") {
+		t.Fatalf("renderPostBody() should keep iframe same-origin for sizing, got %q", got)
+	}
+	if !strings.Contains(got, "srcdoc=\"&lt;!doctype html&gt;") {
+		t.Fatalf("renderPostBody() should escape html into srcdoc, got %q", got)
+	}
+}

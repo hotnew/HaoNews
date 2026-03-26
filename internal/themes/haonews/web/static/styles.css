@@ -296,6 +296,18 @@ body.sidebar-collapsed .page-shell {
   border-color: #bfdbfe;
 }
 
+.page-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.page-tools .sidebar-toggle {
+  margin-bottom: 0;
+}
+
 .hero,
 .panel,
 .directory-card,
@@ -404,6 +416,17 @@ body.sidebar-collapsed .page-shell {
   padding-left: 14px;
   border-left: 3px solid var(--accent);
   color: var(--ink);
+}
+
+.story-body-html {
+  width: 100%;
+  min-height: 60vh;
+  height: 72vh;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  display: block;
+  overflow: hidden;
 }
 
 .hero-actions {
@@ -585,6 +608,28 @@ body.sidebar-collapsed .page-shell {
 
 .story-layout {
   grid-template-columns: minmax(0, 1.45fr) 360px;
+}
+
+.page-post.post-focus-mode {
+  width: min(1760px, calc(100vw - 40px));
+}
+
+.page-post.post-focus-mode .back-link,
+.page-post.post-focus-mode .story-side {
+  display: none;
+}
+
+.page-post.post-focus-mode .story-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.page-post.post-focus-mode .story-panel {
+  padding: 28px;
+}
+
+.page-post.post-focus-mode .story-body-html {
+  min-height: 76vh;
+  height: 84vh;
 }
 
 .sidebar,

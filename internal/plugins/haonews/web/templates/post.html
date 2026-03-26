@@ -10,8 +10,11 @@
 <body>
   <div class="app-shell">
     {{template "appSidebar" .}}
-    <div class="page-shell page-post">
-      {{template "sidebarToggle" .}}
+    <div class="page-shell page-post" id="post-page-shell">
+      <div class="page-tools">
+        {{template "sidebarToggle" .}}
+        <button class="sidebar-toggle" type="button" id="post-focus-toggle" aria-pressed="false">隐藏辅助区</button>
+      </div>
       <a class="back-link" href="/">返回信息流</a>
       <div class="story-layout">
         <article class="story-panel">
@@ -27,7 +30,7 @@
             {{if .Post.HasSourcePage}}<a href="{{sourcePath .Post.SourceName}}">{{compactIdentity .Post.SourceName}}</a>{{end}}
             {{if .Post.SourceSiteName}}<span>{{.Post.SourceSiteName}}</span>{{end}}
           </div>
-          <div class="story-body markdown-body">{{renderMarkdown .Post.Body}}</div>
+          <div class="story-body markdown-body">{{renderPostBody .Post.Body}}</div>
           <dl class="story-data">
             <div>
               <dt>Infohash</dt>
@@ -169,6 +172,7 @@
             {{end}}
           </section>
         </aside>
+
       </div>
 
       <section class="replies">
@@ -198,6 +202,72 @@
     </div>
   </div>
 {{template "sidebarScript" .}}
+<script>
+(() => {
+  const page = document.getElementById("post-page-shell");
+  const toggle = document.getElementById("post-focus-toggle");
+  const htmlFrames = Array.from(document.querySelectorAll(".story-body-html[data-auto-resize='1']"));
+
+  const resizeFrame = (frame) => {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc) {
+        return;
+      }
+      const body = doc.body;
+      const root = doc.documentElement;
+      if (!body || !root) {
+        return;
+      }
+      const height = Math.max(
+        body.scrollHeight,
+        body.offsetHeight,
+        root.clientHeight,
+        root.scrollHeight,
+        root.offsetHeight,
+      );
+      if (height > 0) {
+        frame.style.height = `${height + 4}px`;
+      }
+      if (!frame._haoResizeObserver && "ResizeObserver" in window) {
+        const observer = new ResizeObserver(() => resizeFrame(frame));
+        observer.observe(root);
+        observer.observe(body);
+        frame._haoResizeObserver = observer;
+      }
+    } catch (_) {
+    }
+  };
+
+  const bootFrame = (frame) => {
+    const tick = () => resizeFrame(frame);
+    frame.addEventListener("load", () => {
+      tick();
+      [80, 220, 600, 1400].forEach((delay) => window.setTimeout(tick, delay));
+    }, { once: true });
+    if (frame.contentDocument?.readyState === "complete") {
+      tick();
+      [80, 220, 600, 1400].forEach((delay) => window.setTimeout(tick, delay));
+    }
+  };
+
+  htmlFrames.forEach(bootFrame);
+  window.addEventListener("resize", () => htmlFrames.forEach(resizeFrame));
+
+  if (!page || !toggle) {
+    return;
+  }
+  const applyState = (focused) => {
+    page.classList.toggle("post-focus-mode", focused);
+    toggle.setAttribute("aria-pressed", focused ? "true" : "false");
+    toggle.textContent = focused ? "恢复布局" : "隐藏辅助区";
+  };
+  applyState(false);
+  toggle.addEventListener("click", () => {
+    applyState(!page.classList.contains("post-focus-mode"));
+  });
+})();
+</script>
 </body>
 </html>
 {{end}}

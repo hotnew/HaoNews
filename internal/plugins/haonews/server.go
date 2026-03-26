@@ -349,6 +349,7 @@ func newApp(storeRoot, project, version, archiveRoot, rulesPath, writerPath, net
 		"join":           strings.Join,
 		"lower":          strings.ToLower,
 		"renderMarkdown": renderMarkdown,
+		"renderPostBody": renderPostBody,
 		"reactionLabel":  reactionLabel,
 		"sourcePath":     SourcePath,
 		"topicPath":      TopicPath,
