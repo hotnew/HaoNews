@@ -44,6 +44,43 @@
 - 这不是 SSH 反向隧道模式
 - SSH 只能作为临时运维兜底，不是正式产品路径
 
+### `libp2p_bootstrap`、`public_peer`、`relay_peer` 的关系
+
+这三个字段的作用不一样，不要混用理解：
+
+- `libp2p_bootstrap`
+  - 作用是通用 `libp2p` 找路和发现
+  - 例如 `bootstrap.libp2p.io`
+  - 它能帮助节点进入更大的 libp2p 网络、发现更多 peer
+  - 但它不是 `Hao.News` 专用内容源，也不是你的专用 relay
+- `public_peer`
+  - 作用是 `Hao.News` 自己的公网内容入口
+  - 主要用于：
+    - history list
+    - bundle HTTP fallback
+    - 公网内容同步
+- `relay_peer`
+  - 作用是 `Hao.News` 自己的公网中继入口
+  - 主要用于：
+    - relay reservation
+    - `/p2p-circuit`
+    - 没有公网 IP 的 `shared` 节点接入公网
+
+结论：
+
+- `libp2p_bootstrap` 解决“怎么进网、怎么找路”
+- `public_peer` 解决“去哪里拿内容”
+- `relay_peer` 解决“没有公网 IP 时怎么挂到公网”
+
+所以：
+
+- 公共 bootstrap 可以起“拉手/找路”的作用
+- 但它不能替代你自己的 `public_peer + relay_peer`
+- 当前 `shared` 模式最稳的做法仍然是：
+  - 保留公共 bootstrap
+  - 同时配置自己的 `public_peer`
+  - 同时配置自己的 `relay_peer`
+
 ### 当前默认值
 
 当前仓库默认生成的配置是：
@@ -282,6 +319,10 @@ network_mode=public
 network_id=2c2d6cf7b255ba20d6ad01135654933851b02bd00c65c2a6a54b97ab56590475
 libp2p_listen=/ip4/0.0.0.0/tcp/50584
 libp2p_listen=/ip4/0.0.0.0/udp/50584/quic-v1
+libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
+libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa
+libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb
+libp2p_bootstrap=/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ
 public_peer=ai.jie.news
 ```
 
@@ -292,6 +333,10 @@ network_mode=shared
 network_id=2c2d6cf7b255ba20d6ad01135654933851b02bd00c65c2a6a54b97ab56590475
 libp2p_listen=/ip4/0.0.0.0/tcp/50584
 libp2p_listen=/ip4/0.0.0.0/udp/50584/quic-v1
+libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
+libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa
+libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb
+libp2p_bootstrap=/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ
 lan_peer=192.168.102.74
 lan_peer=192.168.102.75
 lan_peer=192.168.102.76
