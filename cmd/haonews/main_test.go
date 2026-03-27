@@ -159,6 +159,100 @@ func TestRunPublishRequiresIdentityFile(t *testing.T) {
 	}
 }
 
+func TestNormalizeDeprecatedPublishArgsRewritesReplyMagnet(t *testing.T) {
+	t.Parallel()
+
+	args, rewrote, err := normalizeDeprecatedPublishArgs([]string{
+		"--reply-magnet=magnet:?xt=urn:btih:93a71a010a59022c8670e06e2c92fa279f98d974&dn=test",
+		"--title", "reply",
+	})
+	if err != nil {
+		t.Fatalf("normalizeDeprecatedPublishArgs error = %v", err)
+	}
+	if !rewrote {
+		t.Fatal("expected deprecated rewrite")
+	}
+	got := strings.Join(args, " ")
+	if !strings.Contains(got, "--reply-infohash=93a71a010a59022c8670e06e2c92fa279f98d974") {
+		t.Fatalf("rewritten args = %q", got)
+	}
+	if strings.Contains(got, "--reply-magnet") {
+		t.Fatalf("rewritten args still contain deprecated flag: %q", got)
+	}
+}
+
+func TestNormalizeDeprecatedSyncArgsRewritesMagnetFlag(t *testing.T) {
+	t.Parallel()
+
+	args, rewrote, err := normalizeDeprecatedSyncArgs([]string{
+		"--magnet", "haonews-sync://bundle/93a71a010a59022c8670e06e2c92fa279f98d974?dn=test",
+		"--once",
+	})
+	if err != nil {
+		t.Fatalf("normalizeDeprecatedSyncArgs error = %v", err)
+	}
+	if !rewrote {
+		t.Fatal("expected deprecated rewrite")
+	}
+	got := strings.Join(args, " ")
+	if !strings.Contains(got, "--ref haonews-sync://bundle/93a71a010a59022c8670e06e2c92fa279f98d974?dn=test") {
+		t.Fatalf("rewritten args = %q", got)
+	}
+	if strings.Contains(got, "--magnet") {
+		t.Fatalf("rewritten args still contain deprecated flag: %q", got)
+	}
+}
+
+func TestRunPublishReplyRefStoresReplyInfoHashOnly(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store := filepath.Join(root, "store")
+	if _, err := haonews.OpenStore(store); err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	identity, err := haonews.NewAgentIdentity("agent://news/world-01", "agent://demo/alice", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("NewAgentIdentity error = %v", err)
+	}
+	identityPath := filepath.Join(root, "identity.json")
+	if err := haonews.SaveAgentIdentity(identityPath, identity); err != nil {
+		t.Fatalf("SaveAgentIdentity error = %v", err)
+	}
+	if err := run([]string{
+		"publish",
+		"--store", store,
+		"--identity-file", identityPath,
+		"--kind", "reply",
+		"--channel", "hao.news/world",
+		"--title", "Reply post",
+		"--body", "reply body",
+		"--reply-ref", "haonews-sync://bundle/93a71a010a59022c8670e06e2c92fa279f98d974?dn=test",
+	}); err != nil {
+		t.Fatalf("run(publish) error = %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(store, "data"))
+	if err != nil {
+		t.Fatalf("ReadDir error = %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("content dirs = %d, want 1", len(entries))
+	}
+	msg, _, err := haonews.LoadMessage(filepath.Join(store, "data", entries[0].Name()))
+	if err != nil {
+		t.Fatalf("LoadMessage error = %v", err)
+	}
+	if msg.ReplyTo == nil {
+		t.Fatal("expected reply target")
+	}
+	if msg.ReplyTo.InfoHash != "93a71a010a59022c8670e06e2c92fa279f98d974" {
+		t.Fatalf("reply infohash = %q", msg.ReplyTo.InfoHash)
+	}
+	if msg.ReplyTo.Magnet != "" {
+		t.Fatalf("reply magnet should be empty, got %q", msg.ReplyTo.Magnet)
+	}
+}
+
 func TestDefaultIdentityOutputPathUsesRuntimeIdentityDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

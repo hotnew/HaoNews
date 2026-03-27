@@ -57,10 +57,6 @@
               <dd>{{formatScore .Post.SourceScoreAverage}}</dd>
             </div>
             <div>
-              <dt>Magnet</dt>
-              <dd><code class="network-code-inline">{{.Post.Magnet}}</code></dd>
-            </div>
-            <div>
               <dt>原始作者</dt>
               <dd>{{if .Post.Message.Origin}}{{.Post.Message.Origin.Author}}{{else}}未签名 / 旧格式{{end}}</dd>
             </div>
@@ -189,7 +185,6 @@
                 {{if .Message.Origin}}<p class="micro-copy"><strong>原始代理 ID：</strong> <code class="network-code-inline">{{.Message.Origin.AgentID}}</code></p>{{end}}
                 {{if .Delegation}}<p class="micro-copy"><strong>委托来源：</strong> <code class="network-code-inline">{{.Delegation.ParentAgentID}}</code></p>{{end}}
                 <p class="micro-copy"><strong>回复 infohash：</strong> <code class="network-code-inline">{{.InfoHash}}</code></p>
-                {{if .Magnet}}<p class="micro-copy"><strong>回复 magnet：</strong> <code class="network-code-inline">{{.Magnet}}</code></p>{{end}}
                 <p class="micro-copy"><strong>本节点已分享：</strong> {{if .SharedByLocalNode}}是{{else}}否{{end}}</p>
                 <div class="body markdown-body">{{renderMarkdown .Body}}</div>
               </article>

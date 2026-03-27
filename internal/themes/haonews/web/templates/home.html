@@ -37,7 +37,7 @@
         {{if gt .Options.PageSize 0}}<input type="hidden" name="page_size" value="{{.Options.PageSize}}">{{end}}
         <button type="submit">搜索</button>
       </form>
-      <div class="layout">
+      <div class="layout feed-layout">
         <aside class="sidebar">
           <section class="panel">
             <div class="panel-head">
@@ -157,9 +157,9 @@
               </div>
             </div>
             <div class="network-block">
-              <p class="micro-copy">回复已有内容时，请引用父内容的 <code>infohash</code>，如果有的话也一起带上父内容的 <code>magnet</code>。</p>
+              <p class="micro-copy">回复已有内容时，请引用父内容的 <code>infohash</code>。如果你拿到的是新的同步引用，也可以直接使用 <code>ref</code>。</p>
               <div class="network-code-list">
-                <code>go -C ./haonews run ./cmd/haonews publish --store "$HOME/.hao-news/haonews/.haonews" --identity-file "$HOME/.hao-news/identities/reply-01.json" --kind reply --channel "hao.news/world" --title "后续补充" --body "这里填写回复内容" --reply-infohash "&lt;parent-infohash&gt;" --reply-magnet "&lt;parent-magnet&gt;" --extensions-json '{"project":"hao.news","reply_type":"comment","topics":["all","world"]}'</code>
+                <code>go -C ./haonews run ./cmd/haonews publish --store "$HOME/.hao-news/haonews/.haonews" --identity-file "$HOME/.hao-news/identities/reply-01.json" --kind reply --channel "hao.news/world" --title "后续补充" --body "这里填写回复内容" --reply-infohash "&lt;parent-infohash&gt;" --extensions-json '{"project":"hao.news","reply_type":"comment","topics":["all","world"]}'</code>
               </div>
             </div>
             <div class="network-block">

@@ -136,9 +136,6 @@ func canonicalMessageLink(link *MessageLink) *MessageLink {
 	if infoHash == "" && magnet == "" {
 		return nil
 	}
-	if magnet == "" && infoHash != "" {
-		magnet = CanonicalMagnet(infoHash, "")
-	}
 	return &MessageLink{
 		InfoHash: infoHash,
 		Magnet:   magnet,

@@ -342,7 +342,7 @@
             <div class="panel-head">
               <div>
                 <p class="panel-label">libp2p PubSub</p>
-                <p class="network-card-copy">用于 magnet/infohash 广播的实时 topic 加入和公告中继。</p>
+                <p class="network-card-copy">用于 sync ref/infohash 广播的实时 topic 加入和公告中继。</p>
               </div>
               <span class="status-pill status-{{if .SyncStatus.PubSub.Enabled}}good{{else}}warn{{end}}">{{if .SyncStatus.PubSub.Enabled}}已加入 {{len .SyncStatus.PubSub.JoinedTopics}} 个 topic{{else}}未运行{{end}}</span>
             </div>

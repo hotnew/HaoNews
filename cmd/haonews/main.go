@@ -122,6 +122,13 @@ func run(args []string) error {
 }
 
 func runPublish(args []string) error {
+	normalizedArgs, deprecatedReplyMagnet, err := normalizeDeprecatedPublishArgs(args)
+	if err != nil {
+		return err
+	}
+	if deprecatedReplyMagnet {
+		fmt.Fprintln(os.Stderr, "warning: --reply-magnet is deprecated; use --reply-infohash or --reply-ref")
+	}
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	storeRoot := fs.String("store", ".haonews", "store root")
@@ -132,11 +139,11 @@ func runPublish(args []string) error {
 	title := fs.String("title", "", "message title")
 	body := fs.String("body", "", "message body")
 	replyInfoHash := fs.String("reply-infohash", "", "reply target infohash")
-	replyMagnet := fs.String("reply-magnet", "", "reply target magnet")
+	replyRef := fs.String("reply-ref", "", "reply target sync ref")
 	tagsCSV := fs.String("tags", "", "comma-separated tags")
 	extensionsJSON := fs.String("extensions-json", "", "inline JSON object for message extensions")
 	extensionsFile := fs.String("extensions-file", "", "path to JSON object file for message extensions")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizedArgs); err != nil {
 		return err
 	}
 	if strings.TrimSpace(*identityFile) == "" {
@@ -163,11 +170,18 @@ func runPublish(args []string) error {
 		return errors.New("author does not match identity-file author")
 	}
 
+	resolvedReplyInfoHash := strings.TrimSpace(*replyInfoHash)
+	if resolvedReplyInfoHash == "" && strings.TrimSpace(*replyRef) != "" {
+		ref, err := haonews.ParseSyncRef(strings.TrimSpace(*replyRef))
+		if err != nil {
+			return fmt.Errorf("parse reply-ref: %w", err)
+		}
+		resolvedReplyInfoHash = ref.InfoHash
+	}
 	var replyTo *haonews.MessageLink
-	if strings.TrimSpace(*replyInfoHash) != "" || strings.TrimSpace(*replyMagnet) != "" {
+	if resolvedReplyInfoHash != "" {
 		replyTo = &haonews.MessageLink{
-			InfoHash: strings.TrimSpace(*replyInfoHash),
-			Magnet:   strings.TrimSpace(*replyMagnet),
+			InfoHash: resolvedReplyInfoHash,
 		}
 	}
 	extensions, err := loadJSONObject(*extensionsJSON, *extensionsFile)
@@ -1021,21 +1035,28 @@ func runShow(args []string) error {
 }
 
 func runSync(args []string) error {
+	normalizedArgs, deprecatedMagnetFlag, err := normalizeDeprecatedSyncArgs(args)
+	if err != nil {
+		return err
+	}
+	if deprecatedMagnetFlag {
+		fmt.Fprintln(os.Stderr, "warning: --magnet is deprecated; use --ref")
+	}
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	storeRoot := fs.String("store", ".haonews", "store root")
-	queuePath := fs.String("queue", "", "line-based magnet/infohash queue file")
+	queuePath := fs.String("queue", "", "line-based sync ref/infohash queue file")
 	netPath := fs.String("net", "./haonews_net.inf", "network bootstrap config")
 	subscriptionsPath := fs.String("subscriptions", "", "subscription rules file for pubsub topic joins")
 	writerPolicyPath := fs.String("writer-policy", "", "writer policy file reserved for sync validation and filtering")
 	creditIdentityFile := fs.String("credit-identity-file", "", "path to credit identity JSON file for auto proof generation")
-	magnets := fs.String("magnet", "", "comma-separated magnets or infohashes to sync immediately")
+	refsCSV := fs.String("ref", "", "comma-separated sync refs or infohashes to sync immediately")
 	poll := fs.Duration("poll", 30*time.Second, "queue polling interval")
 	timeout := fs.Duration("timeout", 20*time.Second, "per-ref sync timeout")
 	once := fs.Bool("once", false, "run one sync pass and exit")
 	seed := fs.Bool("seed", true, "seed after download while daemon is running")
 	directTransfer := fs.Bool("direct-transfer", true, "prefer libp2p direct bundle transfer before HTTP fallback")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizedArgs); err != nil {
 		return err
 	}
 
@@ -1049,13 +1070,78 @@ func runSync(args []string) error {
 		NetPath:            *netPath,
 		SubscriptionsPath:  *subscriptionsPath,
 		CreditIdentityFile: *creditIdentityFile,
-		Refs:               splitCSV(*magnets),
+		Refs:               splitCSV(*refsCSV),
 		PollInterval:       *poll,
 		Timeout:            *timeout,
 		Once:               *once,
 		Seed:               *seed,
 		DirectTransfer:     *directTransfer,
 	}, nil)
+}
+
+func normalizeDeprecatedPublishArgs(args []string) ([]string, bool, error) {
+	out := make([]string, 0, len(args))
+	rewrote := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--reply-magnet":
+			if i+1 >= len(args) {
+				return nil, false, errors.New("--reply-magnet requires a value")
+			}
+			infoHash, err := resolveInfoHashFromLegacyRef(args[i+1])
+			if err != nil {
+				return nil, false, fmt.Errorf("parse --reply-magnet: %w", err)
+			}
+			out = append(out, "--reply-infohash", infoHash)
+			i++
+			rewrote = true
+		case strings.HasPrefix(arg, "--reply-magnet="):
+			infoHash, err := resolveInfoHashFromLegacyRef(strings.TrimPrefix(arg, "--reply-magnet="))
+			if err != nil {
+				return nil, false, fmt.Errorf("parse --reply-magnet: %w", err)
+			}
+			out = append(out, "--reply-infohash="+infoHash)
+			rewrote = true
+		default:
+			out = append(out, arg)
+		}
+	}
+	return out, rewrote, nil
+}
+
+func normalizeDeprecatedSyncArgs(args []string) ([]string, bool, error) {
+	out := make([]string, 0, len(args))
+	rewrote := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--magnet":
+			if i+1 >= len(args) {
+				return nil, false, errors.New("--magnet requires a value")
+			}
+			out = append(out, "--ref", args[i+1])
+			i++
+			rewrote = true
+		case strings.HasPrefix(arg, "--magnet="):
+			out = append(out, "--ref="+strings.TrimPrefix(arg, "--magnet="))
+			rewrote = true
+		default:
+			out = append(out, arg)
+		}
+	}
+	return out, rewrote, nil
+}
+
+func resolveInfoHashFromLegacyRef(raw string) (string, error) {
+	ref, err := haonews.ParseSyncRef(strings.TrimSpace(raw))
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(ref.InfoHash) == "" {
+		return "", errors.New("missing infohash")
+	}
+	return strings.TrimSpace(ref.InfoHash), nil
 }
 
 func runServe(args []string) error {
