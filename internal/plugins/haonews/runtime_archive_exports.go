@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	haonews "hao.news/internal/haonews"
 )
 
 const defaultHistoryListPageSize = 200
@@ -23,8 +25,14 @@ func (a *App) HistoryListPayload(cursor string, pageSize int) (HistoryManifestAP
 		return HistoryManifestAPIResponse{}, os.ErrNotExist
 	}
 	var networkID string
+	var localPeerID string
+	var sourceHost string
 	if syncStatus, err := a.syncRuntimeStatus(); err == nil {
 		networkID = strings.TrimSpace(syncStatus.NetworkID)
+		localPeerID = strings.TrimSpace(syncStatus.LibP2P.PeerID)
+		if netCfg, cfgErr := a.networkBootstrap(); cfgErr == nil {
+			sourceHost = strings.TrimSpace(PreferredAdvertiseHostForConfig(syncStatus, "", netCfg))
+		}
 	}
 	page, pageSize := normalizeHistoryPage(cursor, pageSize)
 	bundles := make([]Bundle, len(index.Bundles))
@@ -56,12 +64,18 @@ func (a *App) HistoryListPayload(cursor string, pageSize int) (HistoryManifestAP
 	}
 	entries := make([]HistoryManifestEntry, 0, end-start)
 	for _, bundle := range bundles[start:end] {
+		ref := haonews.CanonicalSyncRef(strings.ToLower(strings.TrimSpace(bundle.InfoHash)), strings.TrimSpace(bundle.Message.Title))
+		ref = haonews.WithSourcePeerHintForSyncRef(ref, sourceHost)
+		ref = haonews.WithLibP2PPeerHintForSyncRef(ref, localPeerID)
 		originAuthor, originAgentID, originKeyType, originPublicKey, originSigned := originSummary(bundle.Message.Origin)
 		delegated, parentAgentID, parentKeyType, parentPublicKey := delegationSummary(bundle.Delegation)
 		entries = append(entries, HistoryManifestEntry{
 			Protocol:          "haonews-sync/0.1",
 			InfoHash:          strings.ToLower(strings.TrimSpace(bundle.InfoHash)),
+			Ref:               ref,
 			Magnet:            strings.TrimSpace(bundle.Magnet),
+			LibP2PPeerID:      localPeerID,
+			SourceHost:        sourceHost,
 			SizeBytes:         bundle.SizeBytes,
 			Kind:              strings.TrimSpace(bundle.Message.Kind),
 			Channel:           strings.TrimSpace(bundle.Message.Channel),

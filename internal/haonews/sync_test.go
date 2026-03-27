@@ -26,6 +26,24 @@ func TestParseSyncRefMagnet(t *testing.T) {
 	if ref.InfoHash != "93a71a010a59022c8670e06e2c92fa279f98d974" {
 		t.Fatalf("infohash = %q", ref.InfoHash)
 	}
+	if ref.Magnet != "haonews-sync://bundle/93a71a010a59022c8670e06e2c92fa279f98d974?dn=test" {
+		t.Fatalf("ref = %q", ref.Magnet)
+	}
+}
+
+func TestParseSyncRefMagnetPreservesDirectPeerHint(t *testing.T) {
+	t.Parallel()
+
+	ref, err := ParseSyncRef("magnet:?xt=urn:btih:93a71a010a59022c8670e06e2c92fa279f98d974&dn=test&x.hn.peer=12D3KooWPeerHint")
+	if err != nil {
+		t.Fatalf("ParseSyncRef error = %v", err)
+	}
+	if ref.DirectPeerHint != "12D3KooWPeerHint" {
+		t.Fatalf("direct peer hint = %q", ref.DirectPeerHint)
+	}
+	if !strings.Contains(ref.Magnet, "peer=12D3KooWPeerHint") {
+		t.Fatalf("ref missing peer hint: %q", ref.Magnet)
+	}
 }
 
 func TestParseSyncRefInfoHash(t *testing.T) {
@@ -35,8 +53,8 @@ func TestParseSyncRefInfoHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseSyncRef error = %v", err)
 	}
-	if ref.Magnet != "magnet:?xt=urn:btih:93a71a010a59022c8670e06e2c92fa279f98d974" {
-		t.Fatalf("magnet = %q", ref.Magnet)
+	if ref.Magnet != "haonews-sync://bundle/93a71a010a59022c8670e06e2c92fa279f98d974" {
+		t.Fatalf("ref = %q", ref.Magnet)
 	}
 }
 
@@ -260,6 +278,39 @@ func TestSanitizeSyncQueueFileRemovesDirtyPeerHints(t *testing.T) {
 	}
 	if strings.Contains(text, "100.168.102.74") {
 		t.Fatalf("queue still contains dirty x.pe: %q", text)
+	}
+}
+
+func TestSanitizeSyncQueueFileRemovesPrivatePeerHintsWhenOnlyPublicPeersConfigured(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	queue := filepath.Join(root, "history.txt")
+	content := "magnet:?xt=urn:btih:93a71a010a59022c8670e06e2c92fa279f98d974&x.pe=192.168.102.75:50585\n"
+	if err := os.WriteFile(queue, []byte(content), 0o644); err != nil {
+		t.Fatalf("write queue: %v", err)
+	}
+	changed, err := sanitizeSyncQueueFile(queue, []string{"ai.jie.news"})
+	if err != nil {
+		t.Fatalf("sanitize queue: %v", err)
+	}
+	if changed != 1 {
+		t.Fatalf("changed = %d, want 1", changed)
+	}
+	data, err := os.ReadFile(queue)
+	if err != nil {
+		t.Fatalf("read queue: %v", err)
+	}
+	text := string(data)
+	if strings.Contains(text, "192.168.102.75") {
+		t.Fatalf("queue still contains private x.pe: %q", text)
+	}
+	ref, err := ParseSyncRef(strings.TrimSpace(text))
+	if err != nil {
+		t.Fatalf("parse sanitized queue ref: %v", err)
+	}
+	if ref.InfoHash != "93a71a010a59022c8670e06e2c92fa279f98d974" {
+		t.Fatalf("sanitized queue infohash = %q", ref.InfoHash)
 	}
 }
 
@@ -773,6 +824,23 @@ func TestSyncPeerSourcesIncludesLANPublicAndRelayPeers(t *testing.T) {
 	}
 	if got[2] != "relay.jie.news" {
 		t.Fatalf("got[2] = %q, want relay peer third", got[2])
+	}
+}
+
+func TestSyncPeerSourcesExcludesSelfPublicPeersInPublicMode(t *testing.T) {
+	t.Parallel()
+
+	got := syncPeerSources(NetworkBootstrapConfig{
+		NetworkMode: networkModePublic,
+		PublicPeers: []string{"https://ai.jie.news"},
+		RelayPeers:  []string{"relay.jie.news"},
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if got[0] != "relay.jie.news" {
+		t.Fatalf("got[0] = %q, want relay peer only", got[0])
 	}
 }
 

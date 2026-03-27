@@ -127,7 +127,7 @@ func TestEnqueueHistoryManifestRefsAddsMissingBundles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure sync layout: %v", err)
 	}
-	added, err := enqueueHistoryManifestRefs(store, queues.HistoryPath, SyncSubscriptions{Topics: []string{"pc75"}}, latestOrgNetworkID, 0)
+	added, err := enqueueHistoryManifestRefs(store, queues.HistoryPath, SyncSubscriptions{Topics: []string{"pc75"}}, latestOrgNetworkID, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("enqueue from manifest: %v", err)
 	}
@@ -140,6 +140,99 @@ func TestEnqueueHistoryManifestRefsAddsMissingBundles(t *testing.T) {
 	}
 	if !containsText(string(data), ref.InfoHash) {
 		t.Fatalf("queue does not include infohash %s: %s", ref.InfoHash, string(data))
+	}
+}
+
+func TestSyncRefFromAnnouncementPersistsDirectPeerHint(t *testing.T) {
+	t.Parallel()
+
+	ref, err := syncRefFromAnnouncement(SyncAnnouncement{
+		InfoHash:      "93a71a010a59022c8670e06e2c92fa279f98d974",
+		Ref:           "haonews-sync://bundle/93a71a010a59022c8670e06e2c92fa279f98d974?dn=test-history",
+		Magnet:        "magnet:?xt=urn:btih:93a71a010a59022c8670e06e2c92fa279f98d974&dn=test-history",
+		SourceHost:    "192.168.102.75",
+		LibP2PPeerID:  "12D3KooWManifestPeer",
+		Project:       "latest.org",
+		NetworkID:     latestOrgNetworkID,
+	})
+	if err != nil {
+		t.Fatalf("syncRefFromAnnouncement error = %v", err)
+	}
+	if ref.DirectPeerHint != "12D3KooWManifestPeer" {
+		t.Fatalf("direct peer hint = %q", ref.DirectPeerHint)
+	}
+	if !strings.Contains(ref.Magnet, "peer=12D3KooWManifestPeer") {
+		t.Fatalf("ref missing peer hint: %q", ref.Magnet)
+	}
+}
+
+func TestEnqueueHistoryManifestRefsReportsOriginPeer(t *testing.T) {
+	t.Parallel()
+
+	store, err := OpenStore(filepath.Join(t.TempDir(), ".haonews"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	ref := PublishResult{
+		InfoHash: "0123456789abcdef0123456789abcdef01234567",
+		Magnet:   "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=peer-hint-post",
+	}
+	manifestBody, err := json.MarshalIndent(HistoryManifest{
+		Protocol:  ProtocolVersion,
+		Type:      historyManifestType,
+		Project:   "latest.org",
+		NetworkID: latestOrgNetworkID,
+		Entries: []SyncAnnouncement{{
+			Protocol:     ProtocolVersion,
+			InfoHash:     ref.InfoHash,
+			Ref:          CanonicalSyncRef(ref.InfoHash, "peer-hint-post"),
+			Magnet:       ref.Magnet,
+			Kind:         "post",
+			Channel:      "latest.org/world",
+			Title:        "peer hint post",
+			Author:       "agent://pc75/main",
+			CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+			Project:      "latest.org",
+			NetworkID:    latestOrgNetworkID,
+			Topics:       []string{"pc75"},
+			LibP2PPeerID: "12D3KooWCbCwduA6hQkN4xVZ1tcHTfb3e8DqRLVQjaxAgFDnxsVX",
+		}},
+	}, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	_, err = PublishMessage(store, MessageInput{
+		Author:    historyManifestAuthor,
+		Kind:      historyManifestKind,
+		Channel:   "latest.org/history",
+		Title:     "latest.org history manifest",
+		Body:      string(append(manifestBody, '\n')),
+		CreatedAt: time.Now().UTC(),
+		Extensions: map[string]any{
+			"project":       "latest.org",
+			"network_id":    latestOrgNetworkID,
+			"manifest_type": historyManifestType,
+		},
+	})
+	if err != nil {
+		t.Fatalf("publish manifest: %v", err)
+	}
+	queues, err := ensureSyncLayout(store, "")
+	if err != nil {
+		t.Fatalf("ensure sync layout: %v", err)
+	}
+	var got SyncAnnouncement
+	added, err := enqueueHistoryManifestRefs(store, queues.HistoryPath, SyncSubscriptions{Topics: []string{"pc75"}}, latestOrgNetworkID, 0, nil, func(announcement SyncAnnouncement, _ SyncRef) {
+		got = announcement
+	})
+	if err != nil {
+		t.Fatalf("enqueue from manifest: %v", err)
+	}
+	if added != 1 {
+		t.Fatalf("added = %d, want 1", added)
+	}
+	if got.LibP2PPeerID == "" {
+		t.Fatalf("missing origin peer id in callback")
 	}
 }
 

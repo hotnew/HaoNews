@@ -31,7 +31,8 @@ const (
 type SyncAnnouncement struct {
 	Protocol     string   `json:"protocol"`
 	InfoHash     string   `json:"infohash"`
-	Magnet       string   `json:"magnet"`
+	Ref          string   `json:"ref,omitempty"`
+	Magnet       string   `json:"magnet,omitempty"`
 	SizeBytes    int64    `json:"size_bytes,omitempty"`
 	Kind         string   `json:"kind,omitempty"`
 	Channel      string   `json:"channel,omitempty"`
@@ -43,6 +44,7 @@ type SyncAnnouncement struct {
 	Topics       []string `json:"topics,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
 	LibP2PPeerID string   `json:"libp2p_peer_id,omitempty"`
+	SourceHost   string   `json:"source_host,omitempty"`
 }
 
 type pubsubRuntime struct {
@@ -145,8 +147,8 @@ func (r *pubsubRuntime) PublishAnnouncement(ctx context.Context, announcement Sy
 		return nil
 	}
 	announcement = normalizeAnnouncement(announcement)
-	if announcement.InfoHash == "" || announcement.Magnet == "" {
-		return fmt.Errorf("announcement requires both infohash and magnet")
+	if announcement.InfoHash == "" || announcement.Ref == "" {
+		return fmt.Errorf("announcement requires both infohash and ref")
 	}
 	if r.host != nil && r.host.host != nil && announcement.LibP2PPeerID == "" {
 		announcement.LibP2PPeerID = r.host.host.ID().String()
@@ -229,7 +231,7 @@ func (r *pubsubRuntime) subscribe(ctx context.Context, topicName string, onAnnou
 				continue
 			}
 			announcement = normalizeAnnouncement(announcement)
-			if announcement.InfoHash == "" || announcement.Magnet == "" {
+			if announcement.InfoHash == "" || announcement.Ref == "" {
 				r.recordError(fmt.Errorf("ignore incomplete pubsub announcement on %s", topicName))
 				continue
 			}
@@ -491,12 +493,30 @@ func creditProofTopic(networkID string) string {
 func normalizeAnnouncement(announcement SyncAnnouncement) SyncAnnouncement {
 	announcement.Protocol = syncAnnouncementProtocol
 	announcement.InfoHash = strings.ToLower(strings.TrimSpace(announcement.InfoHash))
+	announcement.Ref = strings.TrimSpace(announcement.Ref)
 	announcement.Magnet = strings.TrimSpace(announcement.Magnet)
-	if announcement.InfoHash == "" && announcement.Magnet != "" {
-		if ref, err := ParseSyncRef(announcement.Magnet); err == nil {
+	if announcement.InfoHash == "" && announcement.Ref != "" {
+		if ref, err := ParseSyncRef(announcement.Ref); err == nil {
 			announcement.InfoHash = ref.InfoHash
-			announcement.Magnet = ref.Magnet
+			announcement.Ref = ref.Magnet
 		}
+	}
+	if announcement.Magnet != "" {
+		if ref, err := ParseSyncRef(announcement.Magnet); err == nil {
+			if announcement.InfoHash == "" {
+				announcement.InfoHash = ref.InfoHash
+			}
+			announcement.Magnet = ref.Magnet
+			if announcement.Ref == "" {
+				announcement.Ref = ref.Magnet
+			}
+		}
+	}
+	if announcement.Ref == "" && announcement.InfoHash != "" {
+		announcement.Ref = CanonicalSyncRef(announcement.InfoHash, announcement.Title)
+	}
+	if announcement.Magnet == "" && announcement.InfoHash != "" {
+		announcement.Magnet = CanonicalMagnet(announcement.InfoHash, announcement.Title)
 	}
 	announcement.Channel = strings.TrimSpace(announcement.Channel)
 	announcement.Title = strings.TrimSpace(announcement.Title)
@@ -537,9 +557,15 @@ func localAnnouncements(store *Store) ([]SyncAnnouncement, error) {
 }
 
 func buildAnnouncement(msg Message, mi *metainfo.MetaInfo, info metainfo.Info) SyncAnnouncement {
+	infoHash := strings.ToLower(mi.HashInfoBytes().HexString())
+	displayName := strings.TrimSpace(info.BestName())
+	if displayName == "" {
+		displayName = strings.TrimSpace(msg.Title)
+	}
 	return normalizeAnnouncement(SyncAnnouncement{
-		InfoHash:  strings.ToLower(mi.HashInfoBytes().HexString()),
-		Magnet:    mi.Magnet(nil, &info).String(),
+		InfoHash:  infoHash,
+		Ref:       CanonicalSyncRef(infoHash, displayName),
+		Magnet:    CanonicalMagnet(infoHash, displayName),
 		SizeBytes: info.TotalLength(),
 		Kind:      msg.Kind,
 		Channel:   msg.Channel,

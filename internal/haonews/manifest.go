@@ -58,7 +58,7 @@ func ensureHistoryManifests(store *Store, netCfg NetworkBootstrapConfig, listenA
 	grouped := map[string][]SyncAnnouncement{}
 	for _, announcement := range announcements {
 		announcement = normalizeAnnouncement(announcement)
-		if announcement.InfoHash == "" || announcement.Magnet == "" {
+		if announcement.InfoHash == "" || announcement.Ref == "" {
 			continue
 		}
 		if strings.EqualFold(announcement.Kind, historyManifestKind) {
@@ -77,7 +77,7 @@ func ensureHistoryManifests(store *Store, netCfg NetworkBootstrapConfig, listenA
 		if strings.TrimSpace(localPeerID) != "" {
 			announcement.LibP2PPeerID = strings.TrimSpace(localPeerID)
 		}
-		announcement.Magnet = withPeerHints(announcement.Magnet, listenAddrs, netCfg.LANPeers)
+		announcement.Ref = withPeerHints(announcement.Ref, listenAddrs, netCfg.LANPeers)
 		grouped[project] = append(grouped[project], announcement)
 	}
 	for project, entries := range grouped {
@@ -214,7 +214,7 @@ func ensureHistoryManifest(store *Store, project, networkID string, entries []Sy
 	})
 }
 
-func enqueueHistoryManifestRefs(store *Store, queuePath string, subscriptions SyncSubscriptions, networkID string, maxAdds int) (int, error) {
+func enqueueHistoryManifestRefs(store *Store, queuePath string, subscriptions SyncSubscriptions, networkID string, maxAdds int, shouldEnqueue func(SyncAnnouncement, SyncRef) bool, onEnqueue func(SyncAnnouncement, SyncRef)) (int, error) {
 	entries, err := os.ReadDir(store.DataDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -255,6 +255,9 @@ func enqueueHistoryManifestRefs(store *Store, queuePath string, subscriptions Sy
 			if err != nil || ref.InfoHash == "" {
 				continue
 			}
+			if shouldEnqueue != nil && !shouldEnqueue(announcement, ref) {
+				continue
+			}
 			if hasLocalTorrent(store, ref.InfoHash) {
 				continue
 			}
@@ -264,6 +267,9 @@ func enqueueHistoryManifestRefs(store *Store, queuePath string, subscriptions Sy
 			enqueued, err := enqueueSyncRef(queuePath, ref)
 			if err != nil {
 				return added, err
+			}
+			if onEnqueue != nil {
+				onEnqueue(announcement, ref)
 			}
 			if enqueued {
 				added++
@@ -486,8 +492,27 @@ func nestedBool(value map[string]any, key string) bool {
 }
 
 func syncRefFromAnnouncement(announcement SyncAnnouncement) (SyncRef, error) {
+	if strings.TrimSpace(announcement.Ref) != "" {
+		ref, err := ParseSyncRef(announcement.Ref)
+		if err != nil {
+			return SyncRef{}, err
+		}
+		ref.Magnet = withSourcePeerHint(ref.Magnet, announcement.SourceHost)
+		ref.Magnet = withLibP2PPeerHint(ref.Magnet, announcement.LibP2PPeerID)
+		ref.Raw = ref.Magnet
+		ref.DirectPeerHint = strings.TrimSpace(announcement.LibP2PPeerID)
+		return ref, nil
+	}
 	if strings.TrimSpace(announcement.Magnet) != "" {
-		return ParseSyncRef(announcement.Magnet)
+		ref, err := ParseSyncRef(announcement.Magnet)
+		if err != nil {
+			return SyncRef{}, err
+		}
+		ref.Magnet = withSourcePeerHint(ref.Magnet, announcement.SourceHost)
+		ref.Magnet = withLibP2PPeerHint(ref.Magnet, announcement.LibP2PPeerID)
+		ref.Raw = ref.Magnet
+		ref.DirectPeerHint = strings.TrimSpace(announcement.LibP2PPeerID)
+		return ref, nil
 	}
 	return ParseSyncRef(announcement.InfoHash)
 }

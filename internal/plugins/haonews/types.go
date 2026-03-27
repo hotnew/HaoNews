@@ -215,7 +215,10 @@ type ArchiveEntry struct {
 type HistoryManifestEntry struct {
 	Protocol          string   `json:"protocol"`
 	InfoHash          string   `json:"infohash"`
+	Ref               string   `json:"ref,omitempty"`
 	Magnet            string   `json:"magnet"`
+	LibP2PPeerID      string   `json:"libp2p_peer_id,omitempty"`
+	SourceHost        string   `json:"source_host,omitempty"`
 	SizeBytes         int64    `json:"size_bytes,omitempty"`
 	Kind              string   `json:"kind,omitempty"`
 	Channel           string   `json:"channel,omitempty"`

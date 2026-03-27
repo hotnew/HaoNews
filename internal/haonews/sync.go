@@ -33,10 +33,11 @@ type SyncOptions struct {
 }
 
 type SyncRef struct {
-	Raw      string
-	Magnet   string
-	InfoHash string
-	Queue    string
+	Raw            string
+	Magnet         string
+	InfoHash       string
+	Queue          string
+	DirectPeerHint string
 }
 
 type SyncItemResult struct {
@@ -395,6 +396,9 @@ func (r *syncRuntime) processQueue(ctx context.Context, direct []string, timeout
 		logf("write sync status: %v", err)
 	}
 	for _, ref := range refs {
+		if strings.TrimSpace(ref.DirectPeerHint) != "" {
+			r.rememberDirectPeer(ref.InfoHash, ref.DirectPeerHint)
+		}
 		result := syncRef(ctx, r.store, ref, timeout, syncPeerSources(r.netCfg), r.subscriptions, r.directTransfer, r.libp2p, r.directPeerIDs(ref.InfoHash))
 		if result.Status == "imported" && result.ContentDir != "" {
 			if err := r.importCreditBundle(result.ContentDir, logf); err != nil && logf != nil {
@@ -447,10 +451,14 @@ func (r *syncRuntime) reconcileQueue(ctx context.Context, direct []string, timeo
 		logf("peer history head queued %d refs", added)
 	}
 	for round := 0; round < 3; round++ {
+		added, err := r.enqueueHistoryFromLocalManifests(logf)
+		if err != nil {
+			return err
+		}
 		if err := r.processQueue(ctx, direct, timeout, logf); err != nil {
 			return err
 		}
-		added, err := r.enqueueHistoryFromLocalManifests(logf)
+		added, err = r.enqueueHistoryFromLocalManifests(logf)
 		if err != nil {
 			return err
 		}
@@ -521,7 +529,7 @@ func (r *syncRuntime) handleAnnouncement(announcement SyncAnnouncement) (bool, e
 	if !matchesAnnouncement(announcement, r.subscriptions) {
 		return false, nil
 	}
-	ref, err := ParseSyncRef(announcement.Magnet)
+	ref, err := syncRefFromAnnouncement(announcement)
 	if err != nil {
 		return false, err
 	}
@@ -743,7 +751,24 @@ func (r *syncRuntime) enqueueHistoryFromLocalManifests(logf func(string, ...any)
 	if r.inRecentHistoryBootstrap() {
 		maxAdds = r.subscriptions.historyMaxItems()
 	}
-	added, err := enqueueHistoryManifestRefs(r.store, r.historyQueuePath, r.subscriptions, r.netCfg.NetworkID, maxAdds)
+	peerSources := syncPeerSources(r.netCfg)
+	added, err := enqueueHistoryManifestRefs(r.store, r.historyQueuePath, r.subscriptions, r.netCfg.NetworkID, maxAdds, func(announcement SyncAnnouncement, ref SyncRef) bool {
+		if len(peerSources) > 0 {
+			return true
+		}
+		if strings.TrimSpace(announcement.LibP2PPeerID) != "" {
+			return true
+		}
+		if strings.TrimSpace(announcement.SourceHost) != "" {
+			return true
+		}
+		if strings.Contains(strings.TrimSpace(ref.Magnet), "x.pe=") {
+			return true
+		}
+		return false
+	}, func(announcement SyncAnnouncement, ref SyncRef) {
+		r.rememberDirectPeer(ref.InfoHash, announcement.LibP2PPeerID)
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -782,6 +807,7 @@ func (r *syncRuntime) enqueueHistoryFromLANPeers(ctx context.Context, logf func(
 			}
 			for _, announcement := range payload.Entries {
 				announcement = normalizeAnnouncement(announcement)
+				announcement.SourceHost = strings.TrimSpace(peerValue)
 				if announcement.NetworkID == "" {
 					announcement.NetworkID = payload.NetworkID
 				}
@@ -1074,6 +1100,67 @@ func withPeerHints(magnet string, addrs []net.Addr, lanPeers []string) string {
 	return uri.String()
 }
 
+func withSourcePeerHint(magnet, sourceHost string) string {
+	magnet = strings.TrimSpace(magnet)
+	if magnet == "" {
+		return magnet
+	}
+	sourceHost = normalizeTorrentHTTPHost(sourceHost)
+	uri, err := url.Parse(magnet)
+	if err != nil {
+		return magnet
+	}
+	query := uri.Query()
+
+	// Strip legacy tracker and stale peer-hint parameters. The current runtime
+	// uses libp2p + HTTP fallback only, so old BT-era query params actively hurt
+	// history replay on public/shared nodes.
+	query.Del("tr")
+	query.Del("x.pe")
+
+	if sourceHost != "" {
+		query.Add("x.pe", net.JoinHostPort(sourceHost, "51818"))
+	}
+	uri.RawQuery = query.Encode()
+	return uri.String()
+}
+
+func WithSourcePeerHintForSyncRef(rawRef, sourceHost string) string {
+	return withSourcePeerHint(rawRef, sourceHost)
+}
+
+func withLibP2PPeerHint(magnet, peerID string) string {
+	magnet = strings.TrimSpace(magnet)
+	peerID = strings.TrimSpace(peerID)
+	if magnet == "" || peerID == "" {
+		return magnet
+	}
+	uri, err := url.Parse(magnet)
+	if err != nil {
+		return magnet
+	}
+	query := uri.Query()
+	query.Del("x.hn.peer")
+	query.Set("peer", peerID)
+	uri.RawQuery = query.Encode()
+	return uri.String()
+}
+
+func WithLibP2PPeerHintForSyncRef(rawRef, peerID string) string {
+	return withLibP2PPeerHint(rawRef, peerID)
+}
+
+func syncRefLibP2PPeerHint(query url.Values) string {
+	if query == nil {
+		return ""
+	}
+	peerHint := strings.TrimSpace(query.Get("peer"))
+	if peerHint != "" {
+		return peerHint
+	}
+	return strings.TrimSpace(query.Get("x.hn.peer"))
+}
+
 func localPeerHosts(lanPeers []string) []string {
 	out := make([]string, 0, 4)
 	seen := make(map[string]struct{})
@@ -1325,26 +1412,76 @@ func ParseSyncRef(raw string) (SyncRef, error) {
 	if raw == "" {
 		return SyncRef{}, errors.New("empty sync ref")
 	}
+	if strings.HasPrefix(strings.ToLower(raw), syncRefScheme+"://") {
+		uri, err := url.Parse(raw)
+		if err != nil {
+			return SyncRef{}, fmt.Errorf("parse sync ref: %w", err)
+		}
+		if !strings.EqualFold(uri.Host, "bundle") {
+			return SyncRef{}, fmt.Errorf("unsupported sync ref host %q", uri.Host)
+		}
+		infoHash := strings.Trim(strings.TrimSpace(uri.Path), "/")
+		if !isHexInfoHash(infoHash) {
+			return SyncRef{}, fmt.Errorf("unsupported sync ref infohash %q", infoHash)
+		}
+		query := normalizeSyncRefQuery(uri.Query())
+		return SyncRef{
+			Raw:            raw,
+			Magnet:         canonicalSyncRefWithQuery(strings.ToLower(infoHash), query),
+			InfoHash:       strings.ToLower(infoHash),
+			DirectPeerHint: syncRefLibP2PPeerHint(query),
+		}, nil
+	}
 	if strings.HasPrefix(strings.ToLower(raw), "magnet:?") {
+		uri, err := url.Parse(raw)
+		if err != nil {
+			return SyncRef{}, fmt.Errorf("parse magnet: %w", err)
+		}
 		infoHash, err := extractInfoHashFromMagnet(raw)
 		if err != nil {
 			return SyncRef{}, fmt.Errorf("parse magnet: %w", err)
 		}
+		query := normalizeSyncRefQuery(uri.Query())
 		return SyncRef{
-			Raw:      raw,
-			Magnet:   raw,
-			InfoHash: infoHash,
+			Raw:            raw,
+			Magnet:         canonicalSyncRefWithQuery(infoHash, query),
+			InfoHash:       infoHash,
+			DirectPeerHint: syncRefLibP2PPeerHint(query),
 		}, nil
 	}
 	if isHexInfoHash(raw) {
 		infoHash := strings.ToLower(raw)
 		return SyncRef{
 			Raw:      raw,
-			Magnet:   "magnet:?xt=urn:btih:" + infoHash,
+			Magnet:   CanonicalSyncRef(infoHash, ""),
 			InfoHash: infoHash,
 		}, nil
 	}
 	return SyncRef{}, fmt.Errorf("unsupported sync ref %q", raw)
+}
+
+func normalizeSyncRefQuery(query url.Values) url.Values {
+	out := url.Values{}
+	if query == nil {
+		return out
+	}
+	if dn := strings.TrimSpace(query.Get("dn")); dn != "" {
+		out.Set("dn", dn)
+	}
+	for _, value := range query["x.pe"] {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out.Add("x.pe", value)
+		}
+	}
+	peerHint := strings.TrimSpace(query.Get("peer"))
+	if peerHint == "" {
+		peerHint = strings.TrimSpace(query.Get("x.hn.peer"))
+	}
+	if peerHint != "" {
+		out.Set("peer", peerHint)
+	}
+	return out
 }
 
 func extractInfoHashFromMagnet(raw string) (string, error) {
@@ -1443,11 +1580,25 @@ func sanitizeQueuedSyncRef(raw string, peerSources []string) (string, bool, erro
 func syncPeerSources(cfg NetworkBootstrapConfig) []string {
 	seen := make(map[string]struct{})
 	out := make([]string, 0, len(cfg.LANPeers)+len(cfg.PublicPeers)+len(cfg.RelayPeers))
-	values := append([]string{}, cfg.LANPeers...)
-	values = append(values, cfg.PublicPeers...)
-	values = append(values, cfg.RelayPeers...)
-	for _, value := range values {
-		host := normalizeTorrentHTTPHost(value)
+	type source struct {
+		value string
+		kind  string
+	}
+	values := make([]source, 0, len(cfg.LANPeers)+len(cfg.PublicPeers)+len(cfg.RelayPeers))
+	for _, value := range cfg.LANPeers {
+		values = append(values, source{value: value, kind: "lan"})
+	}
+	for _, value := range cfg.PublicPeers {
+		values = append(values, source{value: value, kind: "public"})
+	}
+	for _, value := range cfg.RelayPeers {
+		values = append(values, source{value: value, kind: "relay"})
+	}
+	for _, item := range values {
+		if cfg.IsPublicMode() && item.kind == "public" {
+			continue
+		}
+		host := normalizeTorrentHTTPHost(item.value)
 		if host == "" {
 			continue
 		}
@@ -1455,7 +1606,7 @@ func syncPeerSources(cfg NetworkBootstrapConfig) []string {
 			continue
 		}
 		seen[host] = struct{}{}
-		out = append(out, value)
+		out = append(out, item.value)
 	}
 	return out
 }
