@@ -47,6 +47,29 @@ type torrentRef struct {
 	SizeBytes int64
 }
 
+func (idx Index) Clone() Index {
+	cloned := Index{
+		Bundles:         append([]Bundle(nil), idx.Bundles...),
+		Posts:           append([]Post(nil), idx.Posts...),
+		PostByInfoHash:  make(map[string]Post, len(idx.PostByInfoHash)),
+		RepliesByPost:   make(map[string][]Reply, len(idx.RepliesByPost)),
+		ReactionsByPost: make(map[string][]Reaction, len(idx.ReactionsByPost)),
+		ChannelStats:    append([]FacetStat(nil), idx.ChannelStats...),
+		TopicStats:      append([]FacetStat(nil), idx.TopicStats...),
+		SourceStats:     append([]FacetStat(nil), idx.SourceStats...),
+	}
+	for key, post := range idx.PostByInfoHash {
+		cloned.PostByInfoHash[key] = post
+	}
+	for key, replies := range idx.RepliesByPost {
+		cloned.RepliesByPost[key] = append([]Reply(nil), replies...)
+	}
+	for key, reactions := range idx.ReactionsByPost {
+		cloned.ReactionsByPost[key] = append([]Reaction(nil), reactions...)
+	}
+	return cloned
+}
+
 func loadTorrentRefs(dir string) (map[string]torrentRef, error) {
 	refs := map[string]torrentRef{}
 	store := &haonews.Store{TorrentDir: dir}

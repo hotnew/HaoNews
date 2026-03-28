@@ -41,6 +41,22 @@ func (a *App) Index() (Index, error) {
 	return a.index()
 }
 
+func (a *App) InvalidateIndexCache() {
+	a.invalidateIndexCache()
+}
+
+func (a *App) IndexSignature() (string, error) {
+	return a.indexSignature()
+}
+
+func (a *App) CachedHTTPResponse(key string) (cachedHTTPResponse, bool) {
+	return a.cachedHTTPResponse(key)
+}
+
+func (a *App) StoreHTTPResponse(key string, entry cachedHTTPResponse) {
+	a.storeHTTPResponse(key, entry)
+}
+
 func (a *App) SubscriptionRules() (SubscriptionRules, error) {
 	return a.subscriptionRules()
 }

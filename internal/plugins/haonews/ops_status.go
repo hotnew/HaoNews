@@ -10,7 +10,31 @@ import (
 	corehaonews "hao.news/internal/haonews"
 )
 
+const nodeStatusCacheTTL = 3 * time.Second
+
 func (a *App) nodeStatus(index Index) NodeStatus {
+	now := time.Now()
+	a.nodeStatusMu.Lock()
+	if a.nodeStatusCache.ready && now.Before(a.nodeStatusCache.expiresAt) {
+		status := a.nodeStatusCache.status
+		a.nodeStatusMu.Unlock()
+		return status
+	}
+	a.nodeStatusMu.Unlock()
+
+	status := a.buildNodeStatus(index)
+
+	a.nodeStatusMu.Lock()
+	a.nodeStatusCache = cachedNodeStatusState{
+		status:    status,
+		expiresAt: now.Add(nodeStatusCacheTTL),
+		ready:     true,
+	}
+	a.nodeStatusMu.Unlock()
+	return status
+}
+
+func (a *App) buildNodeStatus(index Index) NodeStatus {
 	storeState := "ready"
 	storeTone := "good"
 	if _, err := os.Stat(filepath.Join(a.storeRoot, "data")); err != nil {

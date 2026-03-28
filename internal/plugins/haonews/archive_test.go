@@ -57,3 +57,41 @@ func TestSyncMarkdownArchiveWritesUTCPlus8DateFolders(t *testing.T) {
 		t.Fatalf("archive path = %q, want %q", index.Bundles[0].ArchiveMD, expected)
 	}
 }
+
+func TestPrepareMarkdownArchiveSetsPathsWithoutWritingFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	index := Index{
+		Bundles: []Bundle{{
+			InfoHash: "abc123",
+			Message: Message{
+				Kind:      "post",
+				CreatedAt: "2026-03-12T01:00:00+08:00",
+				Extensions: map[string]any{
+					"project": "hao.news",
+				},
+			},
+			CreatedAt: time.Date(2026, 3, 11, 17, 0, 0, 0, time.UTC),
+		}},
+		Posts: []Post{{Bundle: Bundle{InfoHash: "abc123"}}},
+		PostByInfoHash: map[string]Post{
+			"abc123": {Bundle: Bundle{InfoHash: "abc123"}},
+		},
+		RepliesByPost:   map[string][]Reply{},
+		ReactionsByPost: map[string][]Reaction{},
+	}
+
+	PrepareMarkdownArchive(&index, root)
+
+	expected := filepath.Join(root, "2026-03-12", "post-abc123.md")
+	if index.Bundles[0].ArchiveMD != expected {
+		t.Fatalf("bundle archive path = %q, want %q", index.Bundles[0].ArchiveMD, expected)
+	}
+	if got := index.PostByInfoHash["abc123"].ArchiveMD; got != expected {
+		t.Fatalf("post archive path = %q, want %q", got, expected)
+	}
+	if _, err := os.Stat(expected); !os.IsNotExist(err) {
+		t.Fatalf("prepare archive should not write file, stat err = %v", err)
+	}
+}

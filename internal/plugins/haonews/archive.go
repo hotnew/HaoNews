@@ -11,18 +11,38 @@ import (
 )
 
 func SyncMarkdownArchive(index *Index, archiveRoot string) error {
+	PrepareMarkdownArchive(index, archiveRoot)
+	return writeMarkdownArchiveBundles(index.Bundles, archiveRoot)
+}
+
+func PrepareMarkdownArchive(index *Index, archiveRoot string) {
+	if index == nil {
+		return
+	}
+	archiveRoot = strings.TrimSpace(archiveRoot)
+	if archiveRoot == "" {
+		for i := range index.Bundles {
+			index.Bundles[i].ArchiveMD = ""
+		}
+		index.applyArchivePaths()
+		return
+	}
+	for i := range index.Bundles {
+		index.Bundles[i].ArchiveMD = filepath.Join(archiveRoot, markdownArchiveRelativePath(index.Bundles[i]))
+	}
+	index.applyArchivePaths()
+}
+
+func writeMarkdownArchiveBundles(bundles []Bundle, archiveRoot string) error {
 	archiveRoot = strings.TrimSpace(archiveRoot)
 	if archiveRoot == "" {
 		return nil
 	}
-	for i := range index.Bundles {
-		path, err := writeBundleMarkdown(index.Bundles[i], archiveRoot)
-		if err != nil {
+	for i := range bundles {
+		if _, err := writeBundleMarkdown(bundles[i], archiveRoot); err != nil {
 			return err
 		}
-		index.Bundles[i].ArchiveMD = path
 	}
-	index.applyArchivePaths()
 	return nil
 }
 

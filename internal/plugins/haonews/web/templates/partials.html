@@ -129,6 +129,11 @@
   };
 
   const currentAjaxRoot = () => document.querySelector(ajaxRootSelector);
+  const ajaxRootKind = () => {
+    const root = currentAjaxRoot();
+    if (!(root instanceof HTMLElement)) return "";
+    return (root.getAttribute("data-feed-ajax-kind") || "").trim().toLowerCase();
+  };
 
   const shouldAjaxURL = (nextURL) => {
     if (!nextURL || nextURL.origin !== window.location.origin) return false;
@@ -136,13 +141,19 @@
   };
 
   let ajaxToken = 0;
+  let ajaxInFlight = false;
   const loadAjaxPage = async (nextURL, historyMode) => {
     const existing = currentAjaxRoot();
     if (!existing) {
       window.location.href = nextURL.toString();
       return;
     }
+    if (ajaxInFlight) return;
     const token = ++ajaxToken;
+    ajaxInFlight = true;
+    const preserveScroll = historyMode !== "push";
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
     existing.classList.add("ajax-loading");
     existing.setAttribute("aria-busy", "true");
     try {
@@ -172,9 +183,17 @@
       } else if (historyMode === "replace") {
         window.history.replaceState({ haoNewsAjax: true }, "", nextURL.toString());
       }
-      window.scrollTo({ top: 0, behavior: "auto" });
+      if (preserveScroll) {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({ left: scrollX, top: scrollY, behavior: "auto" });
+        });
+      } else {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      }
     } catch (error) {
       window.location.href = nextURL.toString();
+    } finally {
+      ajaxInFlight = false;
     }
   };
 
@@ -260,6 +279,38 @@
 
   if (currentAjaxRoot() && (!window.history.state || !window.history.state.haoNewsAjax)) {
     window.history.replaceState({ haoNewsAjax: true }, "", window.location.href);
+  }
+
+  if (!HaoNewsUI.autoRefreshBound) {
+    let lastAutoRefreshAt = Date.now();
+    const shouldAutoRefresh = () => {
+      const kind = ajaxRootKind();
+      if (kind !== "home" && kind !== "collection") return false;
+      if (document.visibilityState !== "visible") return false;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        const tag = active.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+          return false;
+        }
+      }
+      return true;
+    };
+    const autoRefreshTick = async (force) => {
+      if (!currentAjaxRoot()) return;
+      if (!force && !shouldAutoRefresh()) return;
+      lastAutoRefreshAt = Date.now();
+      await loadAjaxPage(new URL(window.location.href), "");
+    };
+    window.setInterval(() => {
+      void autoRefreshTick(false);
+    }, 15000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastAutoRefreshAt < 12000) return;
+      void autoRefreshTick(true);
+    });
+    HaoNewsUI.autoRefreshBound = true;
   }
 })();
 </script>

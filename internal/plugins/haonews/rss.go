@@ -1,6 +1,7 @@
 package newsplugin
 
 import (
+	"bytes"
 	"encoding/xml"
 	"net/http"
 	"net/url"
@@ -54,6 +55,19 @@ func TopicRSSPath(name string) string {
 }
 
 func WriteTopicRSS(w http.ResponseWriter, r *http.Request, project, topic string, posts []Post) error {
+	payload, last, err := TopicRSSBytes(r, project, topic, posts)
+	if err != nil {
+		return err
+	}
+	if !last.IsZero() {
+		w.Header().Set("Last-Modified", last.UTC().Format(http.TimeFormat))
+	}
+	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+	_, err = w.Write(payload)
+	return err
+}
+
+func TopicRSSBytes(r *http.Request, project, topic string, posts []Post) ([]byte, time.Time, error) {
 	topic = canonicalTopic(topic)
 	feedURL := absoluteURL(r, TopicRSSPath(topic))
 	channelURL := absoluteURL(r, TopicPath(topic))
@@ -109,11 +123,12 @@ func WriteTopicRSS(w http.ResponseWriter, r *http.Request, project, topic string
 	}
 	payload, err := xml.MarshalIndent(feed, "", "  ")
 	if err != nil {
-		return err
+		return nil, time.Time{}, err
 	}
-	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-	_, err = w.Write(append([]byte(xml.Header), payload...))
-	return err
+	var out bytes.Buffer
+	out.WriteString(xml.Header)
+	out.Write(payload)
+	return out.Bytes(), last, nil
 }
 
 func absoluteURL(r *http.Request, path string) string {

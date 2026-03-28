@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"hao.news/internal/apphost"
@@ -17,24 +18,30 @@ import (
 var webFS embed.FS
 
 type App struct {
-	storeRoot  string
-	project    string
-	version    string
-	archive    string
-	rulesPath  string
-	writerPath string
-	netPath    string
-	listenAddr string
-	templates  *template.Template
-	staticFS   fs.FS
-	loadIndex  func(storeRoot, project string) (Index, error)
-	syncIndex  func(index *Index, archiveRoot string) error
-	loadRules  func(path string) (SubscriptionRules, error)
-	loadWriter func(path string) (WriterPolicy, error)
-	loadNet    func(path string) (NetworkBootstrapConfig, error)
-	loadSync   func(storeRoot string) (SyncRuntimeStatus, error)
-	loadSuper  func(path string) (SyncSupervisorState, error)
-	options    AppOptions
+	storeRoot       string
+	project         string
+	version         string
+	archive         string
+	rulesPath       string
+	writerPath      string
+	netPath         string
+	listenAddr      string
+	templates       *template.Template
+	staticFS        fs.FS
+	loadIndex       func(storeRoot, project string) (Index, error)
+	syncIndex       func(index *Index, archiveRoot string) error
+	loadRules       func(path string) (SubscriptionRules, error)
+	loadWriter      func(path string) (WriterPolicy, error)
+	loadNet         func(path string) (NetworkBootstrapConfig, error)
+	loadSync        func(storeRoot string) (SyncRuntimeStatus, error)
+	loadSuper       func(path string) (SyncSupervisorState, error)
+	options         AppOptions
+	indexMu         sync.Mutex
+	indexCache      cachedIndexState
+	responseMu      sync.Mutex
+	responseCache   map[string]cachedHTTPResponse
+	nodeStatusMu    sync.Mutex
+	nodeStatusCache cachedNodeStatusState
 }
 
 type AppOptions struct {
@@ -46,6 +53,29 @@ type AppOptions struct {
 	NetworkRoutes      bool
 	NetworkAPIRoutes   bool
 	WriterPolicyRoutes bool
+}
+
+type cachedIndexState struct {
+	signature string
+	index     Index
+	recheckAt time.Time
+	ready     bool
+}
+
+type cachedHTTPResponse struct {
+	status       int
+	body         []byte
+	contentType  string
+	cacheControl string
+	etag         string
+	lastModified time.Time
+	expiresAt    time.Time
+}
+
+type cachedNodeStatusState struct {
+	status    NodeStatus
+	expiresAt time.Time
+	ready     bool
 }
 
 type NavItem struct {
@@ -495,36 +525,43 @@ func postURL(post Post, opts FeedOptions) string {
 }
 
 func (a *App) index() (Index, error) {
-	index, err := a.loadIndex(a.storeRoot, a.project)
+	now := time.Now()
+	a.indexMu.Lock()
+	if a.indexCache.ready && now.Before(a.indexCache.recheckAt) {
+		index := a.indexCache.index.Clone()
+		a.indexMu.Unlock()
+		return index, nil
+	}
+	a.indexMu.Unlock()
+
+	signature, err := a.indexSignature()
 	if err != nil {
 		return Index{}, err
 	}
-	rules := SubscriptionRules{}
-	if a.loadRules != nil {
-		rules, err = a.loadRules(a.rulesPath)
-		if err != nil {
-			return Index{}, err
-		}
-		index = ApplySubscriptionRules(index, a.project, rules)
+
+	a.indexMu.Lock()
+	if a.indexCache.ready && a.indexCache.signature == signature {
+		a.indexCache.recheckAt = now.Add(indexCacheProbeInterval)
+		index := a.indexCache.index.Clone()
+		a.indexMu.Unlock()
+		return index, nil
 	}
-	index, err = a.governanceIndex(index)
+	a.indexMu.Unlock()
+
+	index, err := a.buildIndex()
 	if err != nil {
 		return Index{}, err
 	}
-	if a.syncIndex != nil {
-		if err := a.syncIndex(&index, a.archive); err != nil {
-			return Index{}, err
-		}
+
+	a.indexMu.Lock()
+	a.indexCache = cachedIndexState{
+		signature: signature,
+		index:     index,
+		recheckAt: now.Add(indexCacheProbeInterval),
+		ready:     true,
 	}
-	if a.loadRules != nil {
-		index = ApplySubscriptionRules(index, a.project, rules)
-	}
-	decisions, err := LoadModerationDecisions(ModerationDecisionsPath(a.writerPath))
-	if err != nil {
-		return Index{}, err
-	}
-	decisions = mergeAutoApproveDecisions(index, decisions, rules)
-	index = applyModerationDecisions(index, decisions)
+	index = a.indexCache.index.Clone()
+	a.indexMu.Unlock()
 	return index, nil
 }
 

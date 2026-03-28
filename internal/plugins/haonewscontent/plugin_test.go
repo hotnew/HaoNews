@@ -74,6 +74,39 @@ func TestPluginBuildServesFeedAPI(t *testing.T) {
 	}
 }
 
+func TestPluginBuildServesFeedAPIWithETag(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	publishSignedTopicPost(t, root, "World keep", "hao.news/world", []string{"world"})
+
+	site := buildContentSiteAtRoot(t, root)
+	req := httptest.NewRequest(http.MethodGet, "/api/feed", nil)
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	etag := strings.TrimSpace(rec.Header().Get("ETag"))
+	if etag == "" {
+		t.Fatalf("expected ETag header, got none")
+	}
+	if cacheControl := rec.Header().Get("Cache-Control"); !strings.Contains(cacheControl, "max-age=5") {
+		t.Fatalf("cache-control = %q, want api feed ttl", cacheControl)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/feed", nil)
+	req.Header.Set("If-None-Match", etag)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("second status = %d, want %d", rec.Code, http.StatusNotModified)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("expected 304 body to be empty, got %q", rec.Body.String())
+	}
+}
+
 func TestPluginBuildRendersMarkdownSafelyOnPostPage(t *testing.T) {
 	t.Parallel()
 
@@ -186,6 +219,44 @@ func TestPluginBuildServesPendingApprovalPage(t *testing.T) {
 	}
 	if strings.Contains(body, "World keep") {
 		t.Fatalf("expected pending page to exclude approved post, got %q", body)
+	}
+}
+
+func TestPluginBuildServesTopicRSSWithETag(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	publishSignedTopicPost(t, root, "World keep", "hao.news/world", []string{"world"})
+
+	site := buildContentSiteAtRoot(t, root)
+	req := httptest.NewRequest(http.MethodGet, "/topics/world/rss", nil)
+	req.Host = "ai.jie.news"
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	etag := strings.TrimSpace(rec.Header().Get("ETag"))
+	if etag == "" {
+		t.Fatalf("expected ETag header, got none")
+	}
+	if lastModified := rec.Header().Get("Last-Modified"); strings.TrimSpace(lastModified) == "" {
+		t.Fatalf("expected Last-Modified header, got none")
+	}
+	if cacheControl := rec.Header().Get("Cache-Control"); !strings.Contains(cacheControl, "max-age=60") {
+		t.Fatalf("cache-control = %q, want rss ttl", cacheControl)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/topics/world/rss", nil)
+	req.Host = "ai.jie.news"
+	req.Header.Set("If-None-Match", etag)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("second status = %d, want %d", rec.Code, http.StatusNotModified)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("expected 304 body to be empty, got %q", rec.Body.String())
 	}
 }
 

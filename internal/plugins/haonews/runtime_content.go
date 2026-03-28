@@ -288,33 +288,81 @@ func BuildDirectorySummaryStats(stats []FacetStat, posts []Post) []SummaryStat {
 
 func BuildSourceDirectory(index Index) []DirectoryItem {
 	items := make([]DirectoryItem, 0, len(index.SourceStats))
+	if len(index.SourceStats) == 0 {
+		return items
+	}
+	type sourceAggregate struct {
+		storyCount    int
+		replyCount    int
+		reactionCount int
+		externalURL   string
+		posts         []Post
+	}
+	aggregates := make(map[string]*sourceAggregate, len(index.SourceStats))
+	for _, post := range index.Posts {
+		if !post.HasSourcePage || post.SourceName == "" {
+			continue
+		}
+		aggregate, ok := aggregates[post.SourceName]
+		if !ok {
+			aggregate = &sourceAggregate{}
+			aggregates[post.SourceName] = aggregate
+		}
+		aggregate.storyCount++
+		aggregate.replyCount += post.ReplyCount
+		aggregate.reactionCount += post.ReactionCount
+		if aggregate.externalURL == "" && post.SourceURL != "" {
+			aggregate.externalURL = post.SourceURL
+		}
+		aggregate.posts = append(aggregate.posts, post)
+	}
 	for _, stat := range index.SourceStats {
-		posts := index.FilterPosts(FeedOptions{Source: stat.Name, Now: time.Now()})
+		aggregate := aggregates[stat.Name]
+		if aggregate == nil {
+			aggregate = &sourceAggregate{}
+		}
 		items = append(items, DirectoryItem{
 			Name:          stat.Name,
 			URL:           SourcePath(stat.Name),
-			ExternalURL:   SourceURLFromPosts(posts),
-			StoryCount:    len(posts),
-			ReplyCount:    CountReplies(posts),
-			ReactionCount: CountReactions(posts),
-			AvgTruth:      formatAverageTruth(posts),
+			ExternalURL:   aggregate.externalURL,
+			StoryCount:    aggregate.storyCount,
+			ReplyCount:    aggregate.replyCount,
+			ReactionCount: aggregate.reactionCount,
+			AvgTruth:      formatAverageTruth(aggregate.posts),
 		})
 	}
 	return items
 }
 
 func BuildTopicDirectory(index Index, opts FeedOptions) []DirectoryItem {
+	basePosts := index.FilterPosts(FeedOptions{
+		Tab:    opts.Tab,
+		Window: opts.Window,
+		Now:    opts.Now,
+	})
+	counts := make(map[string]*DirectoryItem, len(index.TopicStats))
+	for _, post := range basePosts {
+		for _, topic := range post.Topics {
+			item, ok := counts[topic]
+			if !ok {
+				item = &DirectoryItem{
+					Name: topic,
+					URL:  pageURL(TopicPath(topic), opts, "topic", "", "topic"),
+				}
+				counts[topic] = item
+			}
+			item.StoryCount++
+			item.ReplyCount += post.ReplyCount
+			item.ReactionCount += post.ReactionCount
+		}
+	}
 	items := make([]DirectoryItem, 0, len(index.TopicStats))
 	for _, stat := range index.TopicStats {
-		posts := index.FilterPosts(FeedOptions{Topic: stat.Name, Now: time.Now()})
-		items = append(items, DirectoryItem{
-			Name:          stat.Name,
-			URL:           pageURL(TopicPath(stat.Name), opts, "topic", "", "topic"),
-			StoryCount:    len(posts),
-			ReplyCount:    CountReplies(posts),
-			ReactionCount: CountReactions(posts),
-			AvgTruth:      formatAverageTruth(posts),
-		})
+		item, ok := counts[stat.Name]
+		if !ok {
+			continue
+		}
+		items = append(items, *item)
 	}
 	return items
 }
