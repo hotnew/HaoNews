@@ -421,6 +421,7 @@ feed slug：
 
 还没有完成：
 
+- reviewer 管理页的进一步 UI 打磨
 - 多 reviewer 共识后自动批准
 - 更细的风险评分 / 时间窗策略
 - reviewer 派生与 delegation 的更完整 UI 流程

@@ -1547,3 +1547,71 @@ reviewer 状态增加 QueueURL
   - `TestPluginBuildModerationReviewersCanFilterRecentActionsByReviewer`
     现在同时校验最近动作帖子链接保留 reviewer 上下文
   - `TestPluginBuildPostFromModerationPreservesReviewerBackURL`
+
+2026-03-28 18:33 CST
+
+补充最终收尾路线图
+
+目标：
+
+- 把当前已经落地的：
+  - feed / topic / discovery
+  - hot / new
+  - approval 审核链
+- 收成一份明确的下一步总计划
+
+已完成：
+
+- 新增：
+  - `add-next-roadmap.md`
+- 路线图已明确分成：
+  - 审核链最终打磨
+  - 同步与部署稳定性
+  - 治理层扩展
+  - 文档和发布层
+- `README.md`
+  - 当前边界和剩余任务已同步到最新状态
+
+结果：
+
+- 后续不再只靠 `add.md` 零散追加
+- 可以直接按 `add-next-roadmap.md` 继续推进最终收尾
+
+2026-03-28 19:05 CST
+
+收尾阶段补齐待批准批量审核入口
+
+目标：
+
+- 给 `pending-approval` 增加真正可运营的批量审核入口
+- 支持当前 reviewer / 搜索上下文下的批量：
+  - 批准
+  - 拒绝
+  - 分派
+
+已完成：
+
+- 新增：
+  - `/moderation/batch`
+- `Pending Approval` 页面新增：
+  - `批量审核` 面板
+  - `全选当前页`
+  - `批量批准`
+  - `批量拒绝`
+  - `批量分派`
+- 待批准卡片新增：
+  - 批量勾选框
+- 批量操作会保留当前：
+  - `reviewer`
+  - 搜索条件
+  - 其他当前列表 query 参数
+- 审核 redirect 现在统一使用安全 query 拼接
+  - 不再出现 `?reviewer=...?...` 这种错误链接
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 回归测试补充：
+  - `TestPluginBuildPendingApprovalShowsBatchModerationForm`
+  - `TestPluginBuildBatchModerationApprovePromotesSelectedPosts`
+  - `TestPluginBuildBatchModerationRoutePreservesReviewerQueue`

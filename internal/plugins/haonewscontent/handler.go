@@ -35,6 +35,9 @@ func newHandler(app *newsplugin.App, staticFS fs.FS) http.Handler {
 	mux.HandleFunc("/moderation/reviewers", func(w http.ResponseWriter, r *http.Request) {
 		handleModerationReviewers(app, w, r)
 	})
+	mux.HandleFunc("/moderation/batch", func(w http.ResponseWriter, r *http.Request) {
+		handleModerationBatch(app, w, r)
+	})
 	mux.HandleFunc("/moderation/", func(w http.ResponseWriter, r *http.Request) {
 		handleModeration(app, w, r)
 	})
@@ -175,6 +178,7 @@ func handlePendingApproval(app *newsplugin.App, w http.ResponseWriter, r *http.R
 		Kind:                      "Pending Approval",
 		Name:                      rules.ApprovalFeed,
 		Path:                      "/pending-approval",
+		RequestURI:                r.URL.RequestURI(),
 		DirectoryURL:              "/",
 		APIPath:                   "/api/pending-approval",
 		Now:                       time.Now(),
@@ -501,12 +505,12 @@ func handleModeration(app *newsplugin.App, w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !voteRequestTrusted(r) {
-		http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=untrusted", http.StatusSeeOther)
+		http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation_error", "untrusted"), http.StatusSeeOther)
 		return
 	}
 	index, err := app.Index()
 	if err != nil {
-		http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=load", http.StatusSeeOther)
+		http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation_error", "load"), http.StatusSeeOther)
 		return
 	}
 	post, ok := index.PostByInfoHash[strings.ToLower(infoHash)]
@@ -516,58 +520,131 @@ func handleModeration(app *newsplugin.App, w http.ResponseWriter, r *http.Reques
 	}
 	action := canonicalModerationAction(r.FormValue("action"))
 	if action == "" {
-		http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=invalid", http.StatusSeeOther)
+		http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation_error", "invalid"), http.StatusSeeOther)
 		return
 	}
 	identityPath, identityLabel, err := resolveModerationIdentityForAction(app, post, r.FormValue("actor"), action)
 	if err != nil {
-		http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=no_identity", http.StatusSeeOther)
+		http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation_error", "no_identity"), http.StatusSeeOther)
 		return
 	}
 	identity, err := haonews.LoadAgentIdentity(identityPath)
 	if err != nil {
-		http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=identity", http.StatusSeeOther)
+		http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation_error", "identity"), http.StatusSeeOther)
 		return
 	}
 	decisionsPath := newsplugin.ModerationDecisionsPath(app.WriterPolicyPath())
 	decisions, err := newsplugin.LoadModerationDecisions(decisionsPath)
 	if err != nil {
-		http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=load", http.StatusSeeOther)
+		http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation_error", "load"), http.StatusSeeOther)
 		return
 	}
+	decision, err := buildModerationDecision(app, post, action, identity, identityLabel, strings.TrimSpace(r.FormValue("reviewer")))
+	if err != nil {
+		http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation_error", "invalid"), http.StatusSeeOther)
+		return
+	}
+	decisions[decision.InfoHash] = decision
+	if err := newsplugin.SaveModerationDecisions(decisionsPath, decisions); err != nil {
+		http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation_error", "save"), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, withRedirectParam(redirectModerationTarget(r, infoHash), "moderation", action), http.StatusSeeOther)
+}
+
+func handleModerationBatch(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	redirectTarget := moderationBatchRedirect(r)
+	if !voteRequestTrusted(r) {
+		http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "untrusted"), http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "invalid"), http.StatusSeeOther)
+		return
+	}
+	infoHashes := uniqueInfoHashes(r.PostForm["infohash"])
+	if len(infoHashes) == 0 {
+		http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "empty"), http.StatusSeeOther)
+		return
+	}
+	action := canonicalModerationAction(r.FormValue("action"))
+	if action == "" {
+		http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "invalid"), http.StatusSeeOther)
+		return
+	}
+	index, err := app.Index()
+	if err != nil {
+		http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "load"), http.StatusSeeOther)
+		return
+	}
+	decisionsPath := newsplugin.ModerationDecisionsPath(app.WriterPolicyPath())
+	decisions, err := newsplugin.LoadModerationDecisions(decisionsPath)
+	if err != nil {
+		http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "load"), http.StatusSeeOther)
+		return
+	}
+	reviewer := strings.TrimSpace(r.FormValue("reviewer"))
+	actor := strings.TrimSpace(r.FormValue("actor"))
+	for _, infoHash := range infoHashes {
+		post, ok := index.PostByInfoHash[infoHash]
+		if !ok || !post.PendingApproval {
+			continue
+		}
+		identityPath, identityLabel, err := resolveModerationIdentityForAction(app, post, actor, action)
+		if err != nil {
+			http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "no_identity"), http.StatusSeeOther)
+			return
+		}
+		identity, err := haonews.LoadAgentIdentity(identityPath)
+		if err != nil {
+			http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "identity"), http.StatusSeeOther)
+			return
+		}
+		decision, err := buildModerationDecision(app, post, action, identity, identityLabel, reviewer)
+		if err != nil {
+			http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "invalid"), http.StatusSeeOther)
+			return
+		}
+		decisions[decision.InfoHash] = decision
+	}
+	if err := newsplugin.SaveModerationDecisions(decisionsPath, decisions); err != nil {
+		http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation_error", "save"), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, withRedirectParam(redirectTarget, "moderation", action), http.StatusSeeOther)
+}
+
+func buildModerationDecision(app *newsplugin.App, post newsplugin.Post, action string, identity haonews.AgentIdentity, identityLabel, reviewer string) (newsplugin.ModerationDecision, error) {
 	decision := newsplugin.ModerationDecision{
-		InfoHash:       strings.ToLower(strings.TrimSpace(infoHash)),
+		InfoHash:       strings.ToLower(strings.TrimSpace(post.InfoHash)),
 		Action:         action,
 		ActorAuthor:    strings.TrimSpace(identity.Author),
 		ActorPublicKey: strings.TrimSpace(identity.PublicKey),
 		ActorIdentity:  identityLabel,
 		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
-	if action == moderationActionRoute {
-		reviewer := strings.TrimSpace(r.FormValue("reviewer"))
-		if reviewer == "" {
-			http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=invalid", http.StatusSeeOther)
-			return
-		}
-		options, err := listLocalIdentities(app)
-		if err != nil {
-			http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=no_identity", http.StatusSeeOther)
-			return
-		}
-		reviewerIdentity, ok := localIdentityByLabel(options, reviewer)
-		if !ok {
-			http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=invalid", http.StatusSeeOther)
-			return
-		}
-		decision.AssignedReviewer = reviewerIdentity.label
-		decision.AssignedReviewerKey = reviewerIdentity.identity.PublicKey
+	if action != moderationActionRoute {
+		return decision, nil
 	}
-	decisions[decision.InfoHash] = decision
-	if err := newsplugin.SaveModerationDecisions(decisionsPath, decisions); err != nil {
-		http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation_error=save", http.StatusSeeOther)
-		return
+	reviewer = strings.TrimSpace(reviewer)
+	if reviewer == "" {
+		return newsplugin.ModerationDecision{}, errors.New("missing reviewer")
 	}
-	http.Redirect(w, r, redirectModerationTarget(r, infoHash)+"?moderation="+action, http.StatusSeeOther)
+	options, err := listLocalIdentities(app)
+	if err != nil {
+		return newsplugin.ModerationDecision{}, err
+	}
+	reviewerIdentity, ok := localIdentityByLabel(options, reviewer)
+	if !ok {
+		return newsplugin.ModerationDecision{}, errors.New("invalid reviewer")
+	}
+	decision.AssignedReviewer = reviewerIdentity.label
+	decision.AssignedReviewerKey = reviewerIdentity.identity.PublicKey
+	return decision, nil
 }
 
 func canonicalModerationAction(value string) string {
@@ -641,6 +718,7 @@ func handleSource(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		Kind:            "Source",
 		Name:            name,
 		Path:            newsplugin.SourcePath(name),
+		RequestURI:      r.URL.RequestURI(),
 		DirectoryURL:    "/sources",
 		APIPath:         "/api" + newsplugin.SourcePath(name),
 		Now:             time.Now(),
@@ -721,6 +799,7 @@ func handleTopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		Kind:            "Topic",
 		Name:            name,
 		Path:            newsplugin.TopicPath(name),
+		RequestURI:      r.URL.RequestURI(),
 		DirectoryURL:    "/topics",
 		APIPath:         "/api" + newsplugin.TopicPath(name),
 		Now:             time.Now(),
@@ -1785,6 +1864,8 @@ func moderationError(r *http.Request, identityErr error) string {
 			return "当前节点没有可用 signing identity。"
 		case "invalid":
 			return "审核动作无效。"
+		case "empty":
+			return "请先选择至少一篇待批准文章。"
 		case "identity":
 			return "本地 identity 读取失败。"
 		case "load":
@@ -1814,6 +1895,28 @@ func redirectModerationTarget(r *http.Request, infoHash string) string {
 		return moderationReviewerRedirect(strings.TrimSpace(r.URL.Query().Get("reviewer")))
 	}
 	return "/posts/" + infoHash
+}
+
+func moderationBatchRedirect(r *http.Request) string {
+	if redirect := strings.TrimSpace(r.FormValue("redirect")); strings.HasPrefix(redirect, "/") {
+		return redirect
+	}
+	return "/pending-approval"
+}
+
+func withRedirectParam(target, key, value string) string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		target = "/"
+	}
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return target
+	}
+	values := parsed.Query()
+	values.Set(strings.TrimSpace(key), strings.TrimSpace(value))
+	parsed.RawQuery = values.Encode()
+	return parsed.String()
 }
 
 func postModerationRedirect(r *http.Request, post newsplugin.Post) string {
@@ -1856,6 +1959,23 @@ func moderationReviewerRedirect(reviewer string) string {
 		return "/moderation/reviewers?reviewer=" + url.QueryEscape(strings.TrimSpace(reviewer))
 	}
 	return "/moderation/reviewers"
+}
+
+func uniqueInfoHashes(items []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }
 
 func voteRequestTrusted(r *http.Request) bool {

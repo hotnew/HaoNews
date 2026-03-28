@@ -527,6 +527,12 @@ export PATH="$HOME/go/bin:$PATH"
     - 选择 reviewer
     - 点击 `分派`
     不需要先点进单文章页
+  - `待批准` 页现在也支持批量审核：
+    - 勾选当前页待批准文章
+    - `批量批准`
+    - `批量拒绝`
+    - `批量分派`
+    并继续保留当前 reviewer / 搜索上下文
   - 如果当前正在：
     - `/pending-approval?reviewer=<name>`
     那么卡片上的：
@@ -578,7 +584,13 @@ export PATH="$HOME/go/bin:$PATH"
   - root identity 可直接审核
   - child reviewer identity 需要有效 moderation scope
 - 还没有完成：
-  - 自动上线策略
+  - reviewer 管理页进一步 UI 打磨
+  - 多 reviewer 共识
+  - 更细的风险评分 / 时间窗策略
+  - 跨节点同步审核结果
+
+- 进一步路线图：
+  - `add-next-roadmap.md`
 
 也就是说：
 

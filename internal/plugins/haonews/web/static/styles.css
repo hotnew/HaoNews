@@ -764,6 +764,17 @@ body.sidebar-collapsed .page-shell {
   align-items: start;
 }
 
+.pending-select-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+}
+
 .story-headline-copy {
   display: grid;
   gap: 10px;
@@ -821,6 +832,37 @@ body.sidebar-collapsed .page-shell {
 
 .story-social-link:hover {
   background: #e4ebf5;
+}
+
+.moderation-batch-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.moderation-batch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.moderation-batch-form,
+.moderation-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.moderation-batch-actions select,
+.inline-form select,
+.inline-form input {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
 }
 
 .story-links-column {

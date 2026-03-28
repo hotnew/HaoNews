@@ -119,6 +119,7 @@ type CollectionPageData struct {
 	Kind                      string
 	Name                      string
 	Path                      string
+	RequestURI                string
 	DirectoryURL              string
 	APIPath                   string
 	Now                       time.Time

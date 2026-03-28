@@ -189,6 +189,48 @@ func TestPluginBuildServesPendingApprovalPage(t *testing.T) {
 	}
 }
 
+func TestPluginBuildPendingApprovalShowsBatchModerationForm(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	result := publishSignedTopicPost(t, root, "Tech pending", "hao.news/tech", []string{"technology"})
+	writeDelegatedReviewerIdentity(t, root, "reviewer-usa", []string{"moderation:approve:topic/technology"})
+
+	site := buildContentSiteAtRoot(t, root)
+	rulesPath := filepath.Join(root, "config", "subscriptions.json")
+	data := `{
+  "whitelist_mode": "approval",
+  "approval_feed": "pending-approval",
+  "auto_route_pending": true,
+  "topics": ["world"]
+}`
+	if err := os.WriteFile(rulesPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/pending-approval?reviewer=reviewer-usa&q=tech", nil)
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`id="pending-batch-form"`,
+		`action="/moderation/batch"`,
+		`name="redirect" value="/pending-approval?reviewer=reviewer-usa&amp;q=tech"`,
+		`name="infohash" value="` + result.InfoHash + `"`,
+		`data-check-all="#pending-batch-form input[name='infohash']"`,
+		`批量批准`,
+		`批量拒绝`,
+		`批量分派`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected pending approval page to contain %q, got %q", want, body)
+		}
+	}
+}
+
 func TestPluginBuildModerationApprovePromotesPendingPost(t *testing.T) {
 	t.Parallel()
 
@@ -290,6 +332,127 @@ func TestPluginBuildModerationRejectKeepsPostHidden(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "Tech pending") {
 		t.Fatalf("expected rejected post to stay hidden from home page, got %q", rec.Body.String())
+	}
+}
+
+func TestPluginBuildBatchModerationApprovePromotesSelectedPosts(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	first := publishSignedTopicPost(t, root, "Tech pending one", "hao.news/tech", []string{"technology"})
+	second := publishSignedTopicPost(t, root, "Tech pending two", "hao.news/tech", []string{"technology"})
+	writeTestSigningIdentity(t, root, "moderator-signing")
+
+	site := buildContentSiteAtRoot(t, root)
+	rulesPath := filepath.Join(root, "config", "subscriptions.json")
+	data := `{
+  "whitelist_mode": "approval",
+  "approval_feed": "pending-approval",
+  "topics": ["world"]
+}`
+	if err := os.WriteFile(rulesPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	form := url.Values{}
+	form.Add("infohash", first.InfoHash)
+	form.Add("infohash", second.InfoHash)
+	form.Set("action", "approve")
+	form.Set("redirect", "/pending-approval")
+	req := httptest.NewRequest(http.MethodPost, "/moderation/batch", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/pending-approval", nil)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "Tech pending one") || strings.Contains(body, "Tech pending two") {
+		t.Fatalf("expected batch approved posts to leave pending page, got %q", body)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body = rec.Body.String()
+	if !strings.Contains(body, "Tech pending one") || !strings.Contains(body, "Tech pending two") {
+		t.Fatalf("expected batch approved posts on home page, got %q", body)
+	}
+}
+
+func TestPluginBuildBatchModerationRoutePreservesReviewerQueue(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	result := publishSignedTopicPost(t, root, "Tech pending", "hao.news/tech", []string{"technology"})
+	writeDelegatedReviewerIdentity(t, root, "reviewer-usa", []string{
+		"moderation:approve:topic/technology",
+		"moderation:route:any",
+	})
+	writeTestSigningIdentity(t, root, "moderator-signing")
+
+	site := buildContentSiteAtRoot(t, root)
+	rulesPath := filepath.Join(root, "config", "subscriptions.json")
+	data := `{
+  "whitelist_mode": "approval",
+  "approval_feed": "pending-approval",
+  "topics": ["world"]
+}`
+	if err := os.WriteFile(rulesPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	form := url.Values{}
+	form.Add("infohash", result.InfoHash)
+	form.Set("action", "route")
+	form.Set("reviewer", "reviewer-usa")
+	form.Set("redirect", "/pending-approval?reviewer=reviewer-usa")
+	req := httptest.NewRequest(http.MethodPost, "/moderation/batch", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	location := rec.Header().Get("Location")
+	redirectURL, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) error = %v", location, err)
+	}
+	if redirectURL.Path != "/pending-approval" {
+		t.Fatalf("redirect path = %q, want /pending-approval", redirectURL.Path)
+	}
+	if got := redirectURL.Query().Get("reviewer"); got != "reviewer-usa" {
+		t.Fatalf("redirect reviewer = %q, want reviewer-usa", got)
+	}
+	if got := redirectURL.Query().Get("moderation"); got != "route" {
+		t.Fatalf("redirect moderation = %q, want route", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/pending-approval?reviewer=reviewer-usa", nil)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Tech pending") {
+		t.Fatalf("expected routed post to remain in reviewer queue, got %q", body)
+	}
+	if !strings.Contains(body, `name="redirect" value="/pending-approval?reviewer=reviewer-usa"`) {
+		t.Fatalf("expected reviewer redirect to stay preserved, got %q", body)
 	}
 }
 

@@ -137,6 +137,17 @@
       }
     });
   });
+  document.querySelectorAll("[data-check-all]").forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      const selector = toggle.getAttribute("data-check-all");
+      if (!selector) return;
+      document.querySelectorAll(selector).forEach((item) => {
+        if (item instanceof HTMLInputElement && item.type === "checkbox" && !item.disabled) {
+          item.checked = toggle.checked;
+        }
+      });
+    });
+  });
 })();
 </script>
 {{end}}
@@ -189,7 +200,13 @@
         {{if .HasSourcePage}}<a href="{{sourcePath .SourceName}}">{{compactIdentity .SourceName}}</a>{{end}}
         {{if .SourceSiteName}}<span>{{.SourceSiteName}}</span>{{end}}
       </div>
-      <div class="story-headline-row">
+        <div class="story-headline-row">
+        {{if .PendingApproval}}
+          <label class="pending-select-toggle">
+            <input type="checkbox" name="infohash" value="{{.InfoHash}}" form="pending-batch-form">
+            <span class="micro-copy">批量</span>
+          </label>
+        {{end}}
         <div class="story-social-rail">
           <span class="story-social-pill" aria-label="投票">
             <span class="story-social-icon" aria-hidden="true">&#9650;</span>

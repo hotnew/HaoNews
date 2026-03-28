@@ -117,6 +117,34 @@
               </div>
             </section>
           {{end}}
+          {{if eq .Kind "Pending Approval"}}
+            <section class="panel panel-inline moderation-batch-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="panel-label">批量审核</p>
+                  <p class="micro-copy">勾选当前页待批准文章后，可直接批量批准、拒绝或分派 reviewer。</p>
+                </div>
+                <label class="micro-copy moderation-batch-toggle">
+                  <input type="checkbox" data-check-all="#pending-batch-form input[name='infohash']">
+                  全选当前页
+                </label>
+              </div>
+              <form id="pending-batch-form" class="moderation-batch-form" method="post" action="/moderation/batch">
+                <input type="hidden" name="redirect" value="{{.RequestURI}}">
+                <div class="moderation-batch-actions">
+                  <button class="button-link" type="submit" name="action" value="approve">批量批准</button>
+                  <button class="button-link button-link-muted" type="submit" name="action" value="reject">批量拒绝</button>
+                  {{if .ModerationReviewerOptions}}
+                    <label class="micro-copy" for="batch-reviewer">分派 reviewer</label>
+                    <select id="batch-reviewer" name="reviewer">
+                      {{range .ModerationReviewerOptions}}<option value="{{.}}">{{.}}</option>{{end}}
+                    </select>
+                    <button class="button-link button-link-muted" type="submit" name="action" value="route">批量分派</button>
+                  {{end}}
+                </div>
+              </form>
+            </section>
+          {{end}}
           <section class="panel panel-inline">
             <p class="panel-label">当前视图</p>
             <div class="summary-grid">
