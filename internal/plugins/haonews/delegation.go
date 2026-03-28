@@ -2,6 +2,7 @@ package newsplugin
 
 import (
 	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	corehaonews "hao.news/internal/haonews"
 )
 
 const latestAppDelegationVersion = "haonews-delegation/0.1"
@@ -426,6 +429,95 @@ func loadRevocationsFromDir(root string) ([]WriterRevocation, error) {
 		out = append(out, item)
 	}
 	return out, nil
+}
+
+func SignWriterDelegation(delegation WriterDelegation, identity corehaonews.AgentIdentity) (WriterDelegation, error) {
+	privateKey, err := signingPrivateKey(identity)
+	if err != nil {
+		return WriterDelegation{}, err
+	}
+	delegation.Normalize()
+	payload, err := delegation.payloadBytes()
+	if err != nil {
+		return WriterDelegation{}, err
+	}
+	delegation.Signature = hex.EncodeToString(ed25519.Sign(privateKey, payload))
+	if err := ValidateWriterDelegation(delegation); err != nil {
+		return WriterDelegation{}, err
+	}
+	return delegation, nil
+}
+
+func SignWriterRevocation(revocation WriterRevocation, identity corehaonews.AgentIdentity) (WriterRevocation, error) {
+	privateKey, err := signingPrivateKey(identity)
+	if err != nil {
+		return WriterRevocation{}, err
+	}
+	revocation.Normalize()
+	payload, err := revocation.payloadBytes()
+	if err != nil {
+		return WriterRevocation{}, err
+	}
+	revocation.Signature = hex.EncodeToString(ed25519.Sign(privateKey, payload))
+	if err := ValidateWriterRevocation(revocation); err != nil {
+		return WriterRevocation{}, err
+	}
+	return revocation, nil
+}
+
+func SaveWriterDelegation(path string, delegation WriterDelegation) error {
+	if err := ValidateWriterDelegation(delegation); err != nil {
+		return err
+	}
+	return writeJSONFile(path, delegation)
+}
+
+func SaveWriterRevocation(path string, revocation WriterRevocation) error {
+	if err := ValidateWriterRevocation(revocation); err != nil {
+		return err
+	}
+	return writeJSONFile(path, revocation)
+}
+
+func writeJSONFile(path string, value any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o644)
+}
+
+func signingPrivateKey(identity corehaonews.AgentIdentity) (ed25519.PrivateKey, error) {
+	if err := identity.ValidatePrivate(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(identity.PrivateKey) != "" {
+		privateKey, err := decodeHexKey(identity.PrivateKey, ed25519.PrivateKeySize, "private_key")
+		if err != nil {
+			return nil, err
+		}
+		return ed25519.PrivateKey(privateKey), nil
+	}
+	if !identity.HDEnabled || strings.TrimSpace(identity.Mnemonic) == "" {
+		return nil, errors.New("identity does not contain private signing material")
+	}
+	seed, err := corehaonews.MnemonicToSeed(identity.Mnemonic)
+	if err != nil {
+		return nil, err
+	}
+	_, privateKey, _, err := corehaonews.DeriveHDKey(seed, identity.DerivationPath)
+	if err != nil {
+		return nil, err
+	}
+	privateKeyBytes, err := decodeHexKey(privateKey, ed25519.PrivateKeySize, "private_key")
+	if err != nil {
+		return nil, err
+	}
+	return ed25519.PrivateKey(privateKeyBytes), nil
 }
 
 func jsonFilesInDir(root string) ([]string, error) {

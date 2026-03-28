@@ -4,6 +4,7 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -89,52 +90,63 @@ type NodeStatus struct {
 }
 
 type HomePageData struct {
-	Project         string
-	Version         string
-	Posts           []Post
-	Now             time.Time
-	ListenAddr      string
-	AgentView       bool
-	ShowNetworkWarn bool
-	Options         FeedOptions
-	PageNav         []NavItem
-	TopicFacets     []FeedFacet
-	SourceFacets    []FeedFacet
-	SortOptions     []SortOption
-	WindowOptions   []TimeWindowOption
-	PageSizeOptions []PageSizeOption
-	ActiveFilters   []ActiveFilter
-	SummaryStats    []SummaryStat
-	TotalPostCount  int
-	Pagination      PaginationState
-	Subscriptions   SubscriptionRules
-	NodeStatus      NodeStatus
+	Project                   string
+	Version                   string
+	Posts                     []Post
+	ModerationReviewerOptions []string
+	Now                       time.Time
+	ListenAddr                string
+	AgentView                 bool
+	ShowNetworkWarn           bool
+	Options                   FeedOptions
+	PageNav                   []NavItem
+	TopicFacets               []FeedFacet
+	SourceFacets              []FeedFacet
+	SortOptions               []SortOption
+	WindowOptions             []TimeWindowOption
+	PageSizeOptions           []PageSizeOption
+	ActiveFilters             []ActiveFilter
+	SummaryStats              []SummaryStat
+	TotalPostCount            int
+	Pagination                PaginationState
+	Subscriptions             SubscriptionRules
+	NodeStatus                NodeStatus
 }
 
 type CollectionPageData struct {
-	Project         string
-	Version         string
-	Kind            string
-	Name            string
-	Path            string
-	DirectoryURL    string
-	APIPath         string
-	Now             time.Time
-	Posts           []Post
-	Options         FeedOptions
-	PageNav         []NavItem
-	TabOptions      []TabOption
-	SortOptions     []SortOption
-	WindowOptions   []TimeWindowOption
-	PageSizeOptions []PageSizeOption
-	SideLabel       string
-	SideFacets      []FeedFacet
-	ActiveFilters   []ActiveFilter
-	SummaryStats    []SummaryStat
-	TotalPostCount  int
-	Pagination      PaginationState
-	ExternalURL     string
-	NodeStatus      NodeStatus
+	Project                   string
+	Version                   string
+	Kind                      string
+	Name                      string
+	Path                      string
+	DirectoryURL              string
+	APIPath                   string
+	Now                       time.Time
+	Posts                     []Post
+	ModerationReviewerOptions []string
+	Options                   FeedOptions
+	PageNav                   []NavItem
+	TabOptions                []TabOption
+	SortOptions               []SortOption
+	WindowOptions             []TimeWindowOption
+	PageSizeOptions           []PageSizeOption
+	SideLabel                 string
+	SideFacets                []FeedFacet
+	ExtraSideLabel            string
+	ExtraSideFacets           []FeedFacet
+	ActiveFilters             []ActiveFilter
+	SummaryStats              []SummaryStat
+	TotalPostCount            int
+	Pagination                PaginationState
+	ExternalURL               string
+	NodeStatus                NodeStatus
+}
+
+type PostCardData struct {
+	Post
+	ModerationReviewerOptions []string
+	ModerationRedirect        string
+	PostURL                   string
 }
 
 type DirectoryPageData struct {
@@ -153,18 +165,67 @@ type DirectoryPageData struct {
 }
 
 type PostPageData struct {
+	Project                   string
+	Version                   string
+	PageNav                   []NavItem
+	BackURL                   string
+	Post                      Post
+	Replies                   []Reply
+	Reactions                 []Reaction
+	Related                   []Post
+	NodeStatus                NodeStatus
+	VoteEnabled               bool
+	VoteIdentityLabel         string
+	VoteNotice                string
+	VoteError                 string
+	ModerationEnabled         bool
+	ModerationIdentityLabel   string
+	ModerationReviewerOptions []string
+	ModerationRedirect        string
+	ModerationNotice          string
+	ModerationError           string
+}
+
+type ModerationReviewerStatus struct {
+	Name            string
+	Author          string
+	AgentID         string
+	PublicKey       string
+	ParentPublicKey string
+	QueueURL        string
+	Active          bool
+	DirectAdmin     bool
+	Scopes          []string
+	PendingAssigned int
+	RecentApproved  int
+	RecentRejected  int
+	RecentRouted    int
+	SuggestedTopics []string
+}
+
+type ModerationRecentAction struct {
+	InfoHash         string
+	Title            string
+	Action           string
+	ActorIdentity    string
+	AssignedReviewer string
+	CreatedAt        string
+	Note             string
+}
+
+type ModerationPageData struct {
 	Project           string
 	Version           string
 	PageNav           []NavItem
-	Post              Post
-	Replies           []Reply
-	Reactions         []Reaction
-	Related           []Post
+	Now               time.Time
+	Reviewers         []ModerationReviewerStatus
+	ReviewerFilter    string
+	RecentActions     []ModerationRecentAction
+	SummaryStats      []SummaryStat
 	NodeStatus        NodeStatus
-	VoteEnabled       bool
-	VoteIdentityLabel string
-	VoteNotice        string
-	VoteError         string
+	RootIdentityLabel string
+	ModerationNotice  string
+	ModerationError   string
 }
 
 type ArchiveIndexPageData struct {
@@ -355,6 +416,7 @@ func newApp(storeRoot, project, version, archiveRoot, rulesPath, writerPath, net
 		"renderMarkdown":  renderMarkdown,
 		"renderPostBody":  renderPostBody,
 		"reactionLabel":   reactionLabel,
+		"postCardData":    postCardData,
 		"topicAliasPairs": topicAliasPairs,
 		"sourcePath":      SourcePath,
 		"topicPath":       TopicPath,
@@ -392,13 +454,51 @@ func newApp(storeRoot, project, version, archiveRoot, rulesPath, writerPath, net
 	}, nil
 }
 
+func postCardData(post Post, reviewerOptions []string, opts FeedOptions) PostCardData {
+	return PostCardData{
+		Post:                      post,
+		ModerationReviewerOptions: reviewerOptions,
+		ModerationRedirect:        pendingModerationRedirect(post, opts),
+		PostURL:                   postURL(post, opts),
+	}
+}
+
+func pendingModerationRedirect(post Post, opts FeedOptions) string {
+	if opts.PendingApproval {
+		if reviewer := strings.TrimSpace(opts.Reviewer); reviewer != "" {
+			return "/pending-approval?reviewer=" + url.QueryEscape(reviewer)
+		}
+	}
+	if reviewer := strings.TrimSpace(post.AssignedReviewer); reviewer != "" {
+		return "/pending-approval?reviewer=" + url.QueryEscape(reviewer)
+	}
+	if reviewer := strings.TrimSpace(post.SuggestedReviewer); reviewer != "" {
+		return "/pending-approval?reviewer=" + url.QueryEscape(reviewer)
+	}
+	return "/pending-approval"
+}
+
+func postURL(post Post, opts FeedOptions) string {
+	base := "/posts/" + strings.TrimSpace(post.InfoHash)
+	if !opts.PendingApproval {
+		return base
+	}
+	values := url.Values{}
+	values.Set("from", "pending")
+	if reviewer := strings.TrimSpace(opts.Reviewer); reviewer != "" {
+		values.Set("reviewer", reviewer)
+	}
+	return base + "?" + values.Encode()
+}
+
 func (a *App) index() (Index, error) {
 	index, err := a.loadIndex(a.storeRoot, a.project)
 	if err != nil {
 		return Index{}, err
 	}
+	rules := SubscriptionRules{}
 	if a.loadRules != nil {
-		rules, err := a.loadRules(a.rulesPath)
+		rules, err = a.loadRules(a.rulesPath)
 		if err != nil {
 			return Index{}, err
 		}
@@ -413,6 +513,15 @@ func (a *App) index() (Index, error) {
 			return Index{}, err
 		}
 	}
+	if a.loadRules != nil {
+		index = ApplySubscriptionRules(index, a.project, rules)
+	}
+	decisions, err := LoadModerationDecisions(ModerationDecisionsPath(a.writerPath))
+	if err != nil {
+		return Index{}, err
+	}
+	decisions = mergeAutoApproveDecisions(index, decisions, rules)
+	index = applyModerationDecisions(index, decisions)
 	return index, nil
 }
 

@@ -16,30 +16,38 @@ const defaultHistoryDays = 7
 const defaultHistoryMaxItems = 500
 
 const (
-	discoveryFeedGlobal  = "global"
-	discoveryFeedNews    = "news"
-	discoveryFeedLive    = "live"
-	discoveryFeedArchive = "archive"
-	discoveryFeedNewbies = "new-agents"
+	discoveryFeedGlobal   = "global"
+	discoveryFeedNews     = "news"
+	discoveryFeedLive     = "live"
+	discoveryFeedArchive  = "archive"
+	discoveryFeedNewbies  = "new-agents"
+	whitelistModeStrict   = "strict"
+	whitelistModeApproval = "approval"
+	defaultApprovalFeed   = "pending-approval"
 )
 
 type SyncSubscriptions struct {
-	Channels        []string          `json:"channels"`
-	Topics          []string          `json:"topics"`
-	Tags            []string          `json:"tags"`
-	Authors         []string          `json:"authors,omitempty"`
-	DiscoveryFeeds  []string          `json:"discovery_feeds,omitempty"`
-	DiscoveryTopics []string          `json:"discovery_topics,omitempty"`
-	TopicWhitelist  []string          `json:"topic_whitelist,omitempty"`
-	TopicAliases    map[string]string `json:"topic_aliases,omitempty"`
-	MaxAgeDays      int               `json:"max_age_days"`
-	MaxBundleMB     int               `json:"max_bundle_mb"`
-	MaxItemsPerDay  int64             `json:"max_items_per_day"`
-	HistoryDays     int               `json:"history_days,omitempty"`
-	HistoryMaxItems int               `json:"history_max_items,omitempty"`
-	HistoryChannels []string          `json:"history_channels,omitempty"`
-	HistoryTopics   []string          `json:"history_topics,omitempty"`
-	HistoryAuthors  []string          `json:"history_authors,omitempty"`
+	Channels            []string          `json:"channels"`
+	Topics              []string          `json:"topics"`
+	Tags                []string          `json:"tags"`
+	Authors             []string          `json:"authors,omitempty"`
+	WhitelistMode       string            `json:"whitelist_mode,omitempty"`
+	ApprovalFeed        string            `json:"approval_feed,omitempty"`
+	AutoRoutePending    bool              `json:"auto_route_pending,omitempty"`
+	ApprovalRoutes      map[string]string `json:"approval_routes,omitempty"`
+	ApprovalAutoApprove []string          `json:"approval_auto_approve,omitempty"`
+	DiscoveryFeeds      []string          `json:"discovery_feeds,omitempty"`
+	DiscoveryTopics     []string          `json:"discovery_topics,omitempty"`
+	TopicWhitelist      []string          `json:"topic_whitelist,omitempty"`
+	TopicAliases        map[string]string `json:"topic_aliases,omitempty"`
+	MaxAgeDays          int               `json:"max_age_days"`
+	MaxBundleMB         int               `json:"max_bundle_mb"`
+	MaxItemsPerDay      int64             `json:"max_items_per_day"`
+	HistoryDays         int               `json:"history_days,omitempty"`
+	HistoryMaxItems     int               `json:"history_max_items,omitempty"`
+	HistoryChannels     []string          `json:"history_channels,omitempty"`
+	HistoryTopics       []string          `json:"history_topics,omitempty"`
+	HistoryAuthors      []string          `json:"history_authors,omitempty"`
 }
 
 func LoadSyncSubscriptions(path string) (SyncSubscriptions, error) {
@@ -66,8 +74,12 @@ func (r *SyncSubscriptions) Normalize() {
 	if r == nil {
 		return
 	}
+	r.WhitelistMode = normalizeWhitelistMode(r.WhitelistMode)
+	r.ApprovalFeed = normalizeApprovalFeed(r.ApprovalFeed)
 	r.TopicAliases = normalizedTopicAliases(r.TopicAliases)
 	whitelist := topicWhitelistSet(r.TopicWhitelist, r.TopicAliases)
+	r.ApprovalRoutes = normalizedApprovalRoutes(r.ApprovalRoutes, r.TopicAliases, whitelist)
+	r.ApprovalAutoApprove = normalizedApprovalSelectors(r.ApprovalAutoApprove, r.TopicAliases, whitelist)
 	r.TopicWhitelist = whitelistToSlice(whitelist)
 	r.Channels = uniqueFold(r.Channels)
 	r.Topics = uniqueCanonicalTopicsWithAliases(r.Topics, r.TopicAliases, whitelist)
@@ -87,6 +99,30 @@ func (r *SyncSubscriptions) Normalize() {
 	if r.MaxItemsPerDay <= 0 {
 		r.MaxItemsPerDay = defaultMaxItemsPerDay
 	}
+}
+
+func normalizeWhitelistMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", whitelistModeStrict:
+		return whitelistModeStrict
+	case whitelistModeApproval:
+		return whitelistModeApproval
+	default:
+		return whitelistModeStrict
+	}
+}
+
+func normalizeApprovalFeed(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return defaultApprovalFeed
+	}
+	value = strings.ReplaceAll(value, "_", "-")
+	value = strings.ReplaceAll(value, " ", "-")
+	if value == "pending" || value == "approval" {
+		return defaultApprovalFeed
+	}
+	return value
 }
 
 func (r SyncSubscriptions) discoveryFeeds() []string {
@@ -309,6 +345,92 @@ func whitelistToSlice(set map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func normalizedApprovalRoutes(raw map[string]string, aliases map[string]string, whitelist map[string]struct{}) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for selector, reviewer := range raw {
+		reviewer = strings.TrimSpace(reviewer)
+		if reviewer == "" {
+			continue
+		}
+		selector = strings.TrimSpace(selector)
+		if selector == "" {
+			continue
+		}
+		key := strings.ToLower(selector)
+		switch {
+		case strings.HasPrefix(key, "feed/"):
+			feed := canonicalDiscoveryFeed(strings.TrimPrefix(key, "feed/"))
+			if feed == "" {
+				continue
+			}
+			out["feed/"+feed] = reviewer
+		default:
+			topic := key
+			if strings.HasPrefix(key, "topic/") {
+				topic = strings.TrimPrefix(key, "topic/")
+			}
+			topic = canonicalTopicWithAliases(topic, aliases)
+			if topic == "" || !topicAllowedByWhitelist(topic, whitelist) {
+				continue
+			}
+			out["topic/"+topic] = reviewer
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizedApprovalSelectors(items []string, aliases map[string]string, whitelist map[string]struct{}) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		selector := canonicalApprovalSelector(item, aliases, whitelist)
+		if selector == "" {
+			continue
+		}
+		if _, ok := seen[selector]; ok {
+			continue
+		}
+		seen[selector] = struct{}{}
+		out = append(out, selector)
+	}
+	return out
+}
+
+func canonicalApprovalSelector(selector string, aliases map[string]string, whitelist map[string]struct{}) string {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return ""
+	}
+	key := strings.ToLower(selector)
+	switch {
+	case strings.HasPrefix(key, "feed/"):
+		feed := canonicalDiscoveryFeed(strings.TrimPrefix(key, "feed/"))
+		if feed == "" {
+			return ""
+		}
+		return "feed/" + feed
+	default:
+		topic := key
+		if strings.HasPrefix(key, "topic/") {
+			topic = strings.TrimPrefix(key, "topic/")
+		}
+		topic = canonicalTopicWithAliases(topic, aliases)
+		if topic == "" || !topicAllowedByWhitelist(topic, whitelist) {
+			return ""
+		}
+		return "topic/" + topic
+	}
 }
 
 func topicAliasPairs(aliases map[string]string) []string {

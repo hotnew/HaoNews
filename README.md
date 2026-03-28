@@ -413,6 +413,179 @@ export PATH="$HOME/go/bin:$PATH"
 - 首页“本地订阅镜像”
 - `/network` 页里的 `libp2p PubSub`
 
+### 可选：配置本地白名单模式和待批准池
+
+如果你希望把“未命中白名单的内容”先留在本地，等管理员决定是否上线，可以在：
+
+- `~/.hao-news/subscriptions.json`
+
+里增加：
+
+- `whitelist_mode`
+  - `strict`
+    - 维持当前默认行为
+    - 只有命中白名单的内容会出现在首页、`/topics`、`/sources`
+  - `approval`
+    - 未命中白名单的内容不会直接消失
+    - 会进入本地待批准池
+- `approval_feed`
+  - 本地待批准池名字
+  - 当前默认是：
+    - `pending-approval`
+- `auto_route_pending`
+  - 是否把待批准内容自动分派给最匹配的本地 reviewer
+  - 当前默认是：
+    - `false`
+- `approval_routes`
+  - 显式指定某些 topic/feed 默认交给哪个 reviewer
+  - key 支持：
+    - `topic/<topic>`
+    - `feed/<feed>`
+  - 简写：
+    - 直接写 `world`
+    - 会按 `topic/world` 处理
+- `approval_auto_approve`
+  - 显式指定哪些 topic/feed 命中后直接自动上线
+  - 支持：
+    - `topic/<topic>`
+    - `feed/<feed>`
+  - 简写：
+    - 直接写 `world`
+    - 会按 `topic/world` 处理
+
+最小示例：
+
+```json
+{
+  "topics": ["world", "news"],
+  "whitelist_mode": "approval",
+  "approval_feed": "pending-approval",
+  "auto_route_pending": true,
+  "approval_routes": {
+    "topic/world": "reviewer-usa",
+    "feed/news": "reviewer-news"
+  },
+  "approval_auto_approve": [
+    "topic/futures",
+    "feed/live"
+  ],
+  "topic_whitelist": ["world", "news", "futures"],
+  "topic_aliases": {
+    "世界": "world",
+    "国际": "world",
+    "新闻": "news",
+    "期货": "futures"
+  }
+}
+```
+
+启用后：
+
+- 命中白名单的内容：
+  - 正常进入首页和 topic/feed
+- 未命中白名单的内容：
+  - 不会进入默认可见 feed
+  - 会保留在：
+    - `/pending-approval`
+    - `/api/pending-approval`
+
+页面入口：
+
+- 首页顶部会出现：
+  - `待批准`
+  - `审核员`
+- 首页“本地订阅镜像”里会显示：
+  - 当前 `whitelist_mode`
+  - 当前 `approval_feed`
+  - 是否开启 `auto_route_pending`
+  - reviewer 状态页：
+  - `/moderation/reviewers`
+  - `/api/moderation/reviewers`
+  - 页面内可直接：
+    - 从当前 root identity 派生 child reviewer identity
+    - 写入 reviewer delegation scope
+    - 写入 reviewer revocation
+    - 查看最近审核记录
+    - 跳转到该 reviewer 的待批准队列
+    - 按 `reviewer` 过滤最近审核记录
+
+当前边界：
+
+- 这一步已经完成：
+  - 本地待批准池
+  - 本地 `approve / reject`
+  - 本地 `route`
+  - 批准后自动从 `pending-approval` 提升到正常可见 feed
+  - 拒绝后继续保留在本地，但不出现在首页、`/topics`、`/sources`
+  - child reviewer identity 的 scope 校验
+- 使用方式：
+  - 在帖子单页或 `待批准` 页点击：
+    - `批准`
+    - `拒绝`
+    - `分派`
+  - `待批准` 列表卡片现在已经支持直接：
+    - 选择 reviewer
+    - 点击 `分派`
+    不需要先点进单文章页
+  - 如果当前正在：
+    - `/pending-approval?reviewer=<name>`
+    那么卡片上的：
+    - `批准`
+    - `拒绝`
+    - `分派`
+    都会优先留在当前 reviewer 队列
+  - 从 `待批准` 列表点进单文章页时：
+    - 会保留 `from=pending`
+    - 如果当前有 reviewer 过滤，也会保留 `reviewer=<name>`
+    所以单文章页里的审核动作和返回链接也会继续回到当前 reviewer 队列
+  - `审核员` 页面可查看：
+    - 本地 reviewer 列表
+    - moderation scope
+    - 当前待处理分派数
+    - 最近审核记录
+    - 每个 reviewer 的最近批准 / 拒绝 / 分派计数
+  - `待批准` 和 `/api/pending-approval` 支持：
+    - `?reviewer=<name>`
+    过滤当前 reviewer 的队列
+  - `审核员` 和 `/api/moderation/reviewers` 也支持：
+    - `?reviewer=<name>`
+    过滤当前 reviewer 的最近审核记录
+  - 从 `审核员` 页的最近动作点进单文章页时：
+    - 会保留 `from=moderation`
+    - 如果当前有 reviewer 过滤，也会保留 `reviewer=<name>`
+    所以帖子页的返回链接和待批准审核动作也会继续回到当前审核员页
+  - `待批准` 页侧栏现在还会显示：
+    - reviewer 分面
+    可直接点进某个 reviewer 的待批准队列
+  - 也可直接在 `审核员` 页面：
+    - 创建 child reviewer identity
+    - 对现有 reviewer 写入授权 scope
+    - 对现有 reviewer 写入撤销记录
+  - 如果开启：
+    - `auto_route_pending`
+    系统会自动给待批准内容挂上最匹配的 reviewer，但不会覆盖人工已经做出的审核决定
+    - 如果存在多个同样匹配的 reviewer：
+      - 会优先选择当前待处理分派数更少的 reviewer
+      - 待处理数相同再按 reviewer 名字稳定排序
+  - 如果配置了：
+    - `approval_routes`
+    系统会优先按你指定的 topic/feed reviewer 路由，再退回默认 scope 排序
+  - 如果配置了：
+    - `approval_auto_approve`
+    命中的待批准内容会直接本地提升为可见内容，并带：
+    - `moderation_identity=auto-approve`
+  - 当前仅接受本机 / 局域网可信来源请求
+  - root identity 可直接审核
+  - child reviewer identity 需要有效 moderation scope
+- 还没有完成：
+  - 自动上线策略
+
+也就是说：
+
+- `strict / approval / pending-approval` 已经可用
+- 本地最小审核链和 reviewer scope 已经可用
+- 完整“本地管理员审核系统”还在后续阶段
+
 ## 安装、更新、回退
 
 ### 跟踪最新开发状态

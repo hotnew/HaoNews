@@ -556,3 +556,994 @@
 
 - `go test ./internal/plugins/haonews -run 'TestFilterPostsSupportsHotTab|TestBuildIndexComputesVoteBreakdownAndHotScore|TestFilterPostsSupportsWindow|TestBuildIndexCanonicalizesTopicAliases'`
 - `go test ./cmd/haonews ./internal/plugins/haonews ./internal/plugins/haonewscontent ./internal/plugins/haonewsops`
+
+2026-03-28 13:02 CST
+
+本地管理员 `approval / pending-approval` Phase 1
+
+目标：
+
+- 不改全网协议
+- 先把“未命中白名单但本地保留待批准”的最小链路做通
+- 默认主 feed 继续只显示当前白名单命中的内容
+
+已完成：
+
+- `internal/plugins/haonews/types.go`
+  - `SubscriptionRules` 新增：
+    - `whitelist_mode`
+    - `approval_feed`
+  - `Post` 新增：
+    - `VisibilityState`
+    - `PendingApproval`
+    - `ApprovalFeed`
+  - `FeedOptions` 新增：
+    - `PendingApproval`
+- `internal/haonews/subscriptions.go`
+  - `SyncSubscriptions` 同步新增：
+    - `whitelist_mode`
+    - `approval_feed`
+  - 增加默认值与规范化：
+    - `strict`
+    - `approval`
+    - `pending-approval`
+- `internal/plugins/haonews/subscriptions.go`
+  - `LoadSubscriptionRules()` 现在规范化：
+    - `whitelist_mode`
+    - `approval_feed`
+  - `ApplySubscriptionRules()` 支持两种模式：
+    - `strict`
+      - 保持现状，只保留命中白名单的帖子
+    - `approval`
+      - 未命中的帖子保留在本地索引里
+      - 打上：
+        - `visibility_state=pending_approval`
+        - `pending_approval=true`
+        - `approval_feed=pending-approval`
+  - 主页面统计仍按“可见帖子”重算：
+    - `ChannelStats`
+    - `TopicStats`
+    - `SourceStats`
+- `internal/plugins/haonews/server.go`
+  - 修正索引流水线
+  - `writer policy / governance` 重建索引后，会再次应用 `ApplySubscriptionRules()`
+  - 避免 `pending_approval` 状态被 governance 层冲掉
+- `internal/plugins/haonews/index.go`
+  - `FilterPosts()` 默认排除 `pending_approval`
+  - 只有：
+    - `FeedOptions{PendingApproval:true}`
+    才返回待批准帖子
+- `internal/plugins/haonews/runtime_content.go`
+  - API 输出增加：
+    - `visibility_state`
+    - `pending_approval`
+    - `approval_feed`
+  - `APIOptions()` 增加：
+    - `approval=pending`
+- `internal/plugins/haonews/runtimepaths.go`
+  - 默认 `subscriptions.json` 模板新增：
+    - `"whitelist_mode": "strict"`
+    - `"approval_feed": "pending-approval"`
+- `internal/plugins/haonewscontent/handler.go`
+  - 新增页面：
+    - `/pending-approval`
+  - 新增 API：
+    - `/api/pending-approval`
+  - 只有本地规则为：
+    - `whitelist_mode=approval`
+    时才开放该入口
+- 模板：
+  - `home.html`
+    - `approval` 模式下首页顶部出现：
+      - `待批准`
+  - `partials.html`
+    - 本地订阅摘要里显示：
+      - `模式：strict|approval`
+      - `待批准池：pending-approval`
+  - `collection.html`
+    - `Pending Approval` 页面改成专用说明文案
+
+验证：
+
+- `go test ./internal/haonews`
+- `go test ./internal/plugins/haonews ./internal/plugins/haonewscontent`
+- 新增回归测试：
+  - `TestLoadSubscriptionRulesNormalizesApprovalModeAndFeed`
+  - `TestApplySubscriptionRulesApprovalModeKeepsPendingPostsOutOfDefaultFeed`
+  - `TestPluginBuildServesPendingApprovalPage`
+
+当前边界：
+
+- 这一步只做了“本地待批准池”
+- 还没有：
+  - 审核子密钥
+  - `approve/reject/route` 消息
+  - 审核后自动上线到正式 topic/feed
+- 所以这是 `approval` 模式的 Phase 1，不是完整审核系统
+
+2026-03-28 14:08 CST
+
+本地管理员 `approval / pending-approval` 下一阶段
+
+目标：
+
+- 在不改全网协议的前提下
+- 先把本地最小审核动作跑通：
+  - `approve`
+  - `reject`
+- 审核结果只影响本地可见性，不改原帖
+
+已完成：
+
+- `internal/plugins/haonews/moderation.go`
+  - 新增本地审核记录存储：
+    - `moderation_decisions.json`
+  - 新增动作：
+    - `approve`
+    - `reject`
+  - 审核应用逻辑：
+    - `approve`
+      - 清除 `pending_approval`
+      - 提升为可见帖子
+      - 可附带目标 `feed/topics`
+    - `reject`
+      - 清除 `pending_approval`
+      - 标记为 `rejected`
+      - 不进入默认可见索引
+- `internal/plugins/haonews/server.go`
+  - 索引流水线新增本地审核决策应用
+  - `ApplySubscriptionRules()` 之后继续套用：
+    - `LoadModerationDecisions()`
+    - `applyModerationDecisions()`
+- `internal/plugins/haonewscontent/handler.go`
+  - 新增：
+    - `POST /moderation/{infohash}`
+  - 当前支持：
+    - `action=approve`
+    - `action=reject`
+  - 仅接受本机 / 局域网可信请求
+  - 当前沿用本地已有签名身份记录审核 actor
+- 模板：
+  - `post.html`
+    - 待批准帖子单页新增：
+      - `批准`
+      - `拒绝`
+  - `partials.html`
+    - 待批准列表卡片新增：
+      - `批准`
+      - `拒绝`
+- `README.md`
+  - 已补充最小使用说明和当前边界
+
+验证：
+
+- `go test ./internal/haonews`
+- `go test ./internal/plugins/haonews ./internal/plugins/haonewscontent`
+- 新增回归测试：
+  - `TestPluginBuildModerationApprovePromotesPendingPost`
+  - `TestPluginBuildModerationRejectKeepsPostHidden`
+  - `TestApplyModerationDecisionsApprovePromotesPendingPost`
+  - `TestApplyModerationDecisionsRejectHidesPendingPost`
+
+当前边界：
+
+- 这一步完成的是“本地最小审核链”
+- 还没有：
+  - reviewer 管理页
+  - 多 reviewer 自动路由
+  - 自动按主题代理审批
+- 所以这一步可以视为：
+  - `approval` 模式的 Phase 2
+
+2026-03-28 14:31 CST
+
+本地管理员 `approval / pending-approval` reviewer scope 与 route
+
+目标：
+
+- 不改原帖与全网协议
+- 在现有本地审核链上继续接入：
+  - `route`
+  - reviewer identity 选择
+  - child reviewer 的 scope 校验
+
+已完成：
+
+- `internal/plugins/haonews/moderation.go`
+  - 新增动作：
+    - `route`
+  - `ModerationDecision` 新增：
+    - `assigned_reviewer`
+    - `assigned_reviewer_key`
+  - 索引层现在会派生：
+    - `approved_feed`
+    - `approved_topics`
+    - `moderation_action`
+    - `moderation_actor`
+    - `moderation_identity`
+    - `moderation_at`
+    - `assigned_reviewer`
+- `internal/plugins/haonewscontent/handler.go`
+  - `POST /moderation/{infohash}` 现在支持：
+    - `approve`
+    - `reject`
+    - `route`
+  - 审核 identity 选择现在与投票分开
+  - root identity：
+    - 可直接审核
+  - child reviewer identity：
+    - 必须在 delegation store 中命中有效 scope
+  - 当前 scope 规则：
+    - `moderation:approve:any`
+    - `moderation:approve:feed/<feed>`
+    - `moderation:approve:topic/<topic>`
+    - `moderation:reject:*`
+    - `moderation:route:*`
+- `internal/plugins/haonews/runtime_governance_exports.go`
+  - 导出 delegation / revocation 目录 helper
+- 模板：
+  - `post.html`
+    - 待批准审核区显示：
+      - 当前状态
+      - 最近操作 identity
+      - 已分派 reviewer
+      - `批准 / 拒绝 / 分派`
+  - `moderation.html`
+    - 新增：
+      - `/moderation/reviewers`
+      - `/api/moderation/reviewers`
+    - 展示：
+      - 本地 reviewer
+      - moderation scope
+      - 待处理分派数
+  - `partials.html`
+    - 待批准列表卡片显示：
+      - 已分派 reviewer
+- API：
+  - `APIPost()` 新增：
+    - `approved_feed`
+    - `approved_topics`
+    - `moderation_action`
+    - `moderation_actor`
+    - `moderation_identity`
+    - `moderation_at`
+    - `assigned_reviewer`
+    - `assigned_reviewer_key`
+
+验证：
+
+- `go test ./internal/plugins/haonews ./internal/plugins/haonewscontent ./internal/haonews`
+- 新增回归测试：
+  - `TestPluginBuildDelegatedReviewerApprovePromotesPendingPost`
+  - `TestPluginBuildDelegatedReviewerWithoutScopeCannotApprove`
+  - `TestApplyModerationDecisionsRouteKeepsPostPending`
+
+当前边界：
+
+- 这一步已经完成：
+  - 本地 `approve / reject / route`
+  - root identity 审核
+  - child reviewer scope 校验
+- 还没有：
+  - reviewer 管理页
+  - 多 reviewer 自动路由
+  - 自动按主题/来源建议 reviewer
+  - 自动批准规则
+- 所以这一步可以视为：
+  - `approval` 模式的 Phase 3 核心能力
+
+2026-03-28 15:12 CST
+
+本地管理员 `approval / pending-approval` 自动分派
+
+目标：
+
+- 在不覆盖人工审核决定的前提下
+- 让 `approval` 模式支持：
+  - `auto_route_pending`
+  - 自动把待批准内容挂到最匹配 reviewer 名下
+
+已完成：
+
+- `subscriptions.json`
+  - 新增：
+    - `auto_route_pending`
+  - 默认模板写出：
+    - `false`
+- `internal/plugins/haonewscontent/handler.go`
+  - `decoratePendingPostSuggestion()` 现在统一负责：
+    - reviewer 建议
+    - 自动分派
+  - 开启 `auto_route_pending=true` 后：
+    - 若帖子仍处于 `pending_approval`
+    - 且还没有人工分派 reviewer
+    - 且存在匹配 reviewer
+    - 则自动补上：
+      - `assigned_reviewer`
+      - `assigned_reviewer_key`
+      - `moderation_action=route`
+      - `moderation_identity=auto-route`
+  - 不会覆盖人工已写入的：
+    - `assigned_reviewer`
+    - 审核决定
+- API / 页面现在统一使用同一套自动分派结果：
+  - `/pending-approval`
+  - `/api/pending-approval`
+  - `/api/posts/{infohash}`
+  - `/moderation/reviewers`
+  - `/api/moderation/reviewers`
+- 首页“本地订阅镜像”摘要新增：
+  - `自动分派：开启`
+
+验证：
+
+- `go test ./internal/plugins/haonews ./internal/plugins/haonewscontent ./internal/haonews`
+- 新增回归测试：
+  - `TestLoadSubscriptionRulesKeepsAutoRoutePending`
+  - `TestPluginBuildPendingApprovalAutoRoutesSuggestedReviewer`
+
+当前边界：
+
+- 这一步完成的是：
+  - 自动建议 reviewer
+  - 自动挂 reviewer
+  - 网页 / API / reviewer 统计一致
+- 还没有：
+  - delegation 创建 / 撤销 UI
+  - 自动批准规则
+  - reviewer 负载均衡 / 多 reviewer 轮转
+
+2026-03-28 16:18 CST
+
+本地 `auto_route_pending` 多 reviewer 负载均衡
+
+目标：
+
+- 当存在多个同样匹配的 reviewer 时
+- 不再固定总是选第一个
+- 而是优先把待批准内容分给当前待处理更少的 reviewer
+
+已完成：
+
+- `internal/plugins/haonewscontent/handler.go`
+  - 新增：
+    - `pendingAssignmentCounts()`
+    - `preferredModerationCandidate()`
+  - `decoratePendingModerationSuggestions()`
+    - 现在会先统计当前 index 里各 reviewer 已分派的待批准数
+    - 对每篇 pending 帖子逐条更新分派计数
+  - 自动分派和默认建议在没有显式 `approval_routes` 命中时：
+    - 会优先选择待处理分派数更少的 reviewer
+    - 若待处理数相同：
+      - 再按 reviewer 名字稳定排序
+- `README.md`
+  - 补充：
+    - `auto_route_pending` 在多 reviewer 场景下的负载均衡规则
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 新增回归测试：
+  - `TestPluginBuildPendingApprovalAutoRouteBalancesReviewers`
+
+结果：
+
+- 多 reviewer 不再长期倾斜到同一个 child reviewer
+- `approval_routes` 仍然优先
+- 只有在未命中显式路由时，才会进入这套负载均衡选择逻辑
+
+2026-03-28 15:28 CST
+
+本地管理员 `approval_routes` 显式路由
+
+目标：
+
+- 在 `auto_route_pending` 之外
+- 允许本地明确指定：
+  - 哪些 `topic`
+  - 哪些 `feed`
+  默认交给哪个 reviewer
+
+已完成：
+
+- `SubscriptionRules` / `SyncSubscriptions`
+  - 新增：
+    - `approval_routes`
+- 规范化规则：
+  - `topic/<topic>`
+  - `feed/<feed>`
+  - 直接写：
+    - `world`
+    也会按：
+    - `topic/world`
+    处理
+  - `topic alias / whitelist` 会继续生效
+- `decoratePendingPostSuggestion()`
+  - 现在先看：
+    - `approval_routes`
+  - 若命中一个已授权 reviewer：
+    - `SuggestedReviewer`
+    - `SuggestedReason=route:topic/...` 或 `route:feed/...`
+    会优先使用显式路由
+  - 若未命中：
+    - 继续退回原来的 scope 排序建议
+- `README.md`
+  - 补充：
+    - `approval_routes` 使用说明
+
+验证：
+
+- `go test ./internal/plugins/haonews ./internal/plugins/haonewscontent ./internal/haonews`
+- 新增回归测试：
+  - `TestLoadSubscriptionRulesNormalizesApprovalRoutes`
+  - `TestPluginBuildPendingApprovalConfiguredRouteOverridesDefaultReviewer`
+
+当前边界：
+
+- 这一步完成的是：
+  - 本地显式路由优先
+  - scope 排序兜底
+- 还没有：
+  - 自动批准规则
+
+2026-03-28 15:46 CST
+
+本地 reviewer delegation / revocation 管理页
+
+目标：
+
+- 不再只显示 reviewer 状态
+- 允许本地 root identity 直接：
+  - 给现有 reviewer 写入 delegation scope
+  - 给现有 reviewer 写入 revocation
+
+已完成：
+
+- `internal/plugins/haonews/delegation.go`
+  - 新增：
+    - `SignWriterDelegation()`
+    - `SignWriterRevocation()`
+    - `SaveWriterDelegation()`
+    - `SaveWriterRevocation()`
+- `internal/plugins/haonewscontent/handler.go`
+  - `/moderation/reviewers`
+    - 现在支持 `POST`
+  - 新增本地 root identity 自动选择
+  - 支持：
+    - `action=delegate`
+    - `action=revoke`
+  - 会把新记录写入：
+    - `config/delegations/*.json`
+    - `config/revocations/*.json`
+- reviewer 页面：
+  - 显示当前 root identity
+  - 每个 child reviewer 卡片下可直接：
+    - 写入授权 scope
+    - 写入撤销记录
+
+验证：
+
+- `go test ./internal/plugins/haonews ./internal/plugins/haonewscontent ./internal/haonews`
+- 新增回归测试：
+  - `TestPluginBuildModerationReviewersCanDelegateAndRevokeScopes`
+
+当前边界：
+
+- 这一步完成的是：
+  - reviewer 授权 / 撤销闭环
+- 还没有：
+  - 父私钥派生 reviewer 子私钥 UI
+  - 自动批准规则
+  - reviewer 负载均衡 / 多 reviewer 轮转
+
+2026-03-28 16:02 CST
+
+本地 `approval_auto_approve` 自动批准
+
+目标：
+
+- 让 `approval` 模式在显式规则命中时
+- 不经过人工点击
+- 直接把待批准内容本地提升为可见内容
+
+已完成：
+
+- `SubscriptionRules` / `SyncSubscriptions`
+  - 新增：
+    - `approval_auto_approve`
+- 支持 selector：
+  - `topic/<topic>`
+  - `feed/<feed>`
+  - 直接写：
+    - `world`
+    也会按：
+    - `topic/world`
+    处理
+- `internal/plugins/haonews/moderation.go`
+  - 新增：
+    - `mergeAutoApproveDecisions()`
+  - 若帖子仍处于：
+    - `pending_approval`
+  - 且没有人工 moderation decision
+  - 且命中：
+    - `approval_auto_approve`
+  - 则自动合成一条本地 decision：
+    - `action=approve`
+    - `actor_identity=auto-approve`
+    - `note=approval_auto_approve`
+- `internal/plugins/haonews/server.go`
+  - 在 `LoadModerationDecisions()` 后
+  - `applyModerationDecisions()` 前
+  - 接入自动批准合成逻辑
+
+效果：
+
+- 首页
+- topic 页
+- `/api/feed`
+- `/api/posts/{infohash}`
+都会看到真正已上线的帖子
+
+验证：
+
+- `go test ./internal/plugins/haonews ./internal/plugins/haonewscontent ./internal/haonews`
+- 新增回归测试：
+  - `TestLoadSubscriptionRulesNormalizesApprovalAutoApprove`
+  - `TestPluginBuildApprovalAutoApprovePromotesPendingPost`
+
+当前边界：
+
+- 这一步完成的是：
+  - 显式规则驱动的自动批准
+- 还没有：
+  - 基于 reviewer 负载或多 reviewer 投票的自动批准
+  - 更复杂的时间窗 / 风险评分规则
+
+2026-03-28 16:34 CST
+
+本地 reviewer 一键创建 child identity
+
+目标：
+
+- 不再要求先手工往 `identities/` 目录塞 reviewer 文件
+- 允许本地 root identity 直接派生一个 child reviewer
+- 并可一次性写入初始 delegation scope
+
+已完成：
+
+- `internal/plugins/haonewscontent/handler.go`
+  - `/moderation/reviewers`
+    现在支持：
+    - `action=create`
+  - 本地 root identity 会直接派生 child reviewer identity
+  - 默认 child author 规则：
+    - `root-author/<reviewer-label>`
+  - reviewer 名称会先做本地规范化：
+    - 小写
+    - 空格 / `/` 收口成 `-`
+  - 新 identity 会写入：
+    - `config/identities/<reviewer>.json`
+  - 如果表单同时带了 `scopes`
+    - 会立刻补一条 delegation
+- reviewer 页面：
+  - 新增：
+    - `创建 reviewer`
+    表单
+  - 可直接输入：
+    - reviewer 名称
+    - child author（可选）
+    - 初始 scopes
+    - expires_at
+- `README.md`
+  - 更新 reviewer 页面使用说明
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 新增回归测试：
+  - `TestPluginBuildModerationReviewersCanCreateReviewerIdentity`
+
+结果：
+
+- 本地管理员链现在不只是在“已有 reviewer 身份”上做授权
+- 已经可以从 root identity 直接派生 child reviewer，再继续 route / approve / reject
+
+2026-03-28 16:49 CST
+
+审核员页面增加最近审核记录
+
+目标：
+
+- reviewer 页面除了“当前谁有权限”
+- 还要能直接看到“最近谁批了什么、分派了什么”
+
+已完成：
+
+- `internal/plugins/haonews/moderation.go`
+  - 新增：
+    - `RecentModerationActions()`
+  - 从本地 `moderation_decisions.json` 提取最近动作
+  - 会带：
+    - `infohash`
+    - 标题
+    - `action`
+    - `actor_identity`
+    - `assigned_reviewer`
+    - `created_at`
+    - `note`
+- `internal/plugins/haonewscontent/handler.go`
+  - `/moderation/reviewers`
+  - `/api/moderation/reviewers`
+    都会带最近审核记录
+- reviewer 页面新增：
+  - `最近审核记录`
+  区块
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 新增回归测试：
+  - `TestPluginBuildModerationReviewersShowsRecentActions`
+
+结果：
+
+- 本地运营现在不用只看 reviewer 列表
+- 可以直接在 reviewer 页面看到最近 approve / reject / route 的动作历史
+
+2026-03-28 16:58 CST
+
+reviewer 卡片增加最近动作计数
+
+目标：
+
+- 不只显示全局最近审核记录
+- 还要在每个 reviewer 卡片上直接看到：
+  - 最近批准数
+  - 最近拒绝数
+  - 最近分派数
+
+已完成：
+
+- `internal/plugins/haonews/server.go`
+  - `ModerationReviewerStatus` 新增：
+    - `RecentApproved`
+    - `RecentRejected`
+    - `RecentRouted`
+- `internal/plugins/haonewscontent/handler.go`
+  - 新增：
+    - `applyReviewerRecentActionCounts()`
+  - 会把最近审核记录按 reviewer 聚合回卡片状态
+  - reviewer API 现在也会带这三个计数字段
+- reviewer 页面卡片新增：
+  - `最近动作：批准 X / 拒绝 Y / 分派 Z`
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 新增回归测试：
+  - `TestPluginBuildAPIModerationReviewersIncludesRecentCounts`
+
+结果：
+
+- reviewer 页现在同时有：
+  - 权限
+  - 当前待处理分派
+  - 最近动作历史
+  - 最近动作聚合计数
+
+2026-03-28 17:08 CST
+
+待批准队列支持按 reviewer 过滤
+
+目标：
+
+- reviewer 页面不只看状态
+- 还要能一键进入某个 reviewer 自己的待批准队列
+
+已完成：
+
+- `FeedOptions` 新增：
+  - `Reviewer`
+- `Index.FilterPosts()`
+  - `pending-approval` 现在支持：
+    - 按 `AssignedReviewer`
+    - 或 `SuggestedReviewer`
+    过滤
+- `runtime_content.go`
+  - `BuildActiveFilters()`
+  - `APIOptions()`
+  - `pageURL()/encodeOptions()`
+    都接入了：
+    - `reviewer`
+- reviewer 页面卡片新增：
+  - `查看待批准队列`
+  链接
+- 生效入口：
+  - `/pending-approval?reviewer=<name>`
+  - `/api/pending-approval?reviewer=<name>`
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 新增回归测试：
+  - `TestPluginBuildPendingApprovalCanFilterByReviewer`
+
+结果：
+
+- 本地 reviewer 现在可以直接看自己被分派或被建议处理的待批准文章
+- 不需要手工在整页 pending 列表里筛
+
+2026-03-28 17:16 CST
+
+待批准页增加 reviewer 分面
+
+目标：
+
+- 不只支持手写：
+  - `?reviewer=<name>`
+- 还要在待批准页直接显示 reviewer 分面，点一下就能切换
+
+已完成：
+
+- `CollectionPageData`
+  - 新增：
+    - `ExtraSideLabel`
+    - `ExtraSideFacets`
+- `runtime_content.go`
+  - 新增：
+    - `ReviewerStatsForPosts()`
+  - 会按：
+    - `AssignedReviewer`
+    - 否则 `SuggestedReviewer`
+    聚合 reviewer 分面
+- `handlePendingApproval()`
+  - `待批准` 页侧栏新增：
+    - `Reviewers`
+  - `/api/pending-approval`
+    的 `facets` 里新增：
+    - `reviewers`
+- reviewer 页面卡片原有的：
+  - `查看待批准队列`
+  现在和 pending 页 reviewer 分面形成双向入口
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 新增回归测试：
+  - `TestPluginBuildPendingApprovalShowsReviewerFacets`
+
+结果：
+
+- 本地待批准池现在同时支持：
+  - topic 分面
+  - reviewer 分面
+- reviewer 处理待批准内容时，不需要再手工拼 URL
+
+2026-03-28 17:21 CST
+
+待批准搜索栏保留 reviewer 条件
+
+目标：
+
+- 当用户已经进入：
+  - `/pending-approval?reviewer=<name>`
+- 再使用搜索栏时
+- 不应把当前 reviewer 过滤条件丢掉
+
+已完成：
+
+- `collection.html`
+  - 搜索表单现在会保留：
+    - `reviewer`
+  hidden input
+- 这样在待批准页内继续搜索时：
+  - 当前 reviewer 过滤会保持不变
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 回归测试补充：
+  - `TestPluginBuildPendingApprovalCanFilterByReviewer`
+    现在同时校验搜索表单会保留 `reviewer`
+
+2026-03-28 17:27 CST
+
+待批准卡片审核动作保留 reviewer 队列
+
+目标：
+
+- 在 `pending-approval?reviewer=<name>` 下
+- 点：
+  - 批准
+  - 拒绝
+- 不应直接掉回全量待批准列表
+
+已完成：
+
+- `partials.html`
+  - 待批准卡片里的审核表单现在会优先把 `redirect` 写成：
+    - `/pending-approval?reviewer=<assigned>`
+  - 若还没有显式分派：
+    - 则退回 `suggested_reviewer`
+  - 都没有时才回：
+    - `/pending-approval`
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 回归测试补充：
+  - `TestPluginBuildPendingApprovalShowsReviewerFacets`
+    现在同时校验审核动作表单会保留 reviewer 队列
+
+2026-03-28 17:34 CST
+
+reviewer 状态增加 QueueURL
+
+目标：
+
+- reviewer 页面和 reviewer API
+- 不再要求调用方自己拼：
+  - `/pending-approval?reviewer=<name>`
+
+已完成：
+
+- `ModerationReviewerStatus`
+  - 新增：
+    - `QueueURL`
+- reviewer 页面卡片现在直接使用：
+  - `QueueURL`
+- `/api/moderation/reviewers`
+  - 现在也会直接返回：
+    - `QueueURL`
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 回归测试补充：
+  - `TestPluginBuildAPIModerationReviewersIncludesRecentCounts`
+    现在同时校验 reviewer payload 带 `QueueURL`
+
+2026-03-28 17:47 CST
+
+待批准卡片支持直接分派 reviewer
+
+目标：
+
+- 在 `pending-approval` 列表页
+- 不用先打开单文章页
+- 直接把待批准帖子分派给 reviewer
+
+已完成：
+
+- `CollectionPageData`
+  - 新增页面级：
+    - `ModerationReviewerOptions`
+- 模板 helper：
+  - 新增 `postCardData(...)`
+  - 统一给待批准卡片传 reviewer 选项和当前 redirect
+- `partials.html`
+  - 待批准卡片新增：
+    - `action=route`
+    - reviewer 下拉
+    - `分派`
+- 当前如果已经在：
+  - `/pending-approval?reviewer=<name>`
+  待批准卡片上的：
+  - 批准
+  - 拒绝
+  - 分派
+  都会优先留在当前 reviewer 队列
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 回归测试补充：
+  - `TestPluginBuildPendingApprovalShowsInlineRouteForm`
+    校验待批准卡片直接带 reviewer route 表单和 reviewer 队列 redirect
+
+2026-03-28 18:01 CST
+
+审核员页和 API 支持 reviewer 审计过滤
+
+目标：
+
+- 在 reviewer 运营阶段
+- 不只是看全部最近动作
+- 也能单独看某个 reviewer 的最近审核记录
+
+已完成：
+
+- `/moderation/reviewers`
+  - 支持：
+    - `?reviewer=<name>`
+  - reviewer 卡片新增：
+    - `查看最近动作`
+  - 顶部新增 reviewer 过滤入口
+  - 当前 reviewer 会高亮
+- `/api/moderation/reviewers`
+  - 支持：
+    - `?reviewer=<name>`
+  - payload 新增：
+    - `reviewer`
+  - `recent_actions` 会按 reviewer 收窄
+
+过滤规则：
+
+- 命中以下任一条件即保留：
+  - `ActorIdentity == reviewer`
+  - `AssignedReviewer == reviewer`
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 回归测试补充：
+  - `TestPluginBuildAPIModerationReviewersCanFilterRecentActionsByReviewer`
+
+2026-03-28 18:12 CST
+
+待批准列表进入单文章页后继续保留 reviewer 队列
+
+目标：
+
+- 从：
+  - `/pending-approval`
+  - `/pending-approval?reviewer=<name>`
+- 点进单文章页后
+- 审核动作和返回链接不应掉回首页或全量待批准列表
+
+已完成：
+
+- `postCardData(...)`
+  - 新增：
+    - `PostURL`
+  - 在待批准视图下，帖子链接现在会自动带：
+    - `from=pending`
+    - 当前 reviewer（如果有）
+- 单文章页新增：
+  - `BackURL`
+  - `ModerationRedirect`
+- 单文章页里的：
+  - 返回链接
+  - `approve`
+  - `reject`
+  - `route`
+  现在都会优先回到当前 reviewer 队列
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 回归测试补充：
+  - `TestPluginBuildPendingApprovalLinksPreserveReviewerContext`
+  - `TestPluginBuildPostPendingModerationPreservesReviewerRedirect`
+
+2026-03-28 18:19 CST
+
+审核员最近动作进入单文章页后继续保留 reviewer 审计上下文
+
+目标：
+
+- 从：
+  - `/moderation/reviewers`
+  - `/moderation/reviewers?reviewer=<name>`
+- 点最近审核动作里的帖子
+- 回到帖子页后不要丢掉当前 reviewer 审计上下文
+
+已完成：
+
+- reviewer 页面最近动作里的帖子链接现在会带：
+  - `from=moderation`
+  - 当前 reviewer（如果有）
+- 单文章页的：
+  - 返回链接
+  - 待批准审核动作 redirect
+  现在都支持回到：
+  - `/moderation/reviewers`
+  - `/moderation/reviewers?reviewer=<name>`
+
+验证：
+
+- `go test ./internal/plugins/haonewscontent ./internal/plugins/haonews ./internal/haonews`
+- 回归测试补充：
+  - `TestPluginBuildModerationReviewersCanFilterRecentActionsByReviewer`
+    现在同时校验最近动作帖子链接保留 reviewer 上下文
+  - `TestPluginBuildPostFromModerationPreservesReviewerBackURL`

@@ -15,7 +15,7 @@
         {{template "sidebarToggle" .}}
         <button class="sidebar-toggle" type="button" id="post-focus-toggle" aria-pressed="false">隐藏辅助区</button>
       </div>
-      <a class="back-link" href="/">返回信息流</a>
+      <a class="back-link" href="{{.BackURL}}">返回信息流</a>
       <div class="story-layout">
         <article class="story-panel">
           <p class="eyebrow">{{.Project}} 内容</p>
@@ -145,6 +145,59 @@
               </div>
             {{end}}
           </section>
+          {{if .Post.PendingApproval}}
+          <section class="panel panel-inline vote-panel">
+            <div class="panel-head">
+              <div>
+                <p class="panel-label">待批准审核</p>
+                <p class="micro-copy">这篇内容当前只在本地待批准池里可见。</p>
+                {{if .ModerationIdentityLabel}}<p class="micro-copy">当前默认使用本地审核 identity：<code>{{.ModerationIdentityLabel}}</code></p>{{end}}
+              </div>
+            </div>
+            <div class="story-links">
+              <span class="micro-copy">状态：{{if .Post.ModerationAction}}{{.Post.ModerationAction}}{{else}}pending{{end}}</span>
+              {{if .Post.AssignedReviewer}}<span class="micro-copy">已分派：{{.Post.AssignedReviewer}}</span>{{end}}
+              {{if .Post.SuggestedReviewer}}<span class="micro-copy">建议：{{.Post.SuggestedReviewer}}{{if .Post.SuggestedReason}}（{{.Post.SuggestedReason}}）{{end}}</span>{{end}}
+              {{if .Post.ModerationIdentity}}<span class="micro-copy">最近操作：{{.Post.ModerationIdentity}}</span>{{end}}
+            </div>
+            {{if .ModerationNotice}}<p class="micro-copy vote-ok">{{.ModerationNotice}}</p>{{end}}
+            {{if .ModerationError}}<p class="micro-copy vote-error">{{.ModerationError}}</p>{{end}}
+            {{if .ModerationEnabled}}
+              <div class="vote-actions">
+                <form class="vote-form" method="post" action="/moderation/{{.Post.InfoHash}}">
+                  <input type="hidden" name="action" value="approve">
+                  <input type="hidden" name="redirect" value="{{.ModerationRedirect}}">
+                  <button type="submit">
+                    <span>批准上线</span>
+                    <strong>OK</strong>
+                  </button>
+                </form>
+                <form class="vote-form" method="post" action="/moderation/{{.Post.InfoHash}}">
+                  <input type="hidden" name="action" value="reject">
+                  <input type="hidden" name="redirect" value="{{.ModerationRedirect}}">
+                  <button class="button-link button-link-muted" type="submit">
+                    <span>拒绝</span>
+                    <strong>NO</strong>
+                  </button>
+                </form>
+                {{if .ModerationReviewerOptions}}
+                <form class="vote-form" method="post" action="/moderation/{{.Post.InfoHash}}">
+                  <input type="hidden" name="action" value="route">
+                  <input type="hidden" name="redirect" value="{{.ModerationRedirect}}">
+                  <label class="micro-copy" for="reviewer-{{.Post.InfoHash}}">分派</label>
+                  <select id="reviewer-{{.Post.InfoHash}}" name="reviewer">
+                    {{range .ModerationReviewerOptions}}<option value="{{.}}" {{if eq . $.Post.SuggestedReviewer}}selected{{end}}>{{.}}</option>{{end}}
+                  </select>
+                  <button class="button-link button-link-muted" type="submit">
+                    <span>分派</span>
+                    <strong>→</strong>
+                  </button>
+                </form>
+                {{end}}
+              </div>
+            {{end}}
+          </section>
+          {{end}}
           <section class="panel panel-inline">
             <p class="panel-label">发布者公钥</p>
             {{if .Post.OriginPublicKey}}

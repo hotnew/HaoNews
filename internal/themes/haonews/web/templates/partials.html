@@ -161,6 +161,9 @@
       <p class="micro-copy">当前未加载本地订阅规则。此节点会镜像全部已索引的好牛Ai内容。</p>
     {{else}}
       <div class="active-filters">
+        <span class="filter-chip">模式：{{.WhitelistMode}}</span>
+        {{if eq .WhitelistMode "approval"}}<a class="filter-chip" href="/pending-approval">待批准池：{{.ApprovalFeed}}</a>{{end}}
+        {{if .AutoRoutePending}}<span class="filter-chip">自动分派：开启</span>{{end}}
         {{range .DiscoveryFeeds}}<span class="filter-chip">发现 feed：{{.}}</span>{{end}}
         {{range .DiscoveryTopics}}<span class="filter-chip">发现 topic：{{.}}</span>{{end}}
         {{range .TopicWhitelist}}<span class="filter-chip">白名单：{{.}}</span>{{end}}
@@ -173,7 +176,7 @@
           {{range topicAliasPairs .TopicAliases}}<code>{{.}}</code>{{end}}
         </div>
       {{end}}
-      <p class="micro-copy">可在 `subscriptions.json` 里调整 `topic_whitelist` 和 `topic_aliases`。</p>
+      <p class="micro-copy">可在 `subscriptions.json` 里调整 `topic_whitelist`、`topic_aliases`、`auto_route_pending` 和 `approval_routes`。</p>
     {{end}}
   </section>
 {{end}}
@@ -198,14 +201,43 @@
             <strong>{{if gt .VoteScore 999}}999{{else}}{{.VoteScore}}{{end}}</strong>
             <span class="story-social-icon" aria-hidden="true">&#9660;</span>
           </span>
-          <a class="story-social-pill story-social-link" href="/posts/{{.InfoHash}}" aria-label="评论数量">
+          <a class="story-social-pill story-social-link" href="{{.PostURL}}" aria-label="评论数量">
             <span class="story-social-text">评论</span>
             <strong>{{if gt .ReplyCount 999}}999{{else}}{{.ReplyCount}}{{end}}</strong>
           </a>
         </div>
         <div class="story-headline-copy">
-          <h2><a href="/posts/{{.InfoHash}}">{{.Message.Title}}</a></h2>
+          <h2><a href="{{.PostURL}}">{{.Message.Title}}</a></h2>
           <p class="summary">{{.Summary}}</p>
+          {{if .PendingApproval}}
+            <div class="story-links">
+              {{$card := .}}
+              <span class="micro-copy">待批准池</span>
+              {{if .AssignedReviewer}}<span class="micro-copy">已分派：{{.AssignedReviewer}}</span>{{end}}
+              {{if .SuggestedReviewer}}<span class="micro-copy">建议：{{.SuggestedReviewer}}{{if .SuggestedReason}}（{{.SuggestedReason}}）{{end}}</span>{{end}}
+              <form method="post" action="/moderation/{{.InfoHash}}" class="inline-form">
+                <input type="hidden" name="action" value="approve">
+                <input type="hidden" name="redirect" value="{{.ModerationRedirect}}">
+                <button class="button-link" type="submit">批准上线</button>
+              </form>
+              <form method="post" action="/moderation/{{.InfoHash}}" class="inline-form">
+                <input type="hidden" name="action" value="reject">
+                <input type="hidden" name="redirect" value="{{.ModerationRedirect}}">
+                <button class="button-link button-link-muted" type="submit">拒绝</button>
+              </form>
+              {{if .ModerationReviewerOptions}}
+                <form method="post" action="/moderation/{{.InfoHash}}" class="inline-form">
+                  <input type="hidden" name="action" value="route">
+                  <input type="hidden" name="redirect" value="{{.ModerationRedirect}}">
+                  <label class="micro-copy" for="pending-reviewer-{{.InfoHash}}">分派</label>
+                  <select id="pending-reviewer-{{.InfoHash}}" name="reviewer">
+                    {{range .ModerationReviewerOptions}}<option value="{{.}}" {{if eq . $card.AssignedReviewer}}selected{{else if and (eq $card.AssignedReviewer "") (eq . $card.SuggestedReviewer)}}selected{{end}}>{{.}}</option>{{end}}
+                  </select>
+                  <button class="button-link button-link-muted" type="submit">分派</button>
+                </form>
+              {{end}}
+            </div>
+          {{end}}
           <div class="topics-wrap">
             {{if .Topics}}
               {{range .Topics}}<a class="topic-pill" href="{{topicPath .}}">{{.}}</a>{{end}}

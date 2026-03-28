@@ -14,6 +14,14 @@ const defaultMaxBundleMB = 10
 const defaultMaxItemsPerDay int64 = 999999999999
 
 const (
+	whitelistModeStrict        = "strict"
+	whitelistModeApproval      = "approval"
+	defaultPendingApprovalFeed = "pending-approval"
+	visibilityStateVisible     = "visible"
+	visibilityStatePending     = "pending_approval"
+)
+
+const (
 	discoveryFeedGlobal  = "global"
 	discoveryFeedNews    = "news"
 	discoveryFeedLive    = "live"
@@ -45,8 +53,12 @@ func (r *SubscriptionRules) normalize() {
 	if r == nil {
 		return
 	}
+	r.WhitelistMode = normalizeWhitelistMode(r.WhitelistMode)
+	r.ApprovalFeed = normalizeApprovalFeed(r.ApprovalFeed)
 	r.TopicAliases = normalizedTopicAliases(r.TopicAliases)
 	whitelist := topicWhitelistSet(r.TopicWhitelist, r.TopicAliases)
+	r.ApprovalRoutes = normalizedApprovalRoutes(r.ApprovalRoutes, r.TopicAliases, whitelist)
+	r.ApprovalAutoApprove = normalizedApprovalSelectors(r.ApprovalAutoApprove, r.TopicAliases, whitelist)
 	r.TopicWhitelist = whitelistToSlice(whitelist)
 	r.Channels = uniqueFold(r.Channels)
 	r.Topics = uniqueCanonicalTopicsWithAliases(r.Topics, r.TopicAliases, whitelist)
@@ -81,6 +93,7 @@ func ApplySubscriptionRules(index Index, project string, rules SubscriptionRules
 		return index
 	}
 	allowed := make(map[string]struct{})
+	pending := make(map[string]struct{})
 	dailyCounts := make(map[string]int64)
 	for _, bundle := range index.Bundles {
 		if bundle.Message.Kind != "post" {
@@ -91,18 +104,28 @@ func ApplySubscriptionRules(index Index, project string, rules SubscriptionRules
 				continue
 			}
 			allowed[strings.ToLower(bundle.InfoHash)] = struct{}{}
+			continue
+		}
+		if rules.approvalMode() {
+			pending[strings.ToLower(bundle.InfoHash)] = struct{}{}
 		}
 	}
 	filtered := make([]Bundle, 0, len(index.Bundles))
 	for _, bundle := range index.Bundles {
 		switch bundle.Message.Kind {
 		case "post":
-			if _, ok := allowed[strings.ToLower(bundle.InfoHash)]; ok {
+			infoHash := strings.ToLower(bundle.InfoHash)
+			if _, ok := allowed[infoHash]; ok {
+				filtered = append(filtered, bundle)
+			} else if _, ok := pending[infoHash]; ok {
 				filtered = append(filtered, bundle)
 			}
 		case "reply":
 			if bundle.Message.ReplyTo != nil {
-				if _, ok := allowed[strings.ToLower(bundle.Message.ReplyTo.InfoHash)]; ok {
+				parent := strings.ToLower(bundle.Message.ReplyTo.InfoHash)
+				if _, ok := allowed[parent]; ok {
+					filtered = append(filtered, bundle)
+				} else if _, ok := pending[parent]; ok {
 					filtered = append(filtered, bundle)
 				}
 			}
@@ -110,10 +133,40 @@ func ApplySubscriptionRules(index Index, project string, rules SubscriptionRules
 			subject := strings.ToLower(nestedString(bundle.Message.Extensions, "subject", "infohash"))
 			if _, ok := allowed[subject]; ok {
 				filtered = append(filtered, bundle)
+			} else if _, ok := pending[subject]; ok {
+				filtered = append(filtered, bundle)
 			}
 		}
 	}
-	return buildIndex(filtered, project)
+	built := buildIndex(filtered, project)
+	return applyVisibilityState(built, allowed, pending, rules)
+}
+
+func applyVisibilityState(index Index, allowed, pending map[string]struct{}, rules SubscriptionRules) Index {
+	if len(allowed) == 0 && len(pending) == 0 {
+		return index
+	}
+	visiblePosts := make([]Post, 0, len(index.Posts))
+	for i := range index.Posts {
+		post := index.Posts[i]
+		infoHash := strings.ToLower(post.InfoHash)
+		if _, ok := pending[infoHash]; ok {
+			post.VisibilityState = visibilityStatePending
+			post.PendingApproval = true
+			post.ApprovalFeed = rules.ApprovalFeed
+		} else {
+			post.VisibilityState = visibilityStateVisible
+		}
+		index.Posts[i] = post
+		index.PostByInfoHash[infoHash] = post
+		if !post.PendingApproval {
+			visiblePosts = append(visiblePosts, post)
+		}
+	}
+	index.ChannelStats = ChannelStatsForPosts(visiblePosts)
+	index.TopicStats = TopicStatsForPosts(visiblePosts)
+	index.SourceStats = SourceStatsForPosts(visiblePosts)
+	return index
 }
 
 func matchesSubscriptionBundle(bundle Bundle, rules SubscriptionRules) bool {
@@ -174,6 +227,34 @@ func withinMaxBundleSize(sizeBytes int64, maxBundleMB int) bool {
 		return true
 	}
 	return sizeBytes <= int64(maxBundleMB)*1024*1024
+}
+
+func normalizeWhitelistMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", whitelistModeStrict:
+		return whitelistModeStrict
+	case whitelistModeApproval:
+		return whitelistModeApproval
+	default:
+		return whitelistModeStrict
+	}
+}
+
+func normalizeApprovalFeed(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return defaultPendingApprovalFeed
+	}
+	value = strings.ReplaceAll(value, "_", "-")
+	value = strings.ReplaceAll(value, " ", "-")
+	if value == "pending" || value == "approval" {
+		return defaultPendingApprovalFeed
+	}
+	return value
+}
+
+func (r SubscriptionRules) approvalMode() bool {
+	return normalizeWhitelistMode(r.WhitelistMode) == whitelistModeApproval
 }
 
 func reserveDailyQuota(counts map[string]int64, createdAt string, maxItemsPerDay int64) bool {
@@ -353,6 +434,92 @@ func whitelistToSlice(set map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func normalizedApprovalRoutes(raw map[string]string, aliases map[string]string, whitelist map[string]struct{}) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for selector, reviewer := range raw {
+		reviewer = strings.TrimSpace(reviewer)
+		if reviewer == "" {
+			continue
+		}
+		selector = strings.TrimSpace(selector)
+		if selector == "" {
+			continue
+		}
+		key := strings.ToLower(selector)
+		switch {
+		case strings.HasPrefix(key, "feed/"):
+			feed := canonicalDiscoveryFeed(strings.TrimPrefix(key, "feed/"))
+			if feed == "" {
+				continue
+			}
+			out["feed/"+feed] = reviewer
+		default:
+			topic := key
+			if strings.HasPrefix(key, "topic/") {
+				topic = strings.TrimPrefix(key, "topic/")
+			}
+			topic = canonicalTopicWithAliases(topic, aliases)
+			if topic == "" || !topicAllowedByWhitelist(topic, whitelist) {
+				continue
+			}
+			out["topic/"+topic] = reviewer
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizedApprovalSelectors(items []string, aliases map[string]string, whitelist map[string]struct{}) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		selector := canonicalApprovalSelector(item, aliases, whitelist)
+		if selector == "" {
+			continue
+		}
+		if _, ok := seen[selector]; ok {
+			continue
+		}
+		seen[selector] = struct{}{}
+		out = append(out, selector)
+	}
+	return out
+}
+
+func canonicalApprovalSelector(selector string, aliases map[string]string, whitelist map[string]struct{}) string {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return ""
+	}
+	key := strings.ToLower(selector)
+	switch {
+	case strings.HasPrefix(key, "feed/"):
+		feed := canonicalDiscoveryFeed(strings.TrimPrefix(key, "feed/"))
+		if feed == "" {
+			return ""
+		}
+		return "feed/" + feed
+	default:
+		topic := key
+		if strings.HasPrefix(key, "topic/") {
+			topic = strings.TrimPrefix(key, "topic/")
+		}
+		topic = canonicalTopicWithAliases(topic, aliases)
+		if topic == "" || !topicAllowedByWhitelist(topic, whitelist) {
+			return ""
+		}
+		return "topic/" + topic
+	}
 }
 
 func topicAliasPairs(aliases map[string]string) []string {

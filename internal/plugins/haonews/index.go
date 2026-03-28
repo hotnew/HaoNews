@@ -336,7 +336,20 @@ func (idx Index) FilterPosts(opts FeedOptions) []Post {
 	now := opts.referenceTime()
 	topic := canonicalTopic(opts.Topic)
 	tab := canonicalTab(opts.Tab)
+	reviewer := strings.TrimSpace(opts.Reviewer)
 	for _, post := range idx.Posts {
+		if opts.PendingApproval {
+			if !post.PendingApproval || post.VisibilityState != visibilityStatePending {
+				continue
+			}
+		} else {
+			if post.PendingApproval {
+				continue
+			}
+			if post.VisibilityState != "" && post.VisibilityState != visibilityStateVisible {
+				continue
+			}
+		}
 		if opts.Channel != "" && !strings.EqualFold(post.ChannelGroup, opts.Channel) {
 			continue
 		}
@@ -344,6 +357,11 @@ func (idx Index) FilterPosts(opts FeedOptions) []Post {
 			continue
 		}
 		if opts.Source != "" && !strings.EqualFold(post.SourceName, opts.Source) {
+			continue
+		}
+		if reviewer != "" &&
+			!strings.EqualFold(strings.TrimSpace(post.AssignedReviewer), reviewer) &&
+			!strings.EqualFold(strings.TrimSpace(post.SuggestedReviewer), reviewer) {
 			continue
 		}
 		if opts.Query != "" && !matchesQuery(post, opts.Query) {

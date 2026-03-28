@@ -27,7 +27,7 @@
                 </div>
               </div>
             {{end}}
-            <p class="hero-copy">该视图将本地 bundle 索引收窄到单个 {{lower .Kind}}，同时保留相关回复与反应。</p>
+            <p class="hero-copy">{{if eq .Kind "Pending Approval"}}这里展示本地白名单未命中、但在 approval 模式下被保留等待审核上线的内容。{{else}}该视图将本地 bundle 索引收窄到单个 {{lower .Kind}}，同时保留相关回复与反应。{{end}}</p>
           </div>
           <div class="hero-actions">
             <a class="button-link button-link-muted" href="{{.APIPath}}">JSON 接口</a>
@@ -47,6 +47,7 @@
         <form class="search-bar" method="get" action="{{.Path}}">
           <input type="search" name="q" value="{{.Options.Query}}" placeholder="在 {{compactIdentity .Name}} 内搜索">
           {{if .Options.Channel}}<input type="hidden" name="channel" value="{{.Options.Channel}}">{{end}}
+          {{if .Options.Reviewer}}<input type="hidden" name="reviewer" value="{{.Options.Reviewer}}">{{end}}
           {{if .Options.Tab}}<input type="hidden" name="tab" value="{{.Options.Tab}}">{{end}}
           {{if .Options.Sort}}<input type="hidden" name="sort" value="{{.Options.Sort}}">{{end}}
           {{if .Options.Window}}<input type="hidden" name="window" value="{{.Options.Window}}">{{end}}
@@ -68,6 +69,20 @@
               {{end}}
             </div>
           </section>
+
+          {{if .ExtraSideFacets}}
+            <section class="panel">
+              <p class="panel-label">{{.ExtraSideLabel}}</p>
+              <div class="facet-list">
+                {{range .ExtraSideFacets}}
+                  <a class="facet {{if .Active}}is-active{{end}}" href="{{.URL}}">
+                    <span>{{.Name}}</span>
+                    {{if gt .Count 0}}<strong>{{.Count}}</strong>{{end}}
+                  </a>
+                {{end}}
+              </div>
+            </section>
+          {{end}}
 
           <section class="panel">
             <p class="panel-label">时间范围</p>
@@ -125,7 +140,7 @@
             {{template "paginationControls" .}}
             <section class="story-list">
               {{range .Posts}}
-                {{template "postCard" .}}
+                {{template "postCard" (postCardData . $.ModerationReviewerOptions $.Options)}}
               {{end}}
             </section>
             {{template "paginationControls" .}}

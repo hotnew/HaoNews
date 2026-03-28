@@ -140,7 +140,7 @@ func BuildPageSizeOptions(opts FeedOptions, basePath string, omit ...string) []P
 }
 
 func BuildActiveFilters(opts FeedOptions, basePath string, omit ...string) []ActiveFilter {
-	filters := make([]ActiveFilter, 0, 5)
+	filters := make([]ActiveFilter, 0, 6)
 	if opts.Query != "" {
 		filters = append(filters, ActiveFilter{
 			Label: "Search: " + opts.Query,
@@ -179,6 +179,12 @@ func BuildActiveFilters(opts FeedOptions, basePath string, omit ...string) []Act
 		filters = append(filters, ActiveFilter{
 			Label: "Source: " + opts.Source,
 			URL:   pageURL(basePath, opts, "source", "", omit...),
+		})
+	}
+	if opts.Reviewer != "" && !contains(omit, "reviewer") {
+		filters = append(filters, ActiveFilter{
+			Label: "Reviewer: " + opts.Reviewer,
+			URL:   pageURL(basePath, opts, "reviewer", "", omit...),
 		})
 	}
 	if opts.PageSize > 0 && opts.PageSize != 20 {
@@ -347,6 +353,21 @@ func SourceStatsForPosts(posts []Post) []FacetStat {
 	return facetStats(counts)
 }
 
+func ReviewerStatsForPosts(posts []Post) []FacetStat {
+	counts := make(map[string]int)
+	for _, post := range posts {
+		name := strings.TrimSpace(post.AssignedReviewer)
+		if name == "" {
+			name = strings.TrimSpace(post.SuggestedReviewer)
+		}
+		if name == "" {
+			continue
+		}
+		counts[name]++
+	}
+	return facetStats(counts)
+}
+
 func SourceURLFromPosts(posts []Post) string {
 	for _, post := range posts {
 		if post.SourceURL != "" {
@@ -408,13 +429,17 @@ func TopicPath(name string) string {
 
 func APIOptions(opts FeedOptions) map[string]string {
 	result := map[string]string{
-		"channel": opts.Channel,
-		"topic":   canonicalTopic(opts.Topic),
-		"source":  opts.Source,
-		"tab":     canonicalTab(opts.Tab),
-		"sort":    opts.Sort,
-		"q":       opts.Query,
-		"window":  canonicalWindow(opts.Window),
+		"channel":  opts.Channel,
+		"topic":    canonicalTopic(opts.Topic),
+		"source":   opts.Source,
+		"reviewer": strings.TrimSpace(opts.Reviewer),
+		"tab":      canonicalTab(opts.Tab),
+		"sort":     opts.Sort,
+		"q":        opts.Query,
+		"window":   canonicalWindow(opts.Window),
+	}
+	if opts.PendingApproval {
+		result["approval"] = "pending"
 	}
 	if opts.Page > 1 {
 		result["page"] = strconv.Itoa(opts.Page)
@@ -436,42 +461,56 @@ func APIPosts(posts []Post) []map[string]any {
 func APIPost(post Post, withBody bool) map[string]any {
 	origin := apiOrigin(post.Message.Origin)
 	payload := map[string]any{
-		"infohash":             post.InfoHash,
-		"magnet":               post.Magnet,
-		"archive_md":           post.ArchiveMD,
-		"title":                post.Message.Title,
-		"author":               post.Message.Author,
-		"origin":               origin,
-		"origin_signed":        origin != nil,
-		"delegation":           apiDelegation(post.Delegation),
-		"shared_by_local_node": post.SharedByLocalNode,
-		"created_at":           post.CreatedAt.Format(time.RFC3339),
-		"channel":              post.Message.Channel,
-		"channel_group":        post.ChannelGroup,
-		"source_name":          post.SourceName,
-		"source_site_name":     post.SourceSiteName,
-		"source_url":           post.SourceURL,
-		"origin_public_key":    post.OriginPublicKey,
-		"topics":               post.Topics,
-		"post_type":            post.PostType,
-		"summary":              post.Summary,
-		"reply_count":          post.ReplyCount,
-		"comment_count":        post.CommentCount,
-		"reaction_count":       post.ReactionCount,
-		"upvotes":              post.Upvotes,
-		"downvotes":            post.Downvotes,
-		"vote_score":           post.VoteScore,
-		"hot_score":            post.HotScore,
-		"is_hot_candidate":     post.IsHotCandidate,
-		"truth_score":          scoreValue(post.TruthScoreAverage),
-		"source_quality":       scoreValue(post.SourceScoreAverage),
-		"thread_path":          "/posts/" + post.InfoHash,
-		"source_path":          sourcePathForPost(post),
-		"latest_reaction":      post.LatestReactionAuthor,
-		"event_time":           timeValue(post.EventTime),
-		"topic_paths":          topicPaths(post.Topics),
-		"message_tags":         post.Message.Tags,
-		"message_protocol":     post.Message.Protocol,
+		"infohash":              post.InfoHash,
+		"magnet":                post.Magnet,
+		"archive_md":            post.ArchiveMD,
+		"title":                 post.Message.Title,
+		"author":                post.Message.Author,
+		"origin":                origin,
+		"origin_signed":         origin != nil,
+		"delegation":            apiDelegation(post.Delegation),
+		"shared_by_local_node":  post.SharedByLocalNode,
+		"created_at":            post.CreatedAt.Format(time.RFC3339),
+		"channel":               post.Message.Channel,
+		"channel_group":         post.ChannelGroup,
+		"source_name":           post.SourceName,
+		"source_site_name":      post.SourceSiteName,
+		"source_url":            post.SourceURL,
+		"origin_public_key":     post.OriginPublicKey,
+		"topics":                post.Topics,
+		"post_type":             post.PostType,
+		"summary":               post.Summary,
+		"reply_count":           post.ReplyCount,
+		"comment_count":         post.CommentCount,
+		"reaction_count":        post.ReactionCount,
+		"upvotes":               post.Upvotes,
+		"downvotes":             post.Downvotes,
+		"vote_score":            post.VoteScore,
+		"hot_score":             post.HotScore,
+		"is_hot_candidate":      post.IsHotCandidate,
+		"visibility_state":      post.VisibilityState,
+		"pending_approval":      post.PendingApproval,
+		"approval_feed":         post.ApprovalFeed,
+		"approved_feed":         post.ApprovedFeed,
+		"approved_topics":       append([]string(nil), post.ApprovedTopics...),
+		"moderation_action":     post.ModerationAction,
+		"moderation_actor":      post.ModerationActor,
+		"moderation_actor_key":  post.ModerationActorKey,
+		"moderation_identity":   post.ModerationIdentity,
+		"moderation_at":         post.ModerationAt,
+		"assigned_reviewer":     post.AssignedReviewer,
+		"assigned_reviewer_key": post.AssignedReviewerKey,
+		"suggested_reviewer":    post.SuggestedReviewer,
+		"suggested_reason":      post.SuggestedReason,
+		"truth_score":           scoreValue(post.TruthScoreAverage),
+		"source_quality":        scoreValue(post.SourceScoreAverage),
+		"thread_path":           "/posts/" + post.InfoHash,
+		"source_path":           sourcePathForPost(post),
+		"latest_reaction":       post.LatestReactionAuthor,
+		"event_time":            timeValue(post.EventTime),
+		"topic_paths":           topicPaths(post.Topics),
+		"message_tags":          post.Message.Tags,
+		"message_protocol":      post.Message.Protocol,
 	}
 	if withBody {
 		payload["body"] = post.Body
@@ -542,6 +581,8 @@ func withOption(opts FeedOptions, key, value string) FeedOptions {
 		next.Topic = canonicalTopic(value)
 	case "source":
 		next.Source = value
+	case "reviewer":
+		next.Reviewer = strings.TrimSpace(value)
 	case "tab":
 		next.Tab = canonicalTab(value)
 	case "sort":
@@ -579,6 +620,7 @@ func encodeOptions(opts FeedOptions, omit ...string) string {
 	set("channel", opts.Channel)
 	set("topic", canonicalTopic(opts.Topic))
 	set("source", opts.Source)
+	set("reviewer", strings.TrimSpace(opts.Reviewer))
 	if canonicalTab(opts.Tab) == "hot" {
 		set("tab", "hot")
 	}
@@ -606,6 +648,8 @@ func activeFeedValue(opts FeedOptions, key string) string {
 		return canonicalTopic(opts.Topic)
 	case "source":
 		return opts.Source
+	case "reviewer":
+		return strings.TrimSpace(opts.Reviewer)
 	case "tab":
 		return canonicalTab(opts.Tab)
 	case "window":

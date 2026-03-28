@@ -1,0 +1,147 @@
+{{define "moderation.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>审核员 | 好牛Ai</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard">
+        <p class="eyebrow">本地审核层</p>
+        <div class="hero-heading">
+          <div>
+            <h1>审核员</h1>
+            <p class="hero-copy">查看当前本地 reviewer、moderation scope 和待处理分派数量。{{if .RootIdentityLabel}}当前 root：{{.RootIdentityLabel}}。{{end}}</p>
+          </div>
+          <div class="hero-actions hero-actions-row">
+            <a class="button-link button-link-muted" href="/pending-approval">待批准</a>
+            <a class="button-link button-link-muted" href="/api/moderation/reviewers">JSON 接口</a>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel panel-inline">
+        <p class="panel-label">概览</p>
+        {{if .ModerationNotice}}<p class="micro-copy">{{.ModerationNotice}}</p>{{end}}
+        {{if .ModerationError}}<p class="micro-copy">{{.ModerationError}}</p>{{end}}
+        <div class="summary-grid">
+          {{range .SummaryStats}}
+            <div>
+              <span class="stat-label">{{.Label}}</span>
+              <strong>{{.Value}}</strong>
+            </div>
+          {{end}}
+        </div>
+        <div class="active-filters">
+          {{range .Reviewers}}
+            <a class="filter-chip {{if .Active}}is-active{{end}}" href="/moderation/reviewers?reviewer={{.Name}}">{{.Name}}</a>
+          {{end}}
+          {{if .ReviewerFilter}}
+            <a class="filter-chip clear-chip" href="/moderation/reviewers">清除 reviewer 过滤</a>
+          {{end}}
+        </div>
+      </section>
+
+      <section class="panel panel-inline">
+        <p class="panel-label">创建 reviewer</p>
+        <p class="micro-copy">使用当前 root identity 派生一个 child reviewer，并可一次性写入 moderation scope。</p>
+        <form method="post" action="/moderation/reviewers" class="inline-form">
+          <input type="hidden" name="action" value="create">
+          <input type="text" name="reviewer" placeholder="reviewer 名称，如 reviewer-usa">
+          <input type="text" name="child_author" placeholder="child author（可选，默认 root/reviewer）" style="min-width: 22rem;">
+          <input type="text" name="scopes" placeholder="moderation:approve:topic/world, moderation:route:any" style="min-width: 26rem;">
+          <input type="text" name="expires_at" placeholder="expires_at (optional RFC3339)">
+          <button class="button-link" type="submit">创建并授权</button>
+        </form>
+      </section>
+
+      <section class="story-list">
+        {{range .Reviewers}}
+          <article class="story-card">
+            <div class="story-card-main">
+              <div class="story-topline">
+                <span class="badge">{{if .DirectAdmin}}root{{else}}reviewer{{end}}</span>
+                {{if .PendingAssigned}}<span class="badge badge-muted">待处理 {{.PendingAssigned}}</span>{{end}}
+              </div>
+              <div class="story-headline-row">
+                <div class="story-headline-copy">
+                  <h2>{{.Name}}</h2>
+                  <p class="summary">{{if .Author}}{{.Author}}{{else}}{{.AgentID}}{{end}}</p>
+                  <div class="topics-wrap">
+                    {{range .Scopes}}<span class="topic-pill">{{.}}</span>{{end}}
+                  </div>
+                  <p class="micro-copy">最近动作：批准 {{.RecentApproved}} / 拒绝 {{.RecentRejected}} / 分派 {{.RecentRouted}}</p>
+                  {{if .SuggestedTopics}}
+                    <p class="micro-copy">建议处理 topic：{{range $idx, $topic := .SuggestedTopics}}{{if $idx}} / {{end}}{{$topic}}{{end}}</p>
+                  {{end}}
+                </div>
+              </div>
+              <div class="story-links">
+                <span class="micro-copy">Agent：{{.AgentID}}</span>
+                <span class="micro-copy">公钥：{{compactIdentity .PublicKey}}</span>
+                <a class="micro-copy" href="{{.QueueURL}}">查看待批准队列</a>
+                <a class="micro-copy" href="/moderation/reviewers?reviewer={{.Name}}">查看最近动作</a>
+              </div>
+              {{if not .DirectAdmin}}
+                <div class="story-links">
+                  <form method="post" action="/moderation/reviewers" class="inline-form">
+                    <input type="hidden" name="action" value="delegate">
+                    <input type="hidden" name="reviewer" value="{{.Name}}">
+                    <input type="text" name="scopes" placeholder="moderation:approve:topic/world, moderation:route:any" style="min-width: 26rem;">
+                    <input type="text" name="expires_at" placeholder="expires_at (optional RFC3339)">
+                    <button class="button-link" type="submit">写入授权</button>
+                  </form>
+                </div>
+                <div class="story-links">
+                  <form method="post" action="/moderation/reviewers" class="inline-form">
+                    <input type="hidden" name="action" value="revoke">
+                    <input type="hidden" name="reviewer" value="{{.Name}}">
+                    <input type="text" name="reason" placeholder="撤销原因（可选）">
+                    <button class="button-link button-link-muted" type="submit">撤销授权</button>
+                  </form>
+                </div>
+              {{end}}
+            </div>
+          </article>
+        {{else}}
+          <section class="panel panel-inline">
+            <p class="panel-label">暂无本地 reviewer</p>
+            <p class="micro-copy">请先在本地 `identities/` 下放置审核 identity，再按需要写入 delegation scope。</p>
+          </section>
+        {{end}}
+      </section>
+
+      <section class="panel panel-inline">
+        <p class="panel-label">最近审核记录</p>
+        {{if .ReviewerFilter}}<p class="micro-copy">当前 reviewer：{{.ReviewerFilter}}</p>{{end}}
+        {{if .RecentActions}}
+          <div class="story-links" style="flex-direction: column; align-items: stretch;">
+            {{range .RecentActions}}
+              <div class="story-links" style="justify-content: space-between; gap: 1rem;">
+                <div>
+                  <strong>{{.Action}}</strong>
+                  <a href="/posts/{{.InfoHash}}?from=moderation{{if $.ReviewerFilter}}&amp;reviewer={{$.ReviewerFilter}}{{end}}">{{.Title}}</a>
+                  {{if .AssignedReviewer}}<span class="micro-copy"> reviewer={{.AssignedReviewer}}</span>{{end}}
+                  {{if .ActorIdentity}}<span class="micro-copy"> by={{.ActorIdentity}}</span>{{end}}
+                  {{if .Note}}<span class="micro-copy"> note={{.Note}}</span>{{end}}
+                </div>
+                <span class="micro-copy">{{formatTime .CreatedAt}}</span>
+              </div>
+            {{end}}
+          </div>
+        {{else}}
+          <p class="micro-copy">当前还没有本地审核记录。</p>
+        {{end}}
+      </section>
+    </div>
+  </div>
+  {{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

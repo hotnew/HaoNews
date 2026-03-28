@@ -71,10 +71,18 @@ func delegationDirForWriterPolicy(writerPolicyPath string) string {
 	return filepath.Join(root, "delegations")
 }
 
+func DelegationDirForWriterPolicy(writerPolicyPath string) string {
+	return delegationDirForWriterPolicy(writerPolicyPath)
+}
+
 func revocationDirForWriterPolicy(writerPolicyPath string) string {
 	root := strings.TrimSpace(filepath.Dir(strings.TrimSpace(writerPolicyPath)))
 	if root == "" || root == "." {
 		return ""
 	}
 	return filepath.Join(root, "revocations")
+}
+
+func RevocationDirForWriterPolicy(writerPolicyPath string) string {
+	return revocationDirForWriterPolicy(writerPolicyPath)
 }

@@ -74,6 +74,20 @@ type Post struct {
 	VoteScore            int
 	HotScore             float64
 	IsHotCandidate       bool
+	VisibilityState      string
+	PendingApproval      bool
+	ApprovalFeed         string
+	ApprovedFeed         string
+	ApprovedTopics       []string
+	ModerationAction     string
+	ModerationActor      string
+	ModerationActorKey   string
+	ModerationIdentity   string
+	ModerationAt         string
+	AssignedReviewer     string
+	AssignedReviewerKey  string
+	SuggestedReviewer    string
+	SuggestedReason      string
 	TruthScoreAverage    *float64
 	SourceScoreAverage   *float64
 	LatestReactionAuthor string
@@ -110,16 +124,18 @@ type FacetStat struct {
 }
 
 type FeedOptions struct {
-	Channel  string
-	Topic    string
-	Source   string
-	Tab      string
-	Sort     string
-	Query    string
-	Window   string
-	Page     int
-	PageSize int
-	Now      time.Time
+	Channel         string
+	Topic           string
+	Source          string
+	Reviewer        string
+	PendingApproval bool
+	Tab             string
+	Sort            string
+	Query           string
+	Window          string
+	Page            int
+	PageSize        int
+	Now             time.Time
 }
 
 type FeedFacet struct {
@@ -187,22 +203,27 @@ type PaginationState struct {
 }
 
 type SubscriptionRules struct {
-	Channels        []string          `json:"channels,omitempty"`
-	Topics          []string          `json:"topics,omitempty"`
-	Tags            []string          `json:"tags,omitempty"`
-	Authors         []string          `json:"authors,omitempty"`
-	DiscoveryFeeds  []string          `json:"discovery_feeds,omitempty"`
-	DiscoveryTopics []string          `json:"discovery_topics,omitempty"`
-	TopicWhitelist  []string          `json:"topic_whitelist,omitempty"`
-	TopicAliases    map[string]string `json:"topic_aliases,omitempty"`
-	MaxAgeDays      int               `json:"max_age_days,omitempty"`
-	MaxBundleMB     int               `json:"max_bundle_mb,omitempty"`
-	MaxItemsPerDay  int64             `json:"max_items_per_day,omitempty"`
-	HistoryDays     int               `json:"history_days,omitempty"`
-	HistoryMaxItems int               `json:"history_max_items,omitempty"`
-	HistoryChannels []string          `json:"history_channels,omitempty"`
-	HistoryTopics   []string          `json:"history_topics,omitempty"`
-	HistoryAuthors  []string          `json:"history_authors,omitempty"`
+	Channels            []string          `json:"channels,omitempty"`
+	Topics              []string          `json:"topics,omitempty"`
+	Tags                []string          `json:"tags,omitempty"`
+	Authors             []string          `json:"authors,omitempty"`
+	WhitelistMode       string            `json:"whitelist_mode,omitempty"`
+	ApprovalFeed        string            `json:"approval_feed,omitempty"`
+	AutoRoutePending    bool              `json:"auto_route_pending,omitempty"`
+	ApprovalRoutes      map[string]string `json:"approval_routes,omitempty"`
+	ApprovalAutoApprove []string          `json:"approval_auto_approve,omitempty"`
+	DiscoveryFeeds      []string          `json:"discovery_feeds,omitempty"`
+	DiscoveryTopics     []string          `json:"discovery_topics,omitempty"`
+	TopicWhitelist      []string          `json:"topic_whitelist,omitempty"`
+	TopicAliases        map[string]string `json:"topic_aliases,omitempty"`
+	MaxAgeDays          int               `json:"max_age_days,omitempty"`
+	MaxBundleMB         int               `json:"max_bundle_mb,omitempty"`
+	MaxItemsPerDay      int64             `json:"max_items_per_day,omitempty"`
+	HistoryDays         int               `json:"history_days,omitempty"`
+	HistoryMaxItems     int               `json:"history_max_items,omitempty"`
+	HistoryChannels     []string          `json:"history_channels,omitempty"`
+	HistoryTopics       []string          `json:"history_topics,omitempty"`
+	HistoryAuthors      []string          `json:"history_authors,omitempty"`
 }
 
 type ArchiveDay struct {

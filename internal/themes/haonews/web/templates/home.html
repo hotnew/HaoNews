@@ -22,6 +22,8 @@
           <div class="hero-actions hero-actions-row">
             <a class="button-link" href="/sources">浏览来源</a>
             <a class="button-link button-link-muted" href="/topics">浏览话题</a>
+            {{if eq .Subscriptions.WhitelistMode "approval"}}<a class="button-link button-link-muted" href="/pending-approval">待批准</a>{{end}}
+            {{if eq .Subscriptions.WhitelistMode "approval"}}<a class="button-link button-link-muted" href="/moderation/reviewers">审核员</a>{{end}}
             {{if hasNav .PageNav "归档"}}<a class="button-link button-link-muted" href="/archive">Markdown 归档</a>{{end}}
             <a class="button-link button-link-muted" href="/api/feed">JSON 接口</a>
           </div>
@@ -92,7 +94,7 @@
           {{if .Posts}}
             <section class="story-list">
               {{range .Posts}}
-                {{template "postCard" .}}
+                {{template "postCard" (postCardData . $.ModerationReviewerOptions $.Options)}}
               {{end}}
             </section>
             {{template "paginationControls" .}}

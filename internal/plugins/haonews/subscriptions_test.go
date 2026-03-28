@@ -157,6 +157,118 @@ func TestLoadSubscriptionRulesAppliesConfiguredTopicAliasesAndWhitelist(t *testi
 	}
 }
 
+func TestLoadSubscriptionRulesNormalizesApprovalModeAndFeed(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := root + "/subscriptions.json"
+	data := `{
+  "whitelist_mode": "APPROVAL",
+  "approval_feed": "pending approval",
+  "topics": ["all"]
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	rules, err := LoadSubscriptionRules(path)
+	if err != nil {
+		t.Fatalf("LoadSubscriptionRules() error = %v", err)
+	}
+	if rules.WhitelistMode != "approval" {
+		t.Fatalf("whitelist mode = %q, want approval", rules.WhitelistMode)
+	}
+	if rules.ApprovalFeed != "pending-approval" {
+		t.Fatalf("approval feed = %q, want pending-approval", rules.ApprovalFeed)
+	}
+}
+
+func TestLoadSubscriptionRulesKeepsAutoRoutePending(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := root + "/subscriptions.json"
+	data := `{
+  "whitelist_mode": "approval",
+  "approval_feed": "pending-approval",
+  "auto_route_pending": true,
+  "topics": ["all"]
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	rules, err := LoadSubscriptionRules(path)
+	if err != nil {
+		t.Fatalf("LoadSubscriptionRules() error = %v", err)
+	}
+	if !rules.AutoRoutePending {
+		t.Fatalf("auto route pending = %v, want true", rules.AutoRoutePending)
+	}
+}
+
+func TestLoadSubscriptionRulesNormalizesApprovalRoutes(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := root + "/subscriptions.json"
+	data := `{
+  "whitelist_mode": "approval",
+  "topics": ["world", "news", "futures"],
+  "topic_whitelist": ["world", "news", "futures"],
+  "topic_aliases": {
+    "国际": "world"
+  },
+  "approval_routes": {
+    "国际": "reviewer-world",
+    "feed/NEWS": "reviewer-news",
+    "topic/unknown": "reviewer-drop"
+  }
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	rules, err := LoadSubscriptionRules(path)
+	if err != nil {
+		t.Fatalf("LoadSubscriptionRules() error = %v", err)
+	}
+	if len(rules.ApprovalRoutes) != 2 {
+		t.Fatalf("approval routes len = %d, want 2", len(rules.ApprovalRoutes))
+	}
+	if got := rules.ApprovalRoutes["topic/world"]; got != "reviewer-world" {
+		t.Fatalf("topic/world route = %q, want reviewer-world", got)
+	}
+	if got := rules.ApprovalRoutes["feed/news"]; got != "reviewer-news" {
+		t.Fatalf("feed/news route = %q, want reviewer-news", got)
+	}
+}
+
+func TestLoadSubscriptionRulesNormalizesApprovalAutoApprove(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := root + "/subscriptions.json"
+	data := `{
+  "whitelist_mode": "approval",
+  "topic_whitelist": ["world", "news", "futures"],
+  "topic_aliases": {
+    "国际": "world"
+  },
+  "approval_auto_approve": ["国际", "feed/NEWS", "topic/unknown"]
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	rules, err := LoadSubscriptionRules(path)
+	if err != nil {
+		t.Fatalf("LoadSubscriptionRules() error = %v", err)
+	}
+	if len(rules.ApprovalAutoApprove) != 2 {
+		t.Fatalf("approval auto approve len = %d, want 2", len(rules.ApprovalAutoApprove))
+	}
+	if rules.ApprovalAutoApprove[0] != "topic/world" || rules.ApprovalAutoApprove[1] != "feed/news" {
+		t.Fatalf("approval auto approve = %v, want [topic/world feed/news]", rules.ApprovalAutoApprove)
+	}
+}
+
 func TestApplySubscriptionRulesReservedAllTopicShowsEverything(t *testing.T) {
 	t.Parallel()
 
@@ -188,6 +300,63 @@ func TestApplySubscriptionRulesReservedAllTopicShowsEverything(t *testing.T) {
 
 	if len(filtered.Posts) != 2 {
 		t.Fatalf("posts len = %d, want 2", len(filtered.Posts))
+	}
+}
+
+func TestApplySubscriptionRulesApprovalModeKeepsPendingPostsOutOfDefaultFeed(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 28, 12, 0, 0, 0, time.UTC)
+	postWorld := Bundle{
+		InfoHash:  "post-world",
+		CreatedAt: now,
+		Message: Message{
+			Kind:      "post",
+			Channel:   "hao.news/world",
+			CreatedAt: now.Format(time.RFC3339),
+			Extensions: map[string]any{
+				"project": "hao.news",
+				"topics":  []any{"world"},
+			},
+		},
+	}
+	postTech := Bundle{
+		InfoHash:  "post-tech",
+		CreatedAt: now,
+		Message: Message{
+			Kind:      "post",
+			Channel:   "hao.news/tech",
+			CreatedAt: now.Format(time.RFC3339),
+			Extensions: map[string]any{
+				"project": "hao.news",
+				"topics":  []any{"technology"},
+			},
+		},
+	}
+
+	index := buildIndex([]Bundle{postWorld, postTech}, "hao.news")
+	filtered := ApplySubscriptionRules(index, "hao.news", SubscriptionRules{
+		WhitelistMode: "approval",
+		ApprovalFeed:  "pending-approval",
+		Topics:        []string{"world"},
+	})
+
+	if len(filtered.Posts) != 2 {
+		t.Fatalf("posts len = %d, want 2", len(filtered.Posts))
+	}
+	if !filtered.PostByInfoHash["post-tech"].PendingApproval {
+		t.Fatalf("post-tech pending = false, want true")
+	}
+	if filtered.PostByInfoHash["post-tech"].ApprovalFeed != "pending-approval" {
+		t.Fatalf("approval feed = %q, want pending-approval", filtered.PostByInfoHash["post-tech"].ApprovalFeed)
+	}
+	visible := filtered.FilterPosts(FeedOptions{Now: now})
+	if len(visible) != 1 || visible[0].InfoHash != "post-world" {
+		t.Fatalf("visible posts = %+v, want only post-world", visible)
+	}
+	pending := filtered.FilterPosts(FeedOptions{PendingApproval: true, Now: now})
+	if len(pending) != 1 || pending[0].InfoHash != "post-tech" {
+		t.Fatalf("pending posts = %+v, want only post-tech", pending)
 	}
 }
 
