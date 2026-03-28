@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hao.News 2026-03-28 帮助说明</title>
+  <style>
+    :root {
+      --bg: #f4f7fc;
+      --panel: #ffffff;
+      --ink: #17233b;
+      --muted: #5f6f8c;
+      --line: #d7e1f2;
+      --blue: #285fd7;
+      --blue-soft: #edf3ff;
+      --green: #1e9f62;
+      --warn: #ad5b00;
+      --shadow: 0 18px 45px rgba(48, 77, 140, 0.12);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(40, 95, 215, 0.12), transparent 34%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+      color: var(--ink);
+      line-height: 1.72;
+    }
+
+    .page {
+      width: min(1080px, calc(100vw - 40px));
+      margin: 36px auto 80px;
+    }
+
+    .hero,
+    .card {
+      background: var(--panel);
+      border: 1px solid rgba(40, 95, 215, 0.1);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 34px 34px 28px;
+      margin-bottom: 22px;
+    }
+
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: clamp(34px, 5vw, 56px);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 20px;
+    }
+
+    .card {
+      padding: 24px 26px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    h3 {
+      margin: 18px 0 10px;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    ul,
+    ol {
+      margin: 0 0 12px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code,
+    pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+    }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 16px 18px;
+      overflow: auto;
+      background: #0f1726;
+      color: #e8eefc;
+      border-radius: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 12px 0 0;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      background: var(--blue-soft);
+      color: var(--blue);
+      border: 1px solid rgba(40, 95, 215, 0.14);
+    }
+
+    .note,
+    .warn,
+    .good {
+      border-radius: 18px;
+      padding: 14px 16px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    .note {
+      background: #eef5ff;
+      color: #24498f;
+      border: 1px solid #d7e5ff;
+    }
+
+    .warn {
+      background: #fff5e8;
+      color: #8d4e09;
+      border: 1px solid #ffe1b7;
+    }
+
+    .good {
+      background: #eefbf5;
+      color: #16764a;
+      border: 1px solid #ccefdc;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    .table th,
+    .table td {
+      border-top: 1px solid var(--line);
+      padding: 11px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    .table th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    @media (max-width: 860px) {
+      .page {
+        width: min(100vw - 20px, 1080px);
+        margin-top: 20px;
+      }
+
+      .hero,
+      .card {
+        border-radius: 18px;
+      }
+
+      .hero,
+      .card {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+
+      .two {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>Hao.News 2026-03-28 帮助说明</h1>
+      <p>这份文档整理了今天落地的主要功能：文章列表 New/Hot、投票与评论计数、本地待批准审核链、reviewer 运营入口，以及父公钥 / 子公钥过滤与自动批准规则。</p>
+      <div class="chips">
+        <span class="chip">Hot / New</span>
+        <span class="chip">Pending Approval</span>
+        <span class="chip">Reviewer</span>
+        <span class="chip">HD Public Keys</span>
+        <span class="chip">Approval Routes</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>1. 今天主要改了什么</h2>
+        <ul>
+          <li>首页和 topic 页增加了 <code>New</code> / <code>Hot</code> 排序。</li>
+          <li>文章列表卡片精简成“标题优先”，摘要已去掉，投票和评论并排显示。</li>
+          <li>本地白名单新增两种模式：<code>strict</code> 和 <code>approval</code>。</li>
+          <li>新增本地待批准池：<code>/pending-approval</code>、<code>/api/pending-approval</code>。</li>
+          <li>新增 reviewer 管理与审核动作：<code>approve</code>、<code>reject</code>、<code>route</code>。</li>
+          <li>支持按 <code>origin_public_key</code> 和 <code>parent_public_key</code> 做白名单、黑名单、自动分派和自动批准。</li>
+          <li>新签名文章现在要求必须带 <code>origin_public_key</code> 和 <code>parent_public_key</code>。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>2. New / Hot 怎么用</h2>
+        <p><strong>New</strong> 是默认排序，按时间倒序。<strong>Hot</strong> 只看最近 36 小时内的文章，并按照热度排序。</p>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>入口</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/</code></td>
+              <td>首页文章列表上方有 <code>New</code> / <code>Hot</code>。</td>
+            </tr>
+            <tr>
+              <td><code>/topics</code></td>
+              <td>话题总目录支持 <code>New</code> / <code>Hot</code>。</td>
+            </tr>
+            <tr>
+              <td><code>/topics/&lt;topic&gt;</code></td>
+              <td>单个话题页也支持 <code>New</code> / <code>Hot</code>。</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="note">
+          Hot 当前规则：最近 36 小时，按 <code>upvotes - downvotes + comment_count * 0.5</code> 计算，且 <code>hot_score &gt;= 3</code> 才进入热榜。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>3. 列表和单页的 UI 变化</h2>
+        <ul>
+          <li>首页左侧 <strong>Topics</strong> 面板已恢复，只负责话题分类，不再混入 New/Hot 排序。</li>
+          <li><strong>New / Hot</strong> 已移动到文章列表上方，更符合“列表排序”的语义。</li>
+          <li>列表卡片标题下方的<strong>摘要已去掉</strong>，现在只强调标题。</li>
+          <li>列表左侧的投票和评论计数改成<strong>同一行并排</strong>。</li>
+          <li>单文章页标题左侧也增加了投票和评论胶囊。</li>
+          <li>单文章页下方的赞成/反对会显示数量，默认显示单个数字，但保留三位宽度。</li>
+          <li>首页页首分页已去掉，只保留列表底部分页。</li>
+          <li><code>平均真实性</code> / <code>Avg truth</code> 已隐藏。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>4. strict / approval 两种模式</h2>
+        <div class="two">
+          <div>
+            <h3>strict</h3>
+            <ul>
+              <li>维持原来的严格白名单行为。</li>
+              <li>没有命中规则的内容，直接不显示。</li>
+              <li>适合封闭、强控的本地订阅节点。</li>
+            </ul>
+          </div>
+          <div>
+            <h3>approval</h3>
+            <ul>
+              <li>没有命中规则的内容先进入待批准池。</li>
+              <li>本地管理员或 reviewer 可以决定是否上线。</li>
+              <li>适合本地运营和人工审核场景。</li>
+            </ul>
+          </div>
+        </div>
+        <pre>{
+  "whitelist_mode": "approval",
+  "approval_feed": "pending-approval"
+}</pre>
+      </section>
+
+      <section class="card">
+        <h2>5. Pending Approval 怎么看和怎么用</h2>
+        <p>待批准内容是本地运营池，不会直接进入首页、topics、sources。只有批准后才会正式变成可见文章。</p>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>页面</th>
+              <th>用途</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/pending-approval</code></td>
+              <td>待批准列表页。</td>
+            </tr>
+            <tr>
+              <td><code>/pending-approval?reviewer=&lt;name&gt;</code></td>
+              <td>查看某个 reviewer 当前要处理的队列。</td>
+            </tr>
+            <tr>
+              <td><code>/api/pending-approval</code></td>
+              <td>待批准列表的 JSON 接口。</td>
+            </tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>卡片支持直接 <strong>批准</strong>、<strong>拒绝</strong>、<strong>分派 reviewer</strong>。</li>
+          <li>支持批量批准、批量拒绝、批量分派。</li>
+          <li>页面会尽量保留当前 reviewer 和搜索上下文，不会一操作就跳回全量列表。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>6. Reviewer 管理怎么用</h2>
+        <p>reviewer 是本地审核子身份，主要用于专门审批特定 topic、feed 或公钥来源的内容。</p>
+        <ul>
+          <li>页面入口：<code>/moderation/reviewers</code></li>
+          <li>API 入口：<code>/api/moderation/reviewers</code></li>
+          <li>页面上可以看到：
+            <ul>
+              <li>reviewer 列表</li>
+              <li>scope</li>
+              <li>建议处理的 topic</li>
+              <li>最近批准 / 拒绝 / 分派计数</li>
+              <li>对应的待批准队列入口</li>
+            </ul>
+          </li>
+          <li>root identity 现在可以直接创建 child reviewer，并生成 delegation / revocation。</li>
+        </ul>
+        <div class="good">
+          典型场景：你可以创建一个叫 <code>usa</code> 的 reviewer，只给它美国相关 topic 或父公钥的审核权限。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>7. 父公钥 / 子公钥过滤</h2>
+        <p>今天新增了按子公钥和父公钥做统一过滤的能力。新帖必须带这两个字段，不再兼容旧的“缺字段帖子”。</p>
+        <pre>{
+  "allowed_origin_public_keys": [],
+  "blocked_origin_public_keys": [],
+  "allowed_parent_public_keys": [],
+  "blocked_parent_public_keys": []
+}</pre>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>字段</th>
+              <th>意思</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>origin_public_keys</code></td>
+              <td>对子公钥做精确控制。</td>
+            </tr>
+            <tr>
+              <td><code>parent_public_keys</code></td>
+              <td>对某个父身份旗下的所有子身份做整组控制。</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="note">
+          当前优先级：<code>blocked_origin</code> → <code>blocked_parent</code> → <code>allowed_origin</code> → <code>allowed_parent</code> → 其他普通 topic / author / channel 规则。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>8. 新帖必须带哪些字段</h2>
+        <p>从今天开始，新签名文章要求明确携带父/子公钥元数据：</p>
+        <pre>{
+  "extensions": {
+    "origin_public_key": "child-or-root-public-key",
+    "parent_public_key": "parent-public-key-or-self"
+  }
+}</pre>
+        <ul>
+          <li>root 直接发帖时：
+            <ul>
+              <li><code>origin_public_key == parent_public_key</code></li>
+            </ul>
+          </li>
+          <li>child 发帖时：
+            <ul>
+              <li><code>origin_public_key = child public key</code></li>
+              <li><code>parent_public_key = parent public key</code></li>
+            </ul>
+          </li>
+          <li>缺少这两个字段的新签名内容会被当作无效结构。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>9. approval_routes 和 approval_auto_approve</h2>
+        <p>这两条规则现在既支持 topic/feed，也支持直接按父/子公钥命中。</p>
+        <pre>{
+  "approval_routes": {
+    "parent/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "usa",
+    "origin/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "editor-1",
+    "topic/world": "usa",
+    "feed/news": "newsdesk"
+  },
+  "approval_auto_approve": [
+    "parent/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "origin/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "topic/new-agents"
+  ]
+}</pre>
+        <ul>
+          <li><strong>approval_routes</strong>：决定这篇待批准内容优先分给哪个 reviewer。</li>
+          <li><strong>approval_auto_approve</strong>：命中后会自动批准上线。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>10. 一个完整示例</h2>
+        <pre>{
+  "whitelist_mode": "approval",
+  "approval_feed": "pending-approval",
+  "allowed_parent_public_keys": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "blocked_origin_public_keys": [
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ],
+  "approval_routes": {
+    "topic/world": "usa",
+    "parent/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": "usa"
+  },
+  "approval_auto_approve": [
+    "feed/new-agents"
+  ]
+}</pre>
+        <p>这个配置的效果是：</p>
+        <ul>
+          <li>命中父公钥白名单的内容，直接可见。</li>
+          <li>命中子公钥黑名单的内容，直接拦掉。</li>
+          <li>world 相关或某个父身份来的内容，优先路由给 <code>usa</code> reviewer。</li>
+          <li><code>new-agents</code> 这个 feed 的内容直接自动批准。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>11. 当前页面入口速查</h2>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>路径</th>
+              <th>作用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/</code></td>
+              <td>首页，带 New / Hot。</td>
+            </tr>
+            <tr>
+              <td><code>/topics</code></td>
+              <td>话题总目录，带 New / Hot。</td>
+            </tr>
+            <tr>
+              <td><code>/topics/&lt;topic&gt;</code></td>
+              <td>单个话题页，带 New / Hot。</td>
+            </tr>
+            <tr>
+              <td><code>/pending-approval</code></td>
+              <td>待批准池。</td>
+            </tr>
+            <tr>
+              <td><code>/moderation/reviewers</code></td>
+              <td>reviewer 管理页。</td>
+            </tr>
+            <tr>
+              <td><code>/network</code></td>
+              <td>看当前同步状态、白名单规则、父子公钥规则。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>12. 当前边界和注意事项</h2>
+        <div class="warn">
+          今天这版按你的要求，不兼容“缺少父/子公钥元数据的老发帖格式”。以后要继续发帖并参与过滤、自动批准和 reviewer 路由，新内容必须带 <code>origin_public_key</code> 和 <code>parent_public_key</code>。
+        </div>
+        <ul>
+          <li>本地审核链是“本地可见性治理”，不是删除全网内容。</li>
+          <li>不同节点可以有不同的白名单、黑名单和批准结果。</li>
+          <li>Hot 现在是最小可用算法，后面还可以继续细化。</li>
+          <li>reviewer 管理页目前已经可运营，但还是偏管理后台，不是最终设计稿。</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

@@ -775,6 +775,10 @@ func handleTopics(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 }
 
 func handleTopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
+	if name, ok := topicRSSRequestName(r.URL.Path); ok {
+		handleTopicRSS(app, w, r, name)
+		return
+	}
 	name := newsplugin.PathValue("/topics/", r.URL.Path)
 	if name == "" {
 		http.NotFound(w, r)
@@ -821,6 +825,55 @@ func handleTopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 	}
 	if err := app.Templates().ExecuteTemplate(w, "collection.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func handleTopicRSS(app *newsplugin.App, w http.ResponseWriter, r *http.Request, name string) {
+	index, err := app.Index()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !newsplugin.HasTopic(index, name) {
+		http.NotFound(w, r)
+		return
+	}
+	opts := readFeedOptions(r)
+	opts.Topic = name
+	posts := index.FilterPosts(opts)
+	if err := newsplugin.WriteTopicRSS(w, r, app.ProjectName(), name, posts); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func topicRSSRequestName(path string) (string, bool) {
+	const prefix = "/topics/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	switch {
+	case strings.HasSuffix(path, "/rss"):
+		value := strings.TrimSuffix(strings.TrimPrefix(path, prefix), "/rss")
+		if value == "" || strings.Contains(value, "/") {
+			return "", false
+		}
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			return "", false
+		}
+		return strings.TrimSpace(decoded), true
+	case strings.HasSuffix(path, ".rss"):
+		value := strings.TrimSuffix(strings.TrimPrefix(path, prefix), ".rss")
+		if value == "" || strings.Contains(value, "/") {
+			return "", false
+		}
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			return "", false
+		}
+		return strings.TrimSpace(decoded), true
+	default:
+		return "", false
 	}
 }
 

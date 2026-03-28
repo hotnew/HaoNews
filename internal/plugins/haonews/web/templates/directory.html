@@ -12,6 +12,7 @@
     {{template "appSidebar" .}}
     <div class="page-shell">
       {{template "sidebarToggle" .}}
+      <div data-feed-ajax-root data-feed-ajax-kind="directory">
       <header class="hero hero-dashboard">
         <p class="eyebrow">{{.Project}} 目录</p>
         <div class="hero-heading">
@@ -78,6 +79,7 @@
                 {{end}}
                 <div class="story-links">
                   <a href="{{.URL}}">打开页面</a>
+                  {{if eq $.Kind "Topics"}}<a href="{{topicRSSPath .Name}}">RSS</a>{{end}}
                   {{if .ExternalURL}}<a href="{{.ExternalURL}}" target="_blank" rel="noreferrer">来源站点</a>{{end}}
                 </div>
               </article>
@@ -90,6 +92,7 @@
           </section>
         {{end}}
       </main>
+      </div>
     </div>
   </div>
 {{template "sidebarScript" .}}

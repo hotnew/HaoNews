@@ -29,6 +29,7 @@
           </div>
         </div>
       </header>
+      <div data-feed-ajax-root data-feed-ajax-kind="home">
       <form class="search-bar" method="get" action="/">
         <input type="search" name="q" value="{{.Options.Query}}" placeholder="搜索标题、来源、话题、作者">
         {{if .Options.Channel}}<input type="hidden" name="channel" value="{{.Options.Channel}}">{{end}}
@@ -208,6 +209,7 @@
           {{end}}
         </section>
       </section>
+      </div>
     </div>
   </div>
 {{template "sidebarScript" .}}

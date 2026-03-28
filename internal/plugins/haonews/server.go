@@ -422,6 +422,7 @@ func newApp(storeRoot, project, version, archiveRoot, rulesPath, writerPath, net
 		"topicAliasPairs": topicAliasPairs,
 		"sourcePath":      SourcePath,
 		"topicPath":       TopicPath,
+		"topicRSSPath":    TopicRSSPath,
 		"hasNav": func(items []NavItem, name string) bool {
 			for _, item := range items {
 				if item.Name == name {

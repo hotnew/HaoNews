@@ -170,6 +170,15 @@ dt {
   color: #ffffff;
 }
 
+[data-feed-ajax-root] {
+  transition: opacity 140ms ease;
+}
+
+[data-feed-ajax-root].ajax-loading {
+  opacity: 0.58;
+  pointer-events: none;
+}
+
 .rail-panel {
   margin-top: 18px;
   padding: 16px;
