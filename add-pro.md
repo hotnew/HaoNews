@@ -258,6 +258,168 @@ RSS 很适合缓存，因为：
 下一步继续看：
 
 - 首页底部说明区是否需要懒加载
+
+
+## 6. 2026-03-28 压测结论
+
+这轮已经做了真实本地 `.75` 压测，结论比原来的“感觉慢”清楚很多：
+
+- **热缓存稳态已经很好**
+- **问题集中在 TTL 过期后的第一次重建**
+- **并发防穿透已经生效**
+- **现在的瓶颈不是 stampede 重复重算，而是第一次重建本身太慢**
+
+### 6.1 热缓存结果
+
+`/api/feed`：
+
+- `8` 并发：`p50 1.2ms / p95 2.1ms / p99 2.4ms`
+- `16` 并发：`p50 1.9ms / p95 3.6ms / p99 4.3ms`
+- `32` 并发：`p50 2.2ms / p95 3.7ms / p99 4.3ms`
+- `64` 并发：`p50 2.5ms / p95 4.5ms / p99 6.3ms`
+
+`/api/topics`：
+
+- warm-cache：`p50 9.2ms / p95 12.6ms / p99 15.4ms`
+
+`/api/topics/futures`：
+
+- warm-cache：`p50 19.7ms / p95 38.6ms / p99 40.3ms`
+
+`/topics/futures/rss`：
+
+- warm-cache：`p50 21.0ms / p95 34.8ms / p99 38.8ms`
+
+HTML：
+
+- `/` warm-cache：`p50 6.7ms / p95 14.5ms / p99 20.3ms`
+- `/topics` warm-cache：`p50 4.7ms / p95 9.5ms / p99 13.7ms`
+- `/topics/futures` warm-cache：`p50 6.7ms / p95 13.6ms / p99 17.0ms`
+- AJAX 片段请求：`p50 14.3ms / p95 38.9ms / p99 42.5ms`
+
+### 6.2 TTL 过期后的长尾
+
+这部分才是现在真正的性能问题。
+
+`/api/feed`：
+
+- `TTL-expiry + 8` 并发：`p95 456.4ms`
+- `TTL-expiry + 16` 并发：`p95 994.9ms`
+- `TTL-expiry + 32` 并发：`p95 1970.8ms`
+- `TTL-expiry + 64` 并发：`p50 3646.6ms / p95 3651.9ms / p99 3818.2ms`
+
+`/api/topics`：
+
+- `TTL-expiry + 32` 并发：`p50 1629.8ms / p95 1651.9ms / p99 1797.8ms`
+
+`/api/topics/futures`：
+
+- `TTL-expiry + 32` 并发：`p50 3770.9ms / p95 3892.9ms / p99 4038.6ms`
+
+`/topics/futures/rss`：
+
+- `TTL-expiry + 32` 并发：`p50 1910.0ms / p95 1938.1ms / p99 1938.5ms`
+
+HTML `probe` 过期后：
+
+- `/`：`p95 ~1986ms`
+- `/topics/futures`：`p95 ~1987ms`
+
+### 6.3 冷启动 readiness
+
+`.75` 本地节点重启到稳定可访问，大致落在：
+
+- `31s ~ 39s`
+
+并且：
+
+- `/`
+- `/topics`
+- `/api/feed`
+
+没有明显谁先起来，基本是整机 readiness 一起变 `200`。
+
+### 6.4 当前判断
+
+当前状态可以明确成：
+
+1. 稳态性能已经够好
+2. 当前长尾主要来自：
+   - `index` 过期后的重建
+   - `TTL` 过期后的第一次列表/API 重建
+3. 防穿透已经起作用
+4. 最值钱的下一步不是再加新的 HTTP cache header
+5. 最值钱的是继续压：
+   - `FilterPosts`
+   - `BuildTopicDirectory`
+   - `PaginatePosts`
+   - `BuildSummaryStats`
+   - `MarshalJSONBytes`
+   - `TopicRSSBytes`
+
+
+## 7. 下一步实现顺序
+
+### P6：重建路径 profiling
+
+对这些 handler 增加阶段计时：
+
+- `/api/feed`
+- `/api/topics`
+- `/api/topics/<topic>`
+- `/topics/<topic>/rss`
+- `/`
+- `/topics/<topic>`
+
+阶段至少拆成：
+
+- `index_ms`
+- `filter_ms`
+- `facet_ms`
+- `paginate_ms`
+- `summary_ms`
+- `render_or_marshal_ms`
+
+优先确认到底是：
+
+- `Index()`
+- 还是 `FilterPosts(opts)`
+- 还是 topic/source facet 聚合
+- 还是 JSON/RSS 输出
+
+### P7：Filter 结果缓存
+
+在 index revision 基础上，加一层短 TTL 的过滤结果缓存：
+
+- `FilterPosts(opts)` 结果
+- topic / source / reviewer 这些列表级结果
+
+先只做最重的几条：
+
+- `/api/feed`
+- `/api/topics`
+- `/api/topics/<topic>`
+
+### P8：目录聚合缓存
+
+给这些结果做共享聚合：
+
+- `BuildTopicDirectory`
+- `TopicStatsForPosts`
+- `SourceStatsForPosts`
+- `ReviewerStatsForPosts`
+- `BuildSummaryStats`
+
+避免同一条请求链里扫描同一批 posts 多次。
+
+### P9：冷启动收尾
+
+如果后面还要继续收冷启动，再单独做：
+
+- readiness 标志
+- 启动预热顺序
+- sync 更晚启动
+- index 预热和首屏 readiness 解耦
 - subscription summary 是否要折叠
 - network summary 是否要简化
 
@@ -663,3 +825,182 @@ python3 scripts/bench_hao_news.py --json > bench.json
 - RSS / API 输出缓存
 - 冷启动路径
 - DHT / sync 是否干扰了前台响应
+
+
+## 15. 2026-03-28 第二轮收敛结果
+
+这一轮继续做了两件事：
+
+- `FilterPosts` 和 `TopicDirectory` 短 TTL 结果缓存
+- 首页、`/topics`、`/topics/<topic>` 的 HTML `full/fragment` 响应缓存
+
+同时：
+
+- HTML AJAX fragment 路径不再白算 `NodeStatus`
+- HTML 响应缓存命中时，不再先走 `App.Index()` 重建链
+
+### 15.1 结果
+
+之前最明显的问题是：
+
+- warm-cache 很快
+- 但 TTL 过期后的第一波并发，首页和 topic HTML 还会出现秒级等待
+
+这轮本机 `.75` 的实测结果是：
+
+#### 首页 `/`
+
+先请求一次，再等待 `6s` 让 HTML TTL 过期，然后执行：
+
+```bash
+ab -n 60 -c 32 http://127.0.0.1:51818/
+```
+
+结果：
+
+- `p50 ≈ 13ms`
+- `p95 ≈ 23ms`
+- `p99 ≈ 201ms`
+
+#### 单个 topic `/topics/futures`
+
+先请求一次，再等待 `6s`，然后执行：
+
+```bash
+ab -n 60 -c 32 http://127.0.0.1:51818/topics/futures
+```
+
+结果：
+
+- `p50 ≈ 6ms`
+- `p95 ≈ 8ms`
+- `p99 ≈ 201ms`
+
+### 15.2 和前一轮对比
+
+这轮的意义不是把 warm-cache 再压快，而是把：
+
+- 首页 HTML
+- topic HTML
+
+从“TTL 一过就会接近秒级排队”
+
+压到了：
+
+- 主体请求已经回到十几毫秒内
+- 只剩极少数单次重建请求还会落到约 `200ms`
+
+也就是说：
+
+- **HTML 这条最大的秒级长尾已经被打掉了**
+
+### 15.3 当前剩余尾巴
+
+现在还没完全收掉的，主要剩：
+
+- `/api/feed` TTL 过期后的高并发重建
+- `/api/topics/<topic>` TTL 过期后的高并发重建
+- 冷启动 readiness 空窗
+
+所以后面最值得继续的优化顺序变成：
+
+1. API/topic feed 的更细粒度结果缓存
+2. 目录/API 聚合结果缓存继续下沉
+3. 冷启动 readiness 收尾
+
+
+## 16. 2026-03-28 第三轮收敛结果
+
+这轮继续做了两件关键事：
+
+- 首页、`/topics`、`/topics/<topic>` 接入 HTML `full/fragment` 响应缓存
+- 响应缓存改成真正的后台 `stale-while-revalidate`
+  - TTL 过期后的**第一个请求也先吃 stale**
+  - 后台再做重建
+
+### 16.1 HTML 收敛结果
+
+`.75` 本机实测：
+
+#### 首页 `/`
+
+```bash
+curl -fsS http://127.0.0.1:51818/ >/dev/null
+sleep 6
+ab -n 60 -c 32 http://127.0.0.1:51818/
+```
+
+结果：
+
+- `p50 ≈ 13ms`
+- `p95 ≈ 23ms`
+- `p99 ≈ 201ms`
+
+#### Topic `/topics/futures`
+
+```bash
+curl -fsS http://127.0.0.1:51818/topics/futures >/dev/null
+sleep 6
+ab -n 60 -c 32 http://127.0.0.1:51818/topics/futures
+```
+
+结果：
+
+- `p50 ≈ 6ms`
+- `p95 ≈ 8ms`
+- `p99 ≈ 201ms`
+
+结论：
+
+- HTML 页面对 TTL 过期的秒级长尾已经基本打掉
+
+### 16.2 API 收敛结果
+
+#### `/api/feed`
+
+```bash
+curl -fsS http://127.0.0.1:51818/api/feed >/dev/null
+sleep 6
+ab -n 60 -c 32 http://127.0.0.1:51818/api/feed
+```
+
+结果：
+
+- `p50 ≈ 7ms`
+- `p95 ≈ 11ms`
+- `p99 ≈ 12ms`
+
+#### `/api/topics/futures`
+
+```bash
+curl -fsS http://127.0.0.1:51818/api/topics/futures >/dev/null
+sleep 6
+ab -n 60 -c 32 http://127.0.0.1:51818/api/topics/futures
+```
+
+结果：
+
+- `p50 ≈ 16ms`
+- `p95 ≈ 18ms`
+- `p99 ≈ 20ms`
+
+结论：
+
+- `/api/feed`
+- `/api/topics/<topic>`
+
+这两条 TTL 过期下的高并发长尾，现在也已经从秒级回到十几毫秒级。
+
+### 16.3 当前判断
+
+到这里：
+
+- **稳态已经很快**
+- **TTL 过期后的第一波并发也已经基本压平**
+
+所以当前最大剩余项已经不再是浏览链，而是：
+
+- 冷启动 readiness
+- 更深一层的聚合缓存打磨
+
+如果不继续追极限性能，当前浏览与 API 并发体验已经进入“可收尾”阶段。

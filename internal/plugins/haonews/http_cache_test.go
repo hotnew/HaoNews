@@ -115,15 +115,26 @@ func TestAppFetchHTTPResponseServesStaleWhileRefreshing(t *testing.T) {
 	}
 
 	close(releaseBuilder)
-	freshEntry := <-leaderDone
+	leaderEntry := <-leaderDone
 	if err := <-leaderErr; err != nil {
 		t.Fatalf("leader error = %v", err)
 	}
-	if string(freshEntry.body) != "fresh" {
-		t.Fatalf("leader body = %q, want fresh", string(freshEntry.body))
+	if string(leaderEntry.body) != "stale" {
+		t.Fatalf("leader body = %q, want stale", string(leaderEntry.body))
 	}
 	if got := atomic.LoadInt32(&builds); got != 1 {
 		t.Fatalf("build count = %d, want 1", got)
+	}
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for {
+		fresh, ok := app.cachedHTTPResponse(key)
+		if ok && string(fresh.body) == "fresh" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected background rebuild to replace stale cache")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -227,10 +238,12 @@ func TestAppFetchHTTPResponseVariantServesStaleAcrossSignatureChange(t *testing.
 		), nil
 	}
 
-	leaderDone := make(chan struct{})
+	leaderDone := make(chan CachedHTTPResponse, 1)
+	leaderErr := make(chan error, 1)
 	go func() {
-		_, _ = app.FetchHTTPResponseVariant(key, "index-new", build)
-		close(leaderDone)
+		entry, err := app.FetchHTTPResponseVariant(key, "index-new", build)
+		leaderDone <- entry
+		leaderErr <- err
 	}()
 	<-builderStarted
 
@@ -248,9 +261,26 @@ func TestAppFetchHTTPResponseVariantServesStaleAcrossSignatureChange(t *testing.
 	}
 
 	close(releaseBuilder)
-	<-leaderDone
+	leaderEntry := <-leaderDone
+	if err := <-leaderErr; err != nil {
+		t.Fatalf("leader error = %v", err)
+	}
+	if string(leaderEntry.body) != `{"version":"old"}` {
+		t.Fatalf("leader body = %q, want stale old body", string(leaderEntry.body))
+	}
 	if got := atomic.LoadInt32(&builds); got != 1 {
 		t.Fatalf("build count = %d, want 1", got)
+	}
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for {
+		cached, ok := app.cachedHTTPResponse(key)
+		if ok && string(cached.body) == `{"version":"new"}` {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected background rebuild to replace stale variant cache")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	fresh, err := app.FetchHTTPResponseVariant(key, "index-new", build)
 	if err != nil {

@@ -167,6 +167,12 @@ func (a *App) invalidateIndexCache() {
 	a.responseCache = nil
 	a.responseEpoch++
 	a.responseMu.Unlock()
+	a.filterMu.Lock()
+	a.filterCache = nil
+	a.filterBuilds = nil
+	a.directoryCache = nil
+	a.filterEpoch++
+	a.filterMu.Unlock()
 	a.nodeStatusMu.Lock()
 	a.nodeStatusCache = cachedNodeStatusState{}
 	a.nodeStatusMu.Unlock()

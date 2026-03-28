@@ -65,6 +65,14 @@ func (a *App) FetchHTTPResponseVariant(key, variant string, build func() (Cached
 	return a.fetchHTTPResponseVariant(key, variant, build)
 }
 
+func (a *App) FilteredPosts(index Index, opts FeedOptions) ([]Post, error) {
+	return a.fetchFilteredPosts(index, opts)
+}
+
+func (a *App) TopicDirectory(index Index, opts FeedOptions) ([]DirectoryItem, error) {
+	return a.fetchTopicDirectory(index, opts)
+}
+
 func (a *App) SubscriptionRules() (SubscriptionRules, error) {
 	return a.subscriptionRules()
 }

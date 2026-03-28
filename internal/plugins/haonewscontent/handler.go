@@ -1,6 +1,7 @@
 package haonewscontent
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"net"
@@ -26,6 +27,76 @@ const (
 
 func ajaxFragmentRequest(r *http.Request) bool {
 	return strings.TrimSpace(r.Header.Get("X-HaoNews-Ajax")) == "1"
+}
+
+func renderTemplateBytes(app *newsplugin.App, templateName string, data any) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := app.Templates().ExecuteTemplate(&buf, templateName, data); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func htmlResponseCacheKey(scope string, opts newsplugin.FeedOptions, fragment bool, extras ...string) string {
+	parts := []string{"html", strings.TrimSpace(scope), newsplugin.FeedOptionsSignature(opts, true)}
+	if fragment {
+		parts = append(parts, "fragment")
+	} else {
+		parts = append(parts, "full")
+	}
+	for _, extra := range extras {
+		extra = strings.TrimSpace(extra)
+		if extra == "" {
+			continue
+		}
+		parts = append(parts, strings.ToLower(extra))
+	}
+	return strings.Join(parts, ":")
+}
+
+func renderCachedPageOrFragment(
+	app *newsplugin.App,
+	w http.ResponseWriter,
+	r *http.Request,
+	cacheKey string,
+	indexSig string,
+	pageTemplate string,
+	fragmentTemplate string,
+	title string,
+	build func(fragment bool) (any, error),
+) error {
+	fragment := ajaxFragmentRequest(r)
+	entry, err := app.FetchHTTPResponseVariant(cacheKey, indexSig, func() (newsplugin.CachedHTTPResponse, error) {
+		data, err := build(fragment)
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
+		templateName := pageTemplate
+		if fragment {
+			templateName = fragmentTemplate
+		}
+		body, err := renderTemplateBytes(app, templateName, data)
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
+		return newsplugin.NewCachedHTTPResponse(
+			http.StatusOK,
+			"text/html; charset=utf-8",
+			"private, max-age=5, stale-while-revalidate=25",
+			"",
+			time.Time{},
+			time.Now().Add(5*time.Second),
+			body,
+		), nil
+	})
+	if err != nil {
+		return err
+	}
+	if fragment && title != "" {
+		w.Header().Set("X-HaoNews-Title", title)
+	}
+	newsplugin.WriteConditionalResponse(w, r, entry)
+	return nil
 }
 
 func renderPageOrFragment(app *newsplugin.App, w http.ResponseWriter, r *http.Request, pageTemplate, fragmentTemplate, title string, data any) {
@@ -120,21 +191,25 @@ func handleHome(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	index, err := app.Index()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	rules, err := app.SubscriptionRules()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	opts := readFeedOptions(r)
-	allPosts := index.FilterPosts(opts)
-	posts, pagination := newsplugin.PaginatePosts(allPosts, opts, "/")
 	showNetworkWarn := shouldShowNetworkWarning(r)
 	if showNetworkWarn {
+		index, err := app.Index()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		rules, err := app.SubscriptionRules()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		allPosts, err := app.FilteredPosts(index, opts)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		posts, pagination := newsplugin.PaginatePosts(allPosts, opts, "/")
 		http.SetCookie(w, &http.Cookie{
 			Name:     "hao_news_network_warning_seen",
 			Value:    "1",
@@ -143,31 +218,82 @@ func handleHome(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 		})
+		data := newsplugin.HomePageData{
+			Project:         app.ProjectName(),
+			Version:         app.VersionString(),
+			Posts:           posts,
+			Now:             time.Now(),
+			ListenAddr:      app.HTTPListenAddr(),
+			AgentView:       isAgentViewer(r),
+			ShowNetworkWarn: true,
+			Options:         opts,
+			PageNav:         app.PageNav("/"),
+			TabOptions:      newsplugin.BuildTabOptions(opts, "/"),
+			TopicFacets:     newsplugin.BuildFeedFacets(index.TopicStats, opts, "/", "topic"),
+			SourceFacets:    newsplugin.BuildFeedFacets(index.SourceStats, opts, "/", "source"),
+			SortOptions:     newsplugin.BuildSortOptions(opts, "/"),
+			WindowOptions:   newsplugin.BuildWindowOptions(opts, "/"),
+			PageSizeOptions: newsplugin.BuildPageSizeOptions(opts, "/"),
+			ActiveFilters:   newsplugin.BuildActiveFilters(opts, "/"),
+			SummaryStats:    newsplugin.BuildSummaryStats(allPosts),
+			TotalPostCount:  len(index.Posts),
+			Pagination:      pagination,
+			Subscriptions:   rules,
+			NodeStatus:      app.NodeStatus(index),
+		}
+		renderPageOrFragment(app, w, r, "home.html", "home.feedRoot", homePageTitle(app), data)
+		return
 	}
-	data := newsplugin.HomePageData{
-		Project:         app.ProjectName(),
-		Version:         app.VersionString(),
-		Posts:           posts,
-		Now:             time.Now(),
-		ListenAddr:      app.HTTPListenAddr(),
-		AgentView:       isAgentViewer(r),
-		ShowNetworkWarn: showNetworkWarn,
-		Options:         opts,
-		PageNav:         app.PageNav("/"),
-		TabOptions:      newsplugin.BuildTabOptions(opts, "/"),
-		TopicFacets:     newsplugin.BuildFeedFacets(index.TopicStats, opts, "/", "topic"),
-		SourceFacets:    newsplugin.BuildFeedFacets(index.SourceStats, opts, "/", "source"),
-		SortOptions:     newsplugin.BuildSortOptions(opts, "/"),
-		WindowOptions:   newsplugin.BuildWindowOptions(opts, "/"),
-		PageSizeOptions: newsplugin.BuildPageSizeOptions(opts, "/"),
-		ActiveFilters:   newsplugin.BuildActiveFilters(opts, "/"),
-		SummaryStats:    newsplugin.BuildSummaryStats(allPosts),
-		TotalPostCount:  len(index.Posts),
-		Pagination:      pagination,
-		Subscriptions:   rules,
-		NodeStatus:      app.NodeStatus(index),
+	indexSig, err := app.IndexSignature()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	renderPageOrFragment(app, w, r, "home.html", "home.feedRoot", homePageTitle(app), data)
+	agentView := isAgentViewer(r)
+	cacheKey := htmlResponseCacheKey("/", opts, ajaxFragmentRequest(r), "agent="+strconv.FormatBool(agentView))
+	if err := renderCachedPageOrFragment(app, w, r, cacheKey, indexSig, "home.html", "home.feedRoot", homePageTitle(app), func(fragment bool) (any, error) {
+		index, err := app.Index()
+		if err != nil {
+			return nil, err
+		}
+		rules, err := app.SubscriptionRules()
+		if err != nil {
+			return nil, err
+		}
+		allPosts, err := app.FilteredPosts(index, opts)
+		if err != nil {
+			return nil, err
+		}
+		posts, pagination := newsplugin.PaginatePosts(allPosts, opts, "/")
+		data := newsplugin.HomePageData{
+			Project:         app.ProjectName(),
+			Version:         app.VersionString(),
+			Posts:           posts,
+			Now:             time.Now(),
+			ListenAddr:      app.HTTPListenAddr(),
+			AgentView:       agentView,
+			ShowNetworkWarn: false,
+			Options:         opts,
+			PageNav:         app.PageNav("/"),
+			TabOptions:      newsplugin.BuildTabOptions(opts, "/"),
+			TopicFacets:     newsplugin.BuildFeedFacets(index.TopicStats, opts, "/", "topic"),
+			SourceFacets:    newsplugin.BuildFeedFacets(index.SourceStats, opts, "/", "source"),
+			SortOptions:     newsplugin.BuildSortOptions(opts, "/"),
+			WindowOptions:   newsplugin.BuildWindowOptions(opts, "/"),
+			PageSizeOptions: newsplugin.BuildPageSizeOptions(opts, "/"),
+			ActiveFilters:   newsplugin.BuildActiveFilters(opts, "/"),
+			SummaryStats:    newsplugin.BuildSummaryStats(allPosts),
+			TotalPostCount:  len(index.Posts),
+			Pagination:      pagination,
+			Subscriptions:   rules,
+		}
+		if !fragment {
+			data.NodeStatus = app.NodeStatus(index)
+		}
+		return data, nil
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func handlePendingApproval(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
@@ -196,9 +322,17 @@ func handlePendingApproval(app *newsplugin.App, w http.ResponseWriter, r *http.R
 	}
 	opts := readFeedOptions(r)
 	opts.PendingApproval = true
-	allPosts := index.FilterPosts(opts)
+	allPosts, err := app.FilteredPosts(index, opts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	posts, pagination := newsplugin.PaginatePosts(allPosts, opts, "/pending-approval")
-	fullSet := index.FilterPosts(newsplugin.FeedOptions{PendingApproval: true, Now: opts.Now})
+	fullSet, err := app.FilteredPosts(index, newsplugin.FeedOptions{PendingApproval: true, Now: opts.Now})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	data := newsplugin.CollectionPageData{
 		Project:                   app.ProjectName(),
 		Version:                   app.VersionString(),
@@ -730,13 +864,21 @@ func handleSource(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 	}
 	opts := readFeedOptions(r)
 	opts.Source = name
-	allPosts := index.FilterPosts(opts)
+	allPosts, err := app.FilteredPosts(index, opts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	posts, pagination := newsplugin.PaginatePosts(allPosts, opts, newsplugin.SourcePath(name))
 	if !newsplugin.HasSource(index, name) {
 		http.NotFound(w, r)
 		return
 	}
-	fullSet := index.FilterPosts(newsplugin.FeedOptions{Source: name, Now: opts.Now})
+	fullSet, err := app.FilteredPosts(index, newsplugin.FeedOptions{Source: name, Now: opts.Now})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	data := newsplugin.CollectionPageData{
 		Project:         app.ProjectName(),
 		Version:         app.VersionString(),
@@ -771,32 +913,50 @@ func handleTopics(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	index, err := app.Index()
+	opts := readFeedOptions(r)
+	indexSig, err := app.IndexSignature()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	opts := readFeedOptions(r)
-	visiblePosts := index.FilterPosts(newsplugin.FeedOptions{
-		Tab:    opts.Tab,
-		Window: opts.Window,
-		Now:    opts.Now,
-	})
-	data := newsplugin.DirectoryPageData{
-		Project:      app.ProjectName(),
-		Version:      app.VersionString(),
-		Kind:         "Topics",
-		Path:         "/topics",
-		APIPath:      "/api/topics",
-		Now:          time.Now(),
-		Options:      opts,
-		PageNav:      app.PageNav("/topics"),
-		TabOptions:   newsplugin.BuildTabOptions(opts, "/topics"),
-		Items:        newsplugin.BuildTopicDirectory(index, opts),
-		SummaryStats: newsplugin.BuildDirectorySummaryStats(newsplugin.TopicStatsForPosts(visiblePosts), visiblePosts),
-		NodeStatus:   app.NodeStatus(index),
+	cacheKey := htmlResponseCacheKey("/topics", opts, ajaxFragmentRequest(r))
+	if err := renderCachedPageOrFragment(app, w, r, cacheKey, indexSig, "directory.html", "directory.feedRoot", "好牛Ai Topics", func(fragment bool) (any, error) {
+		index, err := app.Index()
+		if err != nil {
+			return nil, err
+		}
+		visiblePosts, err := app.FilteredPosts(index, newsplugin.FeedOptions{
+			Tab:    opts.Tab,
+			Window: opts.Window,
+			Now:    opts.Now,
+		})
+		if err != nil {
+			return nil, err
+		}
+		topicDirectory, err := app.TopicDirectory(index, opts)
+		if err != nil {
+			return nil, err
+		}
+		data := newsplugin.DirectoryPageData{
+			Project:      app.ProjectName(),
+			Version:      app.VersionString(),
+			Kind:         "Topics",
+			Path:         "/topics",
+			APIPath:      "/api/topics",
+			Now:          time.Now(),
+			Options:      opts,
+			PageNav:      app.PageNav("/topics"),
+			TabOptions:   newsplugin.BuildTabOptions(opts, "/topics"),
+			Items:        topicDirectory,
+			SummaryStats: newsplugin.BuildDirectorySummaryStats(newsplugin.TopicStatsForPosts(visiblePosts), visiblePosts),
+		}
+		if !fragment {
+			data.NodeStatus = app.NodeStatus(index)
+		}
+		return data, nil
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	renderPageOrFragment(app, w, r, "directory.html", "directory.feedRoot", "好牛Ai Topics", data)
 }
 
 func handleTopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
@@ -809,46 +969,64 @@ func handleTopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	index, err := app.Index()
+	opts := readFeedOptions(r)
+	opts.Topic = name
+	indexSig, err := app.IndexSignature()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	opts := readFeedOptions(r)
-	opts.Topic = name
-	allPosts := index.FilterPosts(opts)
-	posts, pagination := newsplugin.PaginatePosts(allPosts, opts, newsplugin.TopicPath(name))
-	if !newsplugin.HasTopic(index, name) {
+	cacheKey := htmlResponseCacheKey(newsplugin.TopicPath(name), opts, ajaxFragmentRequest(r))
+	if err := renderCachedPageOrFragment(app, w, r, cacheKey, indexSig, "collection.html", "collection.feedRoot", "好牛Ai Topic: "+name, func(fragment bool) (any, error) {
+		index, err := app.Index()
+		if err != nil {
+			return nil, err
+		}
+		if !newsplugin.HasTopic(index, name) {
+			return nil, os.ErrNotExist
+		}
+		allPosts, err := app.FilteredPosts(index, opts)
+		if err != nil {
+			return nil, err
+		}
+		posts, pagination := newsplugin.PaginatePosts(allPosts, opts, newsplugin.TopicPath(name))
+		fullSet, err := app.FilteredPosts(index, newsplugin.FeedOptions{Topic: name, Now: opts.Now})
+		if err != nil {
+			return nil, err
+		}
+		data := newsplugin.CollectionPageData{
+			Project:         app.ProjectName(),
+			Version:         app.VersionString(),
+			Kind:            "Topic",
+			Name:            name,
+			Path:            newsplugin.TopicPath(name),
+			RequestURI:      r.URL.RequestURI(),
+			DirectoryURL:    "/topics",
+			APIPath:         "/api" + newsplugin.TopicPath(name),
+			Now:             time.Now(),
+			Posts:           posts,
+			Options:         opts,
+			PageNav:         app.PageNav("/topics"),
+			TabOptions:      newsplugin.BuildTabOptions(opts, newsplugin.TopicPath(name), "topic"),
+			SortOptions:     newsplugin.BuildSortOptions(opts, newsplugin.TopicPath(name), "topic"),
+			WindowOptions:   newsplugin.BuildWindowOptions(opts, newsplugin.TopicPath(name), "topic"),
+			PageSizeOptions: newsplugin.BuildPageSizeOptions(opts, newsplugin.TopicPath(name), "topic"),
+			SideLabel:       "Sources covering this topic",
+			SideFacets:      newsplugin.BuildFacetLinks(newsplugin.SourceStatsForPosts(fullSet), opts, newsplugin.TopicPath(name), "source", "topic"),
+			ActiveFilters:   newsplugin.BuildActiveFilters(opts, newsplugin.TopicPath(name), "topic"),
+			SummaryStats:    newsplugin.BuildSummaryStats(allPosts),
+			TotalPostCount:  len(fullSet),
+			Pagination:      pagination,
+		}
+		if !fragment {
+			data.NodeStatus = app.NodeStatus(index)
+		}
+		return data, nil
+	}); errors.Is(err, os.ErrNotExist) {
 		http.NotFound(w, r)
-		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	fullSet := index.FilterPosts(newsplugin.FeedOptions{Topic: name, Now: opts.Now})
-	data := newsplugin.CollectionPageData{
-		Project:         app.ProjectName(),
-		Version:         app.VersionString(),
-		Kind:            "Topic",
-		Name:            name,
-		Path:            newsplugin.TopicPath(name),
-		RequestURI:      r.URL.RequestURI(),
-		DirectoryURL:    "/topics",
-		APIPath:         "/api" + newsplugin.TopicPath(name),
-		Now:             time.Now(),
-		Posts:           posts,
-		Options:         opts,
-		PageNav:         app.PageNav("/topics"),
-		TabOptions:      newsplugin.BuildTabOptions(opts, newsplugin.TopicPath(name), "topic"),
-		SortOptions:     newsplugin.BuildSortOptions(opts, newsplugin.TopicPath(name), "topic"),
-		WindowOptions:   newsplugin.BuildWindowOptions(opts, newsplugin.TopicPath(name), "topic"),
-		PageSizeOptions: newsplugin.BuildPageSizeOptions(opts, newsplugin.TopicPath(name), "topic"),
-		SideLabel:       "Sources covering this topic",
-		SideFacets:      newsplugin.BuildFacetLinks(newsplugin.SourceStatsForPosts(fullSet), opts, newsplugin.TopicPath(name), "source", "topic"),
-		ActiveFilters:   newsplugin.BuildActiveFilters(opts, newsplugin.TopicPath(name), "topic"),
-		SummaryStats:    newsplugin.BuildSummaryStats(allPosts),
-		TotalPostCount:  len(fullSet),
-		Pagination:      pagination,
-		NodeStatus:      app.NodeStatus(index),
-	}
-	renderPageOrFragment(app, w, r, "collection.html", "collection.feedRoot", "好牛Ai Topic: "+name, data)
 }
 
 func handleTopicRSS(app *newsplugin.App, w http.ResponseWriter, r *http.Request, name string) {
@@ -869,7 +1047,10 @@ func handleTopicRSS(app *newsplugin.App, w http.ResponseWriter, r *http.Request,
 		if !newsplugin.HasTopic(index, name) {
 			return newsplugin.CachedHTTPResponse{}, os.ErrNotExist
 		}
-		posts := index.FilterPosts(opts)
+		posts, err := app.FilteredPosts(index, opts)
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
 		payload, lastModified, err := newsplugin.TopicRSSBytes(r, app.ProjectName(), name, posts)
 		if err != nil {
 			return newsplugin.CachedHTTPResponse{}, err
@@ -944,7 +1125,10 @@ func handleAPIFeed(app *newsplugin.App, w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			return newsplugin.CachedHTTPResponse{}, err
 		}
-		allPosts := index.FilterPosts(opts)
+		allPosts, err := app.FilteredPosts(index, opts)
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
 		posts, pagination := newsplugin.PaginatePosts(allPosts, opts, "/api/feed")
 		payload := map[string]any{
 			"project":    app.ProjectID(),
@@ -1006,8 +1190,17 @@ func handleAPIPendingApproval(app *newsplugin.App, w http.ResponseWriter, r *htt
 	}
 	opts := readFeedOptions(r)
 	opts.PendingApproval = true
-	allPosts := index.FilterPosts(opts)
+	allPosts, err := app.FilteredPosts(index, opts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	posts, pagination := newsplugin.PaginatePosts(allPosts, opts, "/api/pending-approval")
+	pendingFacetPosts, err := app.FilteredPosts(index, newsplugin.FeedOptions{PendingApproval: true, Now: opts.Now})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"project":    app.ProjectID(),
 		"scope":      "pending-approval",
@@ -1016,8 +1209,8 @@ func handleAPIPendingApproval(app *newsplugin.App, w http.ResponseWriter, r *htt
 		"pagination": pagination,
 		"posts":      newsplugin.APIPosts(posts),
 		"facets": map[string]any{
-			"topics":    newsplugin.TopicStatsForPosts(index.FilterPosts(newsplugin.FeedOptions{PendingApproval: true, Now: opts.Now})),
-			"reviewers": newsplugin.ReviewerStatsForPosts(index.FilterPosts(newsplugin.FeedOptions{PendingApproval: true, Now: opts.Now})),
+			"topics":    newsplugin.TopicStatsForPosts(pendingFacetPosts),
+			"reviewers": newsplugin.ReviewerStatsForPosts(pendingFacetPosts),
 		},
 	})
 }
@@ -1154,8 +1347,16 @@ func handleAPISource(app *newsplugin.App, w http.ResponseWriter, r *http.Request
 	}
 	opts := readFeedOptions(r)
 	opts.Source = name
-	posts := index.FilterPosts(opts)
-	fullSet := index.FilterPosts(newsplugin.FeedOptions{Source: name, Now: opts.Now})
+	posts, err := app.FilteredPosts(index, opts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fullSet, err := app.FilteredPosts(index, newsplugin.FeedOptions{Source: name, Now: opts.Now})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"project": app.ProjectID(),
 		"scope":   "source",
@@ -1189,17 +1390,24 @@ func handleAPITopics(app *newsplugin.App, w http.ResponseWriter, r *http.Request
 		if err != nil {
 			return newsplugin.CachedHTTPResponse{}, err
 		}
-		visiblePosts := index.FilterPosts(newsplugin.FeedOptions{
+		visiblePosts, err := app.FilteredPosts(index, newsplugin.FeedOptions{
 			Tab:    opts.Tab,
 			Window: opts.Window,
 			Now:    opts.Now,
 		})
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
+		items, err := app.TopicDirectory(index, opts)
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
 		payload := map[string]any{
 			"project": app.ProjectID(),
 			"scope":   "topics",
 			"options": newsplugin.APIOptions(opts),
 			"summary": newsplugin.BuildDirectorySummaryStats(newsplugin.TopicStatsForPosts(visiblePosts), visiblePosts),
-			"items":   newsplugin.BuildTopicDirectory(index, opts),
+			"items":   items,
 		}
 		body, err := newsplugin.MarshalJSONBytes(payload)
 		if err != nil {
@@ -1245,8 +1453,14 @@ func handleAPITopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request)
 		if !newsplugin.HasTopic(index, name) {
 			return newsplugin.CachedHTTPResponse{}, os.ErrNotExist
 		}
-		posts := index.FilterPosts(opts)
-		fullSet := index.FilterPosts(newsplugin.FeedOptions{Topic: name, Now: opts.Now})
+		posts, err := app.FilteredPosts(index, opts)
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
+		fullSet, err := app.FilteredPosts(index, newsplugin.FeedOptions{Topic: name, Now: opts.Now})
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
 		payload := map[string]any{
 			"project": app.ProjectID(),
 			"scope":   "topic",

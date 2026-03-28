@@ -43,6 +43,11 @@ type App struct {
 	responseCache   map[string]cachedHTTPResponse
 	responseBuilds  map[string]*responseBuildState
 	responseEpoch   uint64
+	filterMu        sync.Mutex
+	filterCache     map[string]cachedPostList
+	filterBuilds    map[string]*postListBuildState
+	filterEpoch     uint64
+	directoryCache  map[string]cachedDirectoryState
 	nodeStatusMu    sync.Mutex
 	nodeStatusCache cachedNodeStatusState
 }
@@ -83,6 +88,25 @@ type CachedHTTPResponse = cachedHTTPResponse
 type responseBuildState struct {
 	done chan struct{}
 	err  error
+}
+
+type cachedPostList struct {
+	posts      []Post
+	variant    string
+	expiresAt  time.Time
+	staleUntil time.Time
+}
+
+type postListBuildState struct {
+	done chan struct{}
+	err  error
+}
+
+type cachedDirectoryState struct {
+	items      []DirectoryItem
+	variant    string
+	expiresAt  time.Time
+	staleUntil time.Time
 }
 
 type cachedNodeStatusState struct {

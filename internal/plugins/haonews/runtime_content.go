@@ -340,6 +340,10 @@ func BuildTopicDirectory(index Index, opts FeedOptions) []DirectoryItem {
 		Window: opts.Window,
 		Now:    opts.Now,
 	})
+	return buildTopicDirectoryFromPosts(index, opts, basePosts)
+}
+
+func buildTopicDirectoryFromPosts(index Index, opts FeedOptions, basePosts []Post) []DirectoryItem {
 	counts := make(map[string]*DirectoryItem, len(index.TopicStats))
 	for _, post := range basePosts {
 		for _, topic := range post.Topics {

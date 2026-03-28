@@ -250,7 +250,8 @@ func (a *App) cachedHTTPResponseStateLocked(key, variant string, now time.Time) 
 func (a *App) fetchHTTPResponseVariant(key, variant string, build func() (cachedHTTPResponse, error)) (cachedHTTPResponse, error) {
 	now := time.Now()
 	a.responseMu.Lock()
-	if entry, fresh, _ := a.cachedHTTPResponseStateLocked(key, variant, now); fresh {
+	entry, fresh, staleValid := a.cachedHTTPResponseStateLocked(key, variant, now)
+	if fresh {
 		a.responseMu.Unlock()
 		return entry, nil
 	}
@@ -280,26 +281,48 @@ func (a *App) fetchHTTPResponseVariant(key, variant string, build func() (cached
 	state := &responseBuildState{done: make(chan struct{})}
 	a.responseBuilds[key] = state
 	epoch := a.responseEpoch
+	if staleValid {
+		a.responseMu.Unlock()
+		go a.completeHTTPResponseBuild(key, variant, epoch, state, build)
+		return entry, nil
+	}
 	a.responseMu.Unlock()
 
-	entry, err := build()
-
+	entry, err := a.buildHTTPResponse(key, variant, epoch, build)
 	a.responseMu.Lock()
-	if err == nil && a.responseEpoch == epoch {
+	state.err = err
+	delete(a.responseBuilds, key)
+	close(state.done)
+	a.responseMu.Unlock()
+	return entry, err
+}
+
+func (a *App) fetchHTTPResponse(key string, build func() (cachedHTTPResponse, error)) (cachedHTTPResponse, error) {
+	return a.fetchHTTPResponseVariant(key, "", build)
+}
+
+func (a *App) buildHTTPResponse(key, variant string, epoch uint64, build func() (cachedHTTPResponse, error)) (cachedHTTPResponse, error) {
+	entry, err := build()
+	if err != nil {
+		return cachedHTTPResponse{}, err
+	}
+	a.responseMu.Lock()
+	defer a.responseMu.Unlock()
+	if a.responseEpoch == epoch {
 		entry.variant = strings.TrimSpace(variant)
 		if a.responseCache == nil {
 			a.responseCache = make(map[string]cachedHTTPResponse)
 		}
 		a.responseCache[key] = entry
 	}
+	return entry, nil
+}
+
+func (a *App) completeHTTPResponseBuild(key, variant string, epoch uint64, state *responseBuildState, build func() (cachedHTTPResponse, error)) {
+	_, err := a.buildHTTPResponse(key, variant, epoch, build)
+	a.responseMu.Lock()
+	defer a.responseMu.Unlock()
 	state.err = err
 	delete(a.responseBuilds, key)
 	close(state.done)
-	a.responseMu.Unlock()
-
-	return entry, err
-}
-
-func (a *App) fetchHTTPResponse(key string, build func() (cachedHTTPResponse, error)) (cachedHTTPResponse, error) {
-	return a.fetchHTTPResponseVariant(key, "", build)
 }

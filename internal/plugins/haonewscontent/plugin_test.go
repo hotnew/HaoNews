@@ -107,6 +107,29 @@ func TestPluginBuildServesFeedAPIWithETag(t *testing.T) {
 	}
 }
 
+func TestPluginBuildServesHomeAjaxFragment(t *testing.T) {
+	t.Parallel()
+
+	site := buildContentSite(t)
+	req := httptest.NewRequest(http.MethodGet, "/?tab=hot", nil)
+	req.Header.Set("X-HaoNews-Ajax", "1")
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := strings.TrimSpace(rec.Header().Get("X-HaoNews-Title")); got == "" {
+		t.Fatalf("expected ajax title header, got none")
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "data-feed-ajax-root") {
+		t.Fatalf("expected ajax fragment root, got %q", body)
+	}
+	if strings.Contains(body, "app-sidebar") {
+		t.Fatalf("expected ajax fragment to exclude full layout, got %q", body)
+	}
+}
+
 func TestPluginBuildRendersMarkdownSafelyOnPostPage(t *testing.T) {
 	t.Parallel()
 
@@ -257,6 +280,35 @@ func TestPluginBuildServesTopicRSSWithETag(t *testing.T) {
 	}
 	if rec.Body.Len() != 0 {
 		t.Fatalf("expected 304 body to be empty, got %q", rec.Body.String())
+	}
+}
+
+func TestPluginBuildServesTopicAjaxFragment(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	publishSignedTopicPost(t, root, "World keep", "hao.news/world", []string{"world"})
+
+	site := buildContentSiteAtRoot(t, root)
+	req := httptest.NewRequest(http.MethodGet, "/topics/world", nil)
+	req.Header.Set("X-HaoNews-Ajax", "1")
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := strings.TrimSpace(rec.Header().Get("X-HaoNews-Title")); got == "" {
+		t.Fatalf("expected ajax title header, got none")
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "data-feed-ajax-root") {
+		t.Fatalf("expected ajax fragment root, got %q", body)
+	}
+	if !strings.Contains(body, "World keep") {
+		t.Fatalf("expected topic fragment post content, got %q", body)
+	}
+	if strings.Contains(body, "app-sidebar") {
+		t.Fatalf("expected ajax fragment to exclude full layout, got %q", body)
 	}
 }
 
