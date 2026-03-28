@@ -59,13 +59,16 @@ func TestSubscribedAnnouncementTopicsCanonicalizesDiscoveryFeeds(t *testing.T) {
 
 	networkID := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	topics := subscribedAnnouncementTopics(networkID, SyncSubscriptions{
-		DiscoveryFeeds: []string{"hao.news/news", "NEWS", "all"},
+		DiscoveryFeeds: []string{"hao.news/news", "NEWS", "all", "新手"},
 	})
 	if !containsString(topics, "haonews/announce/"+networkID+"/global") {
 		t.Fatalf("missing global subscription: %v", topics)
 	}
 	if !containsString(topics, "haonews/announce/"+networkID+"/channel/hao.news%2Fnews") {
 		t.Fatalf("missing news channel subscription: %v", topics)
+	}
+	if !containsString(topics, "haonews/announce/"+networkID+"/channel/hao.news%2Fnew-agents") {
+		t.Fatalf("missing new-agents channel subscription: %v", topics)
 	}
 }
 

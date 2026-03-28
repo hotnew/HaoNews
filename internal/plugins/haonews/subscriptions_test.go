@@ -66,7 +66,7 @@ func TestLoadSubscriptionRulesNormalizesDiscoverySelectors(t *testing.T) {
 	path := root + "/subscriptions.json"
 	data := `{
   "topics": ["all"],
-  "discovery_feeds": ["news", "NEWS", "hao.news/live", "all"],
+  "discovery_feeds": ["news", "NEWS", "hao.news/live", "all", "新手"],
   "discovery_topics": ["world", "WORLD", "期货"]
 }`
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
@@ -76,13 +76,13 @@ func TestLoadSubscriptionRulesNormalizesDiscoverySelectors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSubscriptionRules() error = %v", err)
 	}
-	if len(rules.DiscoveryFeeds) != 3 {
-		t.Fatalf("discovery feeds len = %d, want 3", len(rules.DiscoveryFeeds))
+	if len(rules.DiscoveryFeeds) != 4 {
+		t.Fatalf("discovery feeds len = %d, want 4", len(rules.DiscoveryFeeds))
 	}
 	if len(rules.DiscoveryTopics) != 2 {
 		t.Fatalf("discovery topics len = %d, want 2", len(rules.DiscoveryTopics))
 	}
-	if rules.DiscoveryFeeds[0] != "news" || rules.DiscoveryFeeds[1] != "live" || rules.DiscoveryFeeds[2] != "global" {
+	if rules.DiscoveryFeeds[0] != "news" || rules.DiscoveryFeeds[1] != "live" || rules.DiscoveryFeeds[2] != "global" || rules.DiscoveryFeeds[3] != "new-agents" {
 		t.Fatalf("unexpected normalized discovery feeds: %v", rules.DiscoveryFeeds)
 	}
 	if rules.DiscoveryTopics[0] != "world" || rules.DiscoveryTopics[1] != "futures" {

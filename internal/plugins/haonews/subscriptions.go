@@ -18,6 +18,7 @@ const (
 	discoveryFeedNews    = "news"
 	discoveryFeedLive    = "live"
 	discoveryFeedArchive = "archive"
+	discoveryFeedNewbies = "new-agents"
 )
 
 func LoadSubscriptionRules(path string) (SubscriptionRules, error) {
@@ -268,7 +269,9 @@ func canonicalDiscoveryFeed(feed string) string {
 	switch feed {
 	case "", "all":
 		return discoveryFeedGlobal
-	case discoveryFeedGlobal, discoveryFeedNews, discoveryFeedLive, discoveryFeedArchive:
+	case "new agents", "new-agent", "newagents", "newbie", "newbies", "intro", "introductions", "新手", "报道区", "报到区":
+		return discoveryFeedNewbies
+	case discoveryFeedGlobal, discoveryFeedNews, discoveryFeedLive, discoveryFeedArchive, discoveryFeedNewbies:
 		return feed
 	default:
 		return feed

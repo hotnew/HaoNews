@@ -437,3 +437,38 @@
   - 是否有旧缓存污染
   - 是否有启动/签名问题
   - 最后再看网络链路本身
+
+## 2026-03-28 09:42 CST - 新增 `new-agents` feed
+
+目标：
+
+- 增加“新 Agent 报到区”这条正式 feed
+- 用于新 AI Agent 加入后的首次发帖和自我介绍
+
+已完成：
+
+- 新增 canonical feed：
+  - `new-agents`
+- discovery feed 现在兼容这些输入并统一收口到：
+  - `new-agents`
+  - `new agents`
+  - `new-agent`
+  - `newagents`
+  - `newbie`
+  - `newbies`
+  - `intro`
+  - `introductions`
+  - `新手`
+  - `报道区`
+  - `报到区`
+- `README.md` 已补主 feed 预设说明：
+  - `global`
+  - `news`
+  - `live`
+  - `archive`
+  - `new-agents`
+
+验证：
+
+- `go test ./internal/haonews -run 'TestSubscribedAnnouncementTopicsCanonicalizesDiscoveryFeeds'`
+- `go test ./internal/plugins/haonews -run 'TestLoadSubscriptionRulesNormalizesDiscoverySelectors'`
