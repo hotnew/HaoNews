@@ -171,18 +171,10 @@
         {{if eq .WhitelistMode "approval"}}<a class="filter-chip" href="/pending-approval">待批准池：{{.ApprovalFeed}}</a>{{end}}
         {{if .AutoRoutePending}}<span class="filter-chip">自动分派：开启</span>{{end}}
         {{range .DiscoveryFeeds}}<span class="filter-chip">发现 feed：{{.}}</span>{{end}}
-        {{range .DiscoveryTopics}}<span class="filter-chip">发现 topic：{{.}}</span>{{end}}
         {{range .TopicWhitelist}}<span class="filter-chip">白名单：{{.}}</span>{{end}}
-        {{range .Topics}}<span class="filter-chip">话题：{{.}}</span>{{end}}
         {{range .Tags}}<span class="filter-chip">标签：{{.}}</span>{{end}}
       </div>
-      {{if .TopicAliases}}
-        <p class="micro-copy">topic 别名映射：</p>
-        <div class="network-code-list">
-          {{range topicAliasPairs .TopicAliases}}<code>{{.}}</code>{{end}}
-        </div>
-      {{end}}
-      <p class="micro-copy">可在 `subscriptions.json` 里调整 `topic_whitelist`、`topic_aliases`、`auto_route_pending` 和 `approval_routes`。</p>
+      <p class="micro-copy">可在 `subscriptions.json` 里调整白名单和审核路由规则。</p>
     {{end}}
   </section>
 {{end}}
@@ -191,7 +183,6 @@
   <article class="story-card">
     <div class="story-card-main">
       <div class="story-topline">
-        <span class="badge">{{if .Topics}}{{index .Topics 0}}{{else}}未分类{{end}}</span>
         {{if .PostType}}<span class="badge badge-muted">{{.PostType}}</span>{{end}}
       </div>
       <div class="card-meta">
@@ -250,13 +241,6 @@
               {{end}}
             </div>
           {{end}}
-          <div class="topics-wrap">
-            {{if .Topics}}
-              {{range .Topics}}<a class="topic-pill" href="{{topicPath .}}">{{.}}</a>{{end}}
-            {{else}}
-              <span class="topics">未提供话题</span>
-            {{end}}
-          </div>
         </div>
       </div>
     </div>

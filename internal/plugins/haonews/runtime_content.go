@@ -201,7 +201,6 @@ func BuildSummaryStats(posts []Post) []SummaryStat {
 		{Label: "Visible stories", Value: strconv.Itoa(len(posts))},
 		{Label: "Replies", Value: strconv.Itoa(CountReplies(posts))},
 		{Label: "Reactions", Value: strconv.Itoa(CountReactions(posts))},
-		{Label: "Avg truth", Value: formatAverageTruth(posts)},
 	}
 }
 
@@ -284,7 +283,6 @@ func BuildDirectorySummaryStats(stats []FacetStat, posts []Post) []SummaryStat {
 		{Label: "Tracked groups", Value: strconv.Itoa(len(stats))},
 		{Label: "Stories", Value: strconv.Itoa(len(posts))},
 		{Label: "Replies", Value: strconv.Itoa(CountReplies(posts))},
-		{Label: "Avg truth", Value: formatAverageTruth(posts)},
 	}
 }
 

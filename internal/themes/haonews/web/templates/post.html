@@ -20,7 +20,6 @@
         <article class="story-panel">
           <p class="eyebrow">{{.Project}} 内容</p>
           <div class="story-topline">
-            <span class="badge">{{if .Post.Topics}}{{index .Post.Topics 0}}{{else}}未分类{{end}}</span>
             {{if .Post.PostType}}<span class="badge badge-muted">{{.Post.PostType}}</span>{{end}}
           </div>
           <div class="story-headline-row story-headline-row-post">

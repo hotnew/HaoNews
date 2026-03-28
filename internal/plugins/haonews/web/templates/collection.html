@@ -165,7 +165,6 @@
             {{end}}
           </section>
           {{if .Posts}}
-            {{template "paginationControls" .}}
             <section class="story-list">
               {{range .Posts}}
                 {{template "postCard" (postCardData . $.ModerationReviewerOptions $.Options)}}

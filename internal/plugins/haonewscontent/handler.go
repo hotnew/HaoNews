@@ -126,6 +126,7 @@ func handleHome(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		ShowNetworkWarn: showNetworkWarn,
 		Options:         opts,
 		PageNav:         app.PageNav("/"),
+		TabOptions:      newsplugin.BuildTabOptions(opts, "/"),
 		TopicFacets:     newsplugin.BuildFeedFacets(index.TopicStats, opts, "/", "topic"),
 		SourceFacets:    newsplugin.BuildFeedFacets(index.SourceStats, opts, "/", "source"),
 		SortOptions:     newsplugin.BuildSortOptions(opts, "/"),

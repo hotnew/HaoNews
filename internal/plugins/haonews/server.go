@@ -100,6 +100,7 @@ type HomePageData struct {
 	ShowNetworkWarn           bool
 	Options                   FeedOptions
 	PageNav                   []NavItem
+	TabOptions                []TabOption
 	TopicFacets               []FeedFacet
 	SourceFacets              []FeedFacet
 	SortOptions               []SortOption

@@ -76,12 +76,6 @@
                     <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Name}}">复制</button>
                   </div>
                 {{end}}
-                <div class="signal-grid signal-grid-compact">
-                  <div>
-                    <span class="label">平均真实性</span>
-                    <strong>{{.AvgTruth}}</strong>
-                  </div>
-                </div>
                 <div class="story-links">
                   <a href="{{.URL}}">打开页面</a>
                   {{if .ExternalURL}}<a href="{{.ExternalURL}}" target="_blank" rel="noreferrer">来源站点</a>{{end}}
