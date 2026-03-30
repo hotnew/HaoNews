@@ -27,35 +27,39 @@ const (
 )
 
 type SyncSubscriptions struct {
-	Channels            []string          `json:"channels"`
-	Topics              []string          `json:"topics"`
-	Tags                []string          `json:"tags"`
-	Authors             []string          `json:"authors,omitempty"`
-	AllowedOriginKeys   []string          `json:"allowed_origin_public_keys,omitempty"`
-	BlockedOriginKeys   []string          `json:"blocked_origin_public_keys,omitempty"`
-	AllowedParentKeys   []string          `json:"allowed_parent_public_keys,omitempty"`
-	BlockedParentKeys   []string          `json:"blocked_parent_public_keys,omitempty"`
-	LiveAllowedOriginKeys []string        `json:"live_allowed_origin_public_keys,omitempty"`
-	LiveBlockedOriginKeys []string        `json:"live_blocked_origin_public_keys,omitempty"`
-	LiveAllowedParentKeys []string        `json:"live_allowed_parent_public_keys,omitempty"`
-	LiveBlockedParentKeys []string        `json:"live_blocked_parent_public_keys,omitempty"`
-	WhitelistMode       string            `json:"whitelist_mode,omitempty"`
-	ApprovalFeed        string            `json:"approval_feed,omitempty"`
-	AutoRoutePending    bool              `json:"auto_route_pending,omitempty"`
-	ApprovalRoutes      map[string]string `json:"approval_routes,omitempty"`
-	ApprovalAutoApprove []string          `json:"approval_auto_approve,omitempty"`
-	DiscoveryFeeds      []string          `json:"discovery_feeds,omitempty"`
-	DiscoveryTopics     []string          `json:"discovery_topics,omitempty"`
-	TopicWhitelist      []string          `json:"topic_whitelist,omitempty"`
-	TopicAliases        map[string]string `json:"topic_aliases,omitempty"`
-	MaxAgeDays          int               `json:"max_age_days"`
-	MaxBundleMB         int               `json:"max_bundle_mb"`
-	MaxItemsPerDay      int64             `json:"max_items_per_day"`
-	HistoryDays         int               `json:"history_days,omitempty"`
-	HistoryMaxItems     int               `json:"history_max_items,omitempty"`
-	HistoryChannels     []string          `json:"history_channels,omitempty"`
-	HistoryTopics       []string          `json:"history_topics,omitempty"`
-	HistoryAuthors      []string          `json:"history_authors,omitempty"`
+	Channels                         []string          `json:"channels"`
+	Topics                           []string          `json:"topics"`
+	Tags                             []string          `json:"tags"`
+	Authors                          []string          `json:"authors,omitempty"`
+	AllowedOriginKeys                []string          `json:"allowed_origin_public_keys,omitempty"`
+	BlockedOriginKeys                []string          `json:"blocked_origin_public_keys,omitempty"`
+	AllowedParentKeys                []string          `json:"allowed_parent_public_keys,omitempty"`
+	BlockedParentKeys                []string          `json:"blocked_parent_public_keys,omitempty"`
+	LiveAllowedOriginKeys            []string          `json:"live_allowed_origin_public_keys,omitempty"`
+	LiveBlockedOriginKeys            []string          `json:"live_blocked_origin_public_keys,omitempty"`
+	LiveAllowedParentKeys            []string          `json:"live_allowed_parent_public_keys,omitempty"`
+	LiveBlockedParentKeys            []string          `json:"live_blocked_parent_public_keys,omitempty"`
+	LivePublicMutedOriginKeys        []string          `json:"live_public_muted_origin_public_keys,omitempty"`
+	LivePublicMutedParentKeys        []string          `json:"live_public_muted_parent_public_keys,omitempty"`
+	LivePublicRateLimitMessages      int               `json:"live_public_rate_limit_messages,omitempty"`
+	LivePublicRateLimitWindowSeconds int               `json:"live_public_rate_limit_window_seconds,omitempty"`
+	WhitelistMode                    string            `json:"whitelist_mode,omitempty"`
+	ApprovalFeed                     string            `json:"approval_feed,omitempty"`
+	AutoRoutePending                 bool              `json:"auto_route_pending,omitempty"`
+	ApprovalRoutes                   map[string]string `json:"approval_routes,omitempty"`
+	ApprovalAutoApprove              []string          `json:"approval_auto_approve,omitempty"`
+	DiscoveryFeeds                   []string          `json:"discovery_feeds,omitempty"`
+	DiscoveryTopics                  []string          `json:"discovery_topics,omitempty"`
+	TopicWhitelist                   []string          `json:"topic_whitelist,omitempty"`
+	TopicAliases                     map[string]string `json:"topic_aliases,omitempty"`
+	MaxAgeDays                       int               `json:"max_age_days"`
+	MaxBundleMB                      int               `json:"max_bundle_mb"`
+	MaxItemsPerDay                   int64             `json:"max_items_per_day"`
+	HistoryDays                      int               `json:"history_days,omitempty"`
+	HistoryMaxItems                  int               `json:"history_max_items,omitempty"`
+	HistoryChannels                  []string          `json:"history_channels,omitempty"`
+	HistoryTopics                    []string          `json:"history_topics,omitempty"`
+	HistoryAuthors                   []string          `json:"history_authors,omitempty"`
 }
 
 func LoadSyncSubscriptions(path string) (SyncSubscriptions, error) {
@@ -101,6 +105,14 @@ func (r *SyncSubscriptions) Normalize() {
 	r.LiveBlockedOriginKeys = uniqueNormalizedPublicKeys(r.LiveBlockedOriginKeys)
 	r.LiveAllowedParentKeys = uniqueNormalizedPublicKeys(r.LiveAllowedParentKeys)
 	r.LiveBlockedParentKeys = uniqueNormalizedPublicKeys(r.LiveBlockedParentKeys)
+	r.LivePublicMutedOriginKeys = uniqueNormalizedPublicKeys(r.LivePublicMutedOriginKeys)
+	r.LivePublicMutedParentKeys = uniqueNormalizedPublicKeys(r.LivePublicMutedParentKeys)
+	if r.LivePublicRateLimitMessages < 0 {
+		r.LivePublicRateLimitMessages = 0
+	}
+	if r.LivePublicRateLimitWindowSeconds < 0 {
+		r.LivePublicRateLimitWindowSeconds = 0
+	}
 	r.DiscoveryFeeds = uniqueCanonicalDiscoveryFeeds(r.DiscoveryFeeds)
 	r.DiscoveryTopics = uniqueCanonicalTopicsWithAliases(r.DiscoveryTopics, r.TopicAliases, whitelist)
 	r.HistoryChannels = uniqueFold(r.HistoryChannels)
@@ -161,6 +173,8 @@ func (r SyncSubscriptions) Empty() bool {
 		len(r.AllowedParentKeys) == 0 && len(r.BlockedParentKeys) == 0 &&
 		len(r.LiveAllowedOriginKeys) == 0 && len(r.LiveBlockedOriginKeys) == 0 &&
 		len(r.LiveAllowedParentKeys) == 0 && len(r.LiveBlockedParentKeys) == 0 &&
+		len(r.LivePublicMutedOriginKeys) == 0 && len(r.LivePublicMutedParentKeys) == 0 &&
+		r.LivePublicRateLimitMessages == 0 && r.LivePublicRateLimitWindowSeconds == 0 &&
 		len(r.HistoryChannels) == 0 && len(r.HistoryTopics) == 0 && len(r.HistoryAuthors) == 0 &&
 		r.MaxAgeDays >= defaultMaxAgeDays && r.MaxBundleMB >= defaultMaxBundleMB && r.MaxItemsPerDay >= defaultMaxItemsPerDay
 }

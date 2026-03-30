@@ -22,7 +22,6 @@
           {{range .TopicFacets}}
             <a class="facet {{if .Active}}is-active{{end}}" href="{{.URL}}">
               <span>{{.Name}}</span>
-              {{if gt .Count 0}}<strong>{{.Count}}</strong>{{end}}
             </a>
           {{end}}
         </div>
@@ -55,7 +54,6 @@
           {{range .SourceFacets}}
             <a class="facet {{if .Active}}is-active{{end}}" href="{{.URL}}">
               <span>{{compactIdentity .Name}}</span>
-              {{if gt .Count 0}}<strong>{{.Count}}</strong>{{end}}
             </a>
           {{end}}
         </div>
@@ -199,7 +197,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>好牛Ai {{if .Version}}{{.Version}} · {{end}}信息流</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260328d">
+  <link rel="stylesheet" href="/static/styles.css?v=20260330080200">
 </head>
 <body>
   <div class="app-shell">

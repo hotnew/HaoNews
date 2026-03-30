@@ -12,19 +12,19 @@
     {{template "appSidebar" .}}
     <div class="page-shell">
       {{template "sidebarToggle" .}}
-      <header class="hero hero-dashboard">
+      <header class="hero hero-dashboard live-room-hero">
         <a class="back-link" href="/live">返回 Live 列表</a>
         <p class="eyebrow">Live 房间</p>
         <div class="hero-heading">
           <div>
             <h1>{{if .Room.Title}}{{.Room.Title}}{{else}}{{.Room.RoomID}}{{end}}</h1>
             <p class="hero-copy">创建者：<code>{{.Room.Creator}}</code></p>
-            <div class="identity-reveal-body">
+            <div class="identity-copy-row live-room-id-row">
               <code class="identity-code">{{.Room.RoomID}}</code>
               <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Room.RoomID}}">复制房间 ID</button>
             </div>
           </div>
-          <div class="hero-actions">
+          <div class="hero-actions live-room-actions">
             <a class="button-link" href="{{.RoomLinks.APIURL}}">JSON 接口</a>
             {{if eq .RoomVisibility "public"}}
               <a class="button-link button-link-muted" href="/live/public">Live Public</a>
@@ -48,6 +48,74 @@
             <div><span class="stat-label">创建者</span><strong>{{.Room.Creator}}</strong></div>
             <div><span class="stat-label">本地可见性</span><strong>{{if .RoomVisibility}}{{.RoomVisibility}}{{else}}default{{end}}</strong></div>
             <div><span class="stat-label">归档频道</span><strong>{{if .Room.Channel}}{{.Room.Channel}}{{else}}hao.news/live{{end}}</strong></div>
+          </div>
+        </section>
+
+        <section class="panel panel-inline live-chat-panel" id="live-chat-panel">
+          <div class="panel-head panel-head-inline">
+            <p class="panel-label">聊天记录</p>
+            <div class="facet-list-inline live-chat-actions">
+              <button class="facet-chip live-chat-toggle" id="live-chat-expand" type="button">全屏聊天</button>
+              <button class="facet-chip live-chat-toggle" id="live-chat-collapse" type="button" hidden>恢复窗口</button>
+            </div>
+          </div>
+          <div
+            id="live-room-events"
+            data-api-path="{{.RoomLinks.APIURL}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}"
+            data-auto-refresh="{{if .AutoRefresh}}1{{else}}0{{end}}">
+          {{if .EventViews}}
+            <div class="live-event-window">
+              {{range .EventViews}}
+                <article class="live-event-item">
+                  <div class="card-meta">
+                    <span>{{.Type}}</span>
+                    <span>{{.Timestamp}}</span>
+                    <a href="/?author={{urlquery .Sender}}">{{.Sender}}</a>
+                    {{if .Visibility}}<span>{{.Visibility}}</span>{{end}}
+                  </div>
+                  <h2>{{.Heading}}</h2>
+                  {{if .Note}}
+                    <p class="micro-copy">{{.Note}}</p>
+                  {{end}}
+                  {{if .Task}}
+                    <div class="summary-grid">
+                      {{if .Task.TaskID}}<div><span class="stat-label">任务 ID</span><strong>{{.Task.TaskID}}</strong></div>{{end}}
+                      {{if .Task.Status}}<div><span class="stat-label">状态</span><strong>{{.Task.Status}}</strong></div>{{end}}
+                      {{if .Task.AssignedTo}}<div><span class="stat-label">负责人</span><strong>{{.Task.AssignedTo}}</strong></div>{{end}}
+                      {{if .Task.Progress}}<div><span class="stat-label">进度</span><strong>{{.Task.Progress}}</strong></div>{{end}}
+                    </div>
+                    {{if .Task.Description}}
+                      <p class="micro-copy">{{.Task.Description}}</p>
+                    {{end}}
+                  {{end}}
+                  {{if .Fields}}
+                    <div class="identity-reveal-body">
+                      {{range .Fields}}
+                        {{if eq .Key "origin_public_key"}}
+                          <div class="identity-copy-row">
+                            <span class="micro-copy">子公钥：<code>{{printf "%.5s" .Value}}</code></span>
+                            <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Value}}">复制子公钥</button>
+                          </div>
+                        {{else if eq .Key "parent_public_key"}}
+                          <div class="identity-copy-row">
+                            <span class="micro-copy">父公钥：<code>{{printf "%.5s" .Value}}</code></span>
+                            <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Value}}">复制父公钥</button>
+                          </div>
+                        {{else}}
+                          <span class="facet-chip">{{.Key}}={{.Value}}</span>
+                        {{end}}
+                      {{end}}
+                    </div>
+                  {{end}}
+                </article>
+              {{end}}
+            </div>
+          {{else}}
+            <section class="empty-state">
+              <h2>暂无事件</h2>
+              <p>{{if .ShowHeartbeats}}房间记录存在，但当前还没有可显示的事件。{{else}}当前没有非心跳事件；如需查看在线心跳，可切换到“显示心跳”。{{end}}</p>
+            </section>
+          {{end}}
           </div>
         </section>
 
@@ -161,7 +229,7 @@
             <div class="facet-list-inline live-roster-chips">
               {{range .Roster}}
                 <div class="facet-chip live-roster-chip {{if .Online}}is-active{{end}}">
-                  <span class="live-roster-chip-id">{{.Sender}}</span>
+                  <a class="live-roster-chip-id" href="/?author={{urlquery .Sender}}">{{.Sender}}</a>
                   <strong>{{if .Online}}在线{{else}}离线{{end}}</strong>
                 </div>
               {{end}}
@@ -226,61 +294,6 @@
           </section>
         {{end}}
 
-        <section class="panel panel-inline live-chat-panel" id="live-chat-panel">
-          <div class="panel-head panel-head-inline">
-            <p class="panel-label">聊天记录</p>
-            <div class="facet-list-inline live-chat-actions">
-              <button class="facet-chip live-chat-toggle" id="live-chat-expand" type="button">全屏聊天</button>
-              <button class="facet-chip live-chat-toggle" id="live-chat-collapse" type="button" hidden>恢复窗口</button>
-            </div>
-          </div>
-          <div
-            id="live-room-events"
-            data-api-path="{{.RoomLinks.APIURL}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}"
-            data-auto-refresh="{{if .AutoRefresh}}1{{else}}0{{end}}">
-          {{if .EventViews}}
-            <div class="live-event-window">
-              {{range .EventViews}}
-                <article class="live-event-item">
-                  <div class="card-meta">
-                    <span>{{.Type}}</span>
-                    <span>{{.Timestamp}}</span>
-                    <span>{{.Sender}}</span>
-                    {{if .Visibility}}<span>{{.Visibility}}</span>{{end}}
-                  </div>
-                  <h2>{{.Heading}}</h2>
-                  {{if .Note}}
-                    <p class="micro-copy">{{.Note}}</p>
-                  {{end}}
-                  {{if .Task}}
-                    <div class="summary-grid">
-                      {{if .Task.TaskID}}<div><span class="stat-label">任务 ID</span><strong>{{.Task.TaskID}}</strong></div>{{end}}
-                      {{if .Task.Status}}<div><span class="stat-label">状态</span><strong>{{.Task.Status}}</strong></div>{{end}}
-                      {{if .Task.AssignedTo}}<div><span class="stat-label">负责人</span><strong>{{.Task.AssignedTo}}</strong></div>{{end}}
-                      {{if .Task.Progress}}<div><span class="stat-label">进度</span><strong>{{.Task.Progress}}</strong></div>{{end}}
-                    </div>
-                    {{if .Task.Description}}
-                      <p class="micro-copy">{{.Task.Description}}</p>
-                    {{end}}
-                  {{end}}
-                  {{if .Fields}}
-                    <div class="facet-list-inline">
-                      {{range .Fields}}
-                        <span class="facet-chip">{{.Key}}={{.Value}}</span>
-                      {{end}}
-                    </div>
-                  {{end}}
-                </article>
-              {{end}}
-            </div>
-          {{else}}
-            <section class="empty-state">
-              <h2>暂无事件</h2>
-              <p>{{if .ShowHeartbeats}}房间记录存在，但当前还没有可显示的事件。{{else}}当前没有非心跳事件；如需查看在线心跳，可切换到“显示心跳”。{{end}}</p>
-            </section>
-          {{end}}
-          </div>
-        </section>
       </main>
     </div>
   </div>
@@ -369,14 +382,40 @@
       return null;
     }
     const wrapper = document.createElement("div");
-    wrapper.className = "facet-list-inline";
+    wrapper.className = "identity-reveal-body";
     for (const field of fields) {
+      if (!field || !field.key) {
+        continue;
+      }
+      if (field.key === "origin_public_key" || field.key === "parent_public_key") {
+        const row = document.createElement("div");
+        row.className = "identity-copy-row";
+
+        const summary = document.createElement("span");
+        summary.className = "micro-copy";
+        const code = document.createElement("code");
+        code.textContent = String(field.value || "").slice(0, 5);
+        summary.textContent = `${field.key === "origin_public_key" ? "子公钥" : "父公钥"}：`;
+        summary.appendChild(code);
+        row.appendChild(summary);
+
+        const button = document.createElement("button");
+        button.className = "button-link button-link-muted identity-copy-button";
+        button.type = "button";
+        button.setAttribute("data-copy-text", field.value || "");
+        button.textContent = field.key === "origin_public_key" ? "复制子公钥" : "复制父公钥";
+        row.appendChild(button);
+
+        wrapper.appendChild(row);
+        continue;
+      }
+
       const chip = document.createElement("span");
       chip.className = "facet-chip";
       chip.textContent = `${field.key}=${field.value}`;
       wrapper.appendChild(chip);
     }
-    return wrapper;
+    return wrapper.childElementCount > 0 ? wrapper : null;
   };
 
   const renderTask = (task) => {
@@ -441,11 +480,15 @@
 
       const meta = document.createElement("div");
       meta.className = "card-meta";
-      for (const value of [event.type, event.timestamp, event.sender]) {
+      for (const value of [event.type, event.timestamp]) {
         const span = document.createElement("span");
         span.textContent = value || "";
         meta.appendChild(span);
       }
+      const senderLink = document.createElement("a");
+      senderLink.href = `/?author=${encodeURIComponent(event.sender || "")}`;
+      senderLink.textContent = event.sender || "";
+      meta.appendChild(senderLink);
       article.appendChild(meta);
 
       const heading = document.createElement("h2");

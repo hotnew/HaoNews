@@ -75,29 +75,33 @@ type SyncPeerRef struct {
 }
 
 type SyncPubSubStatus struct {
-	Enabled             bool       `json:"enabled"`
-	JoinedTopics        []string   `json:"joined_topics"`
-	DiscoveryNamespaces []string   `json:"discovery_namespaces"`
-	DiscoveryFeeds      []string   `json:"discovery_feeds"`
-	DiscoveryTopics     []string   `json:"discovery_topics"`
-	TopicWhitelist      []string   `json:"topic_whitelist"`
-	TopicAliasPairs     []string   `json:"topic_alias_pairs"`
-	AllowedOriginKeys   []string   `json:"allowed_origin_public_keys"`
-	BlockedOriginKeys   []string   `json:"blocked_origin_public_keys"`
-	AllowedParentKeys   []string   `json:"allowed_parent_public_keys"`
-	BlockedParentKeys   []string   `json:"blocked_parent_public_keys"`
-	LiveAllowedOriginKeys []string `json:"live_allowed_origin_public_keys"`
-	LiveBlockedOriginKeys []string `json:"live_blocked_origin_public_keys"`
-	LiveAllowedParentKeys []string `json:"live_allowed_parent_public_keys"`
-	LiveBlockedParentKeys []string `json:"live_blocked_parent_public_keys"`
-	Published           int        `json:"published"`
-	Received            int        `json:"received"`
-	Enqueued            int        `json:"enqueued"`
-	LastTopic           string     `json:"last_topic"`
-	LastInfoHash        string     `json:"last_infohash"`
-	LastPublishedAt     *time.Time `json:"last_published_at"`
-	LastReceivedAt      *time.Time `json:"last_received_at"`
-	LastError           string     `json:"last_error"`
+	Enabled                          bool       `json:"enabled"`
+	JoinedTopics                     []string   `json:"joined_topics"`
+	DiscoveryNamespaces              []string   `json:"discovery_namespaces"`
+	DiscoveryFeeds                   []string   `json:"discovery_feeds"`
+	DiscoveryTopics                  []string   `json:"discovery_topics"`
+	TopicWhitelist                   []string   `json:"topic_whitelist"`
+	TopicAliasPairs                  []string   `json:"topic_alias_pairs"`
+	AllowedOriginKeys                []string   `json:"allowed_origin_public_keys"`
+	BlockedOriginKeys                []string   `json:"blocked_origin_public_keys"`
+	AllowedParentKeys                []string   `json:"allowed_parent_public_keys"`
+	BlockedParentKeys                []string   `json:"blocked_parent_public_keys"`
+	LiveAllowedOriginKeys            []string   `json:"live_allowed_origin_public_keys"`
+	LiveBlockedOriginKeys            []string   `json:"live_blocked_origin_public_keys"`
+	LiveAllowedParentKeys            []string   `json:"live_allowed_parent_public_keys"`
+	LiveBlockedParentKeys            []string   `json:"live_blocked_parent_public_keys"`
+	LivePublicMutedOriginKeys        []string   `json:"live_public_muted_origin_public_keys"`
+	LivePublicMutedParentKeys        []string   `json:"live_public_muted_parent_public_keys"`
+	LivePublicRateLimitMessages      int        `json:"live_public_rate_limit_messages"`
+	LivePublicRateLimitWindowSeconds int        `json:"live_public_rate_limit_window_seconds"`
+	Published                        int        `json:"published"`
+	Received                         int        `json:"received"`
+	Enqueued                         int        `json:"enqueued"`
+	LastTopic                        string     `json:"last_topic"`
+	LastInfoHash                     string     `json:"last_infohash"`
+	LastPublishedAt                  *time.Time `json:"last_published_at"`
+	LastReceivedAt                   *time.Time `json:"last_received_at"`
+	LastError                        string     `json:"last_error"`
 }
 
 type SyncActivityStatus struct {

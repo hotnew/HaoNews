@@ -232,6 +232,34 @@ func TestSyncSubscriptionsNormalizeLivePublicKeys(t *testing.T) {
 	}
 }
 
+func TestSyncSubscriptionsNormalizeLivePublicModeration(t *testing.T) {
+	t.Parallel()
+
+	rules := SyncSubscriptions{
+		LivePublicMutedOriginKeys: []string{
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"bad",
+		},
+		LivePublicMutedParentKeys: []string{
+			"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+			"",
+		},
+		LivePublicRateLimitMessages:      -2,
+		LivePublicRateLimitWindowSeconds: -8,
+	}
+	rules.Normalize()
+
+	if len(rules.LivePublicMutedOriginKeys) != 1 || rules.LivePublicMutedOriginKeys[0] != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("live public muted origin keys = %v", rules.LivePublicMutedOriginKeys)
+	}
+	if len(rules.LivePublicMutedParentKeys) != 1 || rules.LivePublicMutedParentKeys[0] != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
+		t.Fatalf("live public muted parent keys = %v", rules.LivePublicMutedParentKeys)
+	}
+	if rules.LivePublicRateLimitMessages != 0 || rules.LivePublicRateLimitWindowSeconds != 0 {
+		t.Fatalf("live public rate limits = %d/%d, want 0/0", rules.LivePublicRateLimitMessages, rules.LivePublicRateLimitWindowSeconds)
+	}
+}
+
 func TestMatchesAnnouncementFiltersByMaxAgeDays(t *testing.T) {
 	t.Parallel()
 

@@ -88,21 +88,25 @@ func startPubSubRuntime(
 		joinedTopics:        joinedTopics,
 		discoveryNamespaces: discoveryNamespaces(hostRuntime.networkID, hostRuntime.rendezvous, rules),
 		status: SyncPubSubStatus{
-			Enabled:             true,
-			JoinedTopics:        append([]string(nil), joinedTopics...),
-			DiscoveryNamespaces: discoveryNamespaces(hostRuntime.networkID, hostRuntime.rendezvous, rules),
-			DiscoveryFeeds:      append([]string(nil), rules.discoveryFeeds()...),
-			DiscoveryTopics:     append([]string(nil), rules.discoveryTopics()...),
-			TopicWhitelist:      append([]string(nil), rules.TopicWhitelist...),
-			TopicAliasPairs:     topicAliasPairs(rules.TopicAliases),
-			AllowedOriginKeys:   append([]string(nil), rules.AllowedOriginKeys...),
-			BlockedOriginKeys:   append([]string(nil), rules.BlockedOriginKeys...),
-			AllowedParentKeys:   append([]string(nil), rules.AllowedParentKeys...),
-			BlockedParentKeys:   append([]string(nil), rules.BlockedParentKeys...),
-			LiveAllowedOriginKeys: append([]string(nil), rules.LiveAllowedOriginKeys...),
-			LiveBlockedOriginKeys: append([]string(nil), rules.LiveBlockedOriginKeys...),
-			LiveAllowedParentKeys: append([]string(nil), rules.LiveAllowedParentKeys...),
-			LiveBlockedParentKeys: append([]string(nil), rules.LiveBlockedParentKeys...),
+			Enabled:                          true,
+			JoinedTopics:                     append([]string(nil), joinedTopics...),
+			DiscoveryNamespaces:              discoveryNamespaces(hostRuntime.networkID, hostRuntime.rendezvous, rules),
+			DiscoveryFeeds:                   append([]string(nil), rules.discoveryFeeds()...),
+			DiscoveryTopics:                  append([]string(nil), rules.discoveryTopics()...),
+			TopicWhitelist:                   append([]string(nil), rules.TopicWhitelist...),
+			TopicAliasPairs:                  topicAliasPairs(rules.TopicAliases),
+			AllowedOriginKeys:                append([]string(nil), rules.AllowedOriginKeys...),
+			BlockedOriginKeys:                append([]string(nil), rules.BlockedOriginKeys...),
+			AllowedParentKeys:                append([]string(nil), rules.AllowedParentKeys...),
+			BlockedParentKeys:                append([]string(nil), rules.BlockedParentKeys...),
+			LiveAllowedOriginKeys:            append([]string(nil), rules.LiveAllowedOriginKeys...),
+			LiveBlockedOriginKeys:            append([]string(nil), rules.LiveBlockedOriginKeys...),
+			LiveAllowedParentKeys:            append([]string(nil), rules.LiveAllowedParentKeys...),
+			LiveBlockedParentKeys:            append([]string(nil), rules.LiveBlockedParentKeys...),
+			LivePublicMutedOriginKeys:        append([]string(nil), rules.LivePublicMutedOriginKeys...),
+			LivePublicMutedParentKeys:        append([]string(nil), rules.LivePublicMutedParentKeys...),
+			LivePublicRateLimitMessages:      rules.LivePublicRateLimitMessages,
+			LivePublicRateLimitWindowSeconds: rules.LivePublicRateLimitWindowSeconds,
 		},
 	}
 
@@ -165,6 +169,10 @@ func (r *pubsubRuntime) Status() SyncPubSubStatus {
 	status.LiveBlockedOriginKeys = append([]string(nil), r.status.LiveBlockedOriginKeys...)
 	status.LiveAllowedParentKeys = append([]string(nil), r.status.LiveAllowedParentKeys...)
 	status.LiveBlockedParentKeys = append([]string(nil), r.status.LiveBlockedParentKeys...)
+	status.LivePublicMutedOriginKeys = append([]string(nil), r.status.LivePublicMutedOriginKeys...)
+	status.LivePublicMutedParentKeys = append([]string(nil), r.status.LivePublicMutedParentKeys...)
+	status.LivePublicRateLimitMessages = r.status.LivePublicRateLimitMessages
+	status.LivePublicRateLimitWindowSeconds = r.status.LivePublicRateLimitWindowSeconds
 	return status
 }
 

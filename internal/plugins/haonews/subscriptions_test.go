@@ -166,6 +166,35 @@ func TestLoadSubscriptionRulesNormalizesLivePublicKeyRules(t *testing.T) {
 	}
 }
 
+func TestLoadSubscriptionRulesNormalizesLivePublicModerationRules(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := root + "/subscriptions.json"
+	data := `{
+  "live_public_muted_origin_public_keys": ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "bad"],
+  "live_public_muted_parent_public_keys": ["BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", ""],
+  "live_public_rate_limit_messages": -1,
+  "live_public_rate_limit_window_seconds": -10
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	rules, err := LoadSubscriptionRules(path)
+	if err != nil {
+		t.Fatalf("LoadSubscriptionRules() error = %v", err)
+	}
+	if len(rules.LivePublicMutedOriginKeys) != 1 || rules.LivePublicMutedOriginKeys[0] != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("live public muted origin keys = %v", rules.LivePublicMutedOriginKeys)
+	}
+	if len(rules.LivePublicMutedParentKeys) != 1 || rules.LivePublicMutedParentKeys[0] != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
+		t.Fatalf("live public muted parent keys = %v", rules.LivePublicMutedParentKeys)
+	}
+	if rules.LivePublicRateLimitMessages != 0 || rules.LivePublicRateLimitWindowSeconds != 0 {
+		t.Fatalf("live public rate limits = %d/%d, want 0/0", rules.LivePublicRateLimitMessages, rules.LivePublicRateLimitWindowSeconds)
+	}
+}
+
 func TestLoadSubscriptionRulesAppliesConfiguredTopicAliasesAndWhitelist(t *testing.T) {
 	t.Parallel()
 

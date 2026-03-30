@@ -72,6 +72,14 @@ func (r *SubscriptionRules) normalize() {
 	r.LiveBlockedOriginKeys = uniqueNormalizedPublicKeys(r.LiveBlockedOriginKeys)
 	r.LiveAllowedParentKeys = uniqueNormalizedPublicKeys(r.LiveAllowedParentKeys)
 	r.LiveBlockedParentKeys = uniqueNormalizedPublicKeys(r.LiveBlockedParentKeys)
+	r.LivePublicMutedOriginKeys = uniqueNormalizedPublicKeys(r.LivePublicMutedOriginKeys)
+	r.LivePublicMutedParentKeys = uniqueNormalizedPublicKeys(r.LivePublicMutedParentKeys)
+	if r.LivePublicRateLimitMessages < 0 {
+		r.LivePublicRateLimitMessages = 0
+	}
+	if r.LivePublicRateLimitWindowSeconds < 0 {
+		r.LivePublicRateLimitWindowSeconds = 0
+	}
 	r.DiscoveryFeeds = uniqueCanonicalDiscoveryFeeds(r.DiscoveryFeeds)
 	r.DiscoveryTopics = uniqueCanonicalTopicsWithAliases(r.DiscoveryTopics, r.TopicAliases, whitelist)
 	r.HistoryChannels = uniqueFold(r.HistoryChannels)
@@ -95,6 +103,8 @@ func (r SubscriptionRules) Empty() bool {
 		len(r.AllowedParentKeys) == 0 && len(r.BlockedParentKeys) == 0 &&
 		len(r.LiveAllowedOriginKeys) == 0 && len(r.LiveBlockedOriginKeys) == 0 &&
 		len(r.LiveAllowedParentKeys) == 0 && len(r.LiveBlockedParentKeys) == 0 &&
+		len(r.LivePublicMutedOriginKeys) == 0 && len(r.LivePublicMutedParentKeys) == 0 &&
+		r.LivePublicRateLimitMessages == 0 && r.LivePublicRateLimitWindowSeconds == 0 &&
 		len(r.HistoryChannels) == 0 && len(r.HistoryTopics) == 0 && len(r.HistoryAuthors) == 0 &&
 		r.MaxAgeDays >= defaultMaxAgeDays && r.MaxBundleMB >= defaultMaxBundleMB && r.MaxItemsPerDay >= defaultMaxItemsPerDay
 }
