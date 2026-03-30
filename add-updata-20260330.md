@@ -199,6 +199,22 @@ Live 页面里的房间时间和消息时间统一改成本地时区显示：
 - 每个 Live 房间只保留最近 `100` 条非心跳事件
 - 另外保留最近 `20` 条心跳
 - `EventCount` 只统计非心跳
+- 上限已提升到 `Live` 协议常量：
+  - `LiveRoomRetainNonHeartbeatEvents = 100`
+  - `LiveRoomRetainHeartbeatEvents = 20`
+
+### 4.1.1 HD 父子字段边界说明
+
+本轮还补清了一条容易混淆的边界：
+
+- 当前可验证的是：
+  - 子公钥签名
+  - `origin_public_key`
+  - `parent_public_key`
+  - `hd.parent` / `hd.parent_pubkey` / `hd.path`
+    与作者路径和消息元数据的一致性
+- 当前还不是：
+  - 父身份对每条子消息单独背书的密码学授权协议
 
 目的：
 

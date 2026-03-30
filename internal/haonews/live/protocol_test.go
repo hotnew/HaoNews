@@ -489,11 +489,11 @@ func TestAppendEventPrunesRoomToRecentHundredNonHeartbeatEvents(t *testing.T) {
 		}
 		nonHeartbeat++
 	}
-	if nonHeartbeat != liveRetainNonHeartbeatEvents {
-		t.Fatalf("nonHeartbeat = %d, want %d", nonHeartbeat, liveRetainNonHeartbeatEvents)
+	if nonHeartbeat != LiveRoomRetainNonHeartbeatEvents {
+		t.Fatalf("nonHeartbeat = %d, want %d", nonHeartbeat, LiveRoomRetainNonHeartbeatEvents)
 	}
-	if heartbeat > liveRetainHeartbeatEvents {
-		t.Fatalf("heartbeat = %d, want <= %d", heartbeat, liveRetainHeartbeatEvents)
+	if heartbeat > LiveRoomRetainHeartbeatEvents {
+		t.Fatalf("heartbeat = %d, want <= %d", heartbeat, LiveRoomRetainHeartbeatEvents)
 	}
 	rooms, err := store.ListRooms()
 	if err != nil {
@@ -502,8 +502,8 @@ func TestAppendEventPrunesRoomToRecentHundredNonHeartbeatEvents(t *testing.T) {
 	if len(rooms) != 1 {
 		t.Fatalf("len(rooms) = %d, want 1", len(rooms))
 	}
-	if rooms[0].EventCount != liveRetainNonHeartbeatEvents {
-		t.Fatalf("rooms[0].EventCount = %d, want %d", rooms[0].EventCount, liveRetainNonHeartbeatEvents)
+	if rooms[0].EventCount != LiveRoomRetainNonHeartbeatEvents {
+		t.Fatalf("rooms[0].EventCount = %d, want %d", rooms[0].EventCount, LiveRoomRetainNonHeartbeatEvents)
 	}
 }
 

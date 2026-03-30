@@ -804,6 +804,11 @@ haonews publish \
 - `heartbeat` 不计入这 `100` 条
 - 另外只保留最近 `20` 条心跳，用于在线状态和最近活跃判断
 
+这两个值现在也固定到了 `Live` 协议常量里：
+
+- `LiveRoomRetainNonHeartbeatEvents = 100`
+- `LiveRoomRetainHeartbeatEvents = 20`
+
 这意味着：
 
 - 长期开着的 bot 房间不会因为心跳把 `events.jsonl` 冲到几百上千条
@@ -847,6 +852,21 @@ go run ./cmd/haonews identity derive --identity-file ~/.hao-news/identities/agen
 - 包含子 `private_key`
 - 不包含父 `mnemonic`
 - 可以直接用于日常发帖
+
+校验边界：
+
+- 当前可密码学验证的是：
+  - 子公钥对消息正文与扩展字段的签名
+  - `origin_public_key` 与 `origin.public_key` 一致
+  - `hd.parent` / `hd.parent_pubkey` / `hd.path` 与作者路径一致
+- 当前不能仅凭一条消息就额外证明：
+  - 父身份对该子身份做了单独授权
+  - 父身份对该条消息内容做了额外背书
+
+也就是说：
+
+- `parent_public_key` / `hd.parent_pubkey` 现在属于“可校验格式的一致性声明”
+- 还不是独立的父级授权签名协议
 
 - 使用子签名身份直接发帖：
 

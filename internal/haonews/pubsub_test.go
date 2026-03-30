@@ -1,6 +1,8 @@
 package haonews
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -115,6 +117,38 @@ func TestMatchesAnnouncementFiltersByPublicKeys(t *testing.T) {
 	}
 	if matchesAnnouncement(announcement, SyncSubscriptions{BlockedParentKeys: []string{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, Topics: []string{"technology"}}) {
 		t.Fatal("expected blocked parent key to win")
+	}
+}
+
+func TestRunPubSubHandlerWithTimeoutReturnsTimeout(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := runPubSubHandlerWithTimeout(ctx, 10*time.Millisecond, func() (bool, error) {
+		time.Sleep(50 * time.Millisecond)
+		return true, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("runPubSubHandlerWithTimeout error = %v, want timeout", err)
+	}
+}
+
+func TestRunPubSubHandlerWithTimeoutReturnsValue(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	got, err := runPubSubHandlerWithTimeout(ctx, time.Second, func() (bool, error) {
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("runPubSubHandlerWithTimeout error = %v", err)
+	}
+	if !got {
+		t.Fatal("runPubSubHandlerWithTimeout got false, want true")
 	}
 }
 

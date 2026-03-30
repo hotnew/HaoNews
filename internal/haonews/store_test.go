@@ -77,3 +77,40 @@ func TestWalkTorrentFilesFindsShardedAndLegacyOncePerInfoHash(t *testing.T) {
 		t.Fatalf("hash count = %d, want 2", len(hashes))
 	}
 }
+
+func TestWalkTorrentFilesSkipsDeepNestedDirectories(t *testing.T) {
+	t.Parallel()
+
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	valid := filepath.Join(store.TorrentDir, "aa", "bb", "aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.torrent")
+	if err := os.MkdirAll(filepath.Dir(valid), 0o755); err != nil {
+		t.Fatalf("MkdirAll valid error = %v", err)
+	}
+	if err := os.WriteFile(valid, []byte("valid"), 0o644); err != nil {
+		t.Fatalf("WriteFile valid error = %v", err)
+	}
+	deep := filepath.Join(store.TorrentDir, "aa", "bb", "cc", "dd", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.torrent")
+	if err := os.MkdirAll(filepath.Dir(deep), 0o755); err != nil {
+		t.Fatalf("MkdirAll deep error = %v", err)
+	}
+	if err := os.WriteFile(deep, []byte("deep"), 0o644); err != nil {
+		t.Fatalf("WriteFile deep error = %v", err)
+	}
+
+	var hashes []string
+	if err := store.WalkTorrentFiles(func(infoHash, _ string) error {
+		hashes = append(hashes, infoHash)
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkTorrentFiles error = %v", err)
+	}
+	if len(hashes) != 1 {
+		t.Fatalf("hash count = %d, want 1", len(hashes))
+	}
+	if hashes[0] != "aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
+		t.Fatalf("hashes[0] = %q, want valid shallow torrent", hashes[0])
+	}
+}

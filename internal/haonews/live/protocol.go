@@ -15,6 +15,9 @@ const (
 	GlobalNamespace = "haonews/live"
 	RoomsTopic      = "haonews/live/rooms"
 	EventsTopic     = "haonews/live/events"
+	// Local room stores retain a bounded event window per protocol defaults.
+	LiveRoomRetainNonHeartbeatEvents = 100
+	LiveRoomRetainHeartbeatEvents    = 20
 )
 
 const (

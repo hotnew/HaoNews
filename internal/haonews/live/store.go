@@ -20,11 +20,6 @@ type LocalStore struct {
 	Root string
 }
 
-const (
-	liveRetainNonHeartbeatEvents = 100
-	liveRetainHeartbeatEvents    = 20
-)
-
 type RoomSummary struct {
 	RoomID             string         `json:"room_id"`
 	Title              string         `json:"title"`
@@ -378,7 +373,7 @@ func (s *LocalStore) pruneRoomEvents(roomID string) error {
 	if err != nil {
 		return err
 	}
-	pruned := retainRecentLiveEvents(events, liveRetainNonHeartbeatEvents, liveRetainHeartbeatEvents)
+	pruned := retainRecentLiveEvents(events, LiveRoomRetainNonHeartbeatEvents, LiveRoomRetainHeartbeatEvents)
 	if len(pruned) == len(events) {
 		return nil
 	}

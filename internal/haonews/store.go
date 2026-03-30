@@ -99,10 +99,25 @@ func (s *Store) WalkTorrentFiles(fn func(infoHash, path string) error) error {
 		}
 		return err
 	}
+	const maxTorrentWalkDepth = 3
 	seen := map[string]struct{}{}
 	return filepath.WalkDir(s.TorrentDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		rel, relErr := filepath.Rel(s.TorrentDir, path)
+		if relErr != nil {
+			return relErr
+		}
+		depth := 0
+		if rel != "." {
+			depth = strings.Count(filepath.ToSlash(rel), "/") + 1
+		}
+		if d.IsDir() && depth > maxTorrentWalkDepth-1 {
+			return fs.SkipDir
+		}
+		if !d.IsDir() && depth > maxTorrentWalkDepth {
+			return nil
 		}
 		if d.IsDir() || filepath.Ext(d.Name()) != ".torrent" {
 			return nil

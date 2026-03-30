@@ -26,6 +26,7 @@ const (
 	syncPubSubDiscoveryDefault = "haonews/sync"
 	creditProofTopicPrefix     = "haonews/credit/proofs"
 	reservedTopicAll           = "all"
+	pubsubHandlerTimeout       = 5 * time.Second
 )
 
 type SyncAnnouncement struct {
@@ -271,7 +272,9 @@ func (r *pubsubRuntime) subscribe(ctx context.Context, topicName string, onAnnou
 			}
 			enqueued := false
 			if onAnnouncement != nil {
-				enqueued, err = onAnnouncement(announcement)
+				enqueued, err = runPubSubHandlerWithTimeout(ctx, pubsubHandlerTimeout, func() (bool, error) {
+					return onAnnouncement(announcement)
+				})
 				if err != nil {
 					r.recordError(fmt.Errorf("handle pubsub announcement on %s: %w", topicName, err))
 					continue
@@ -317,7 +320,9 @@ func (r *pubsubRuntime) subscribeCreditProofs(ctx context.Context, topicName str
 			}
 			saved := false
 			if onCreditProof != nil {
-				saved, err = onCreditProof(proof)
+				saved, err = runPubSubHandlerWithTimeout(ctx, pubsubHandlerTimeout, func() (bool, error) {
+					return onCreditProof(proof)
+				})
 				if err != nil {
 					r.recordError(fmt.Errorf("handle credit proof on %s: %w", topicName, err))
 					continue
@@ -327,6 +332,35 @@ func (r *pubsubRuntime) subscribeCreditProofs(ctx context.Context, topicName str
 		}
 	}()
 	return nil
+}
+
+func runPubSubHandlerWithTimeout[T any](ctx context.Context, timeout time.Duration, fn func() (T, error)) (T, error) {
+	var zero T
+	if fn == nil {
+		return zero, nil
+	}
+	if timeout <= 0 {
+		return fn()
+	}
+	type result struct {
+		value T
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		value, err := fn()
+		done <- result{value: value, err: err}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return zero, ctx.Err()
+	case result := <-done:
+		return result.value, result.err
+	case <-timer.C:
+		return zero, fmt.Errorf("pubsub handler timed out after %s", timeout)
+	}
 }
 
 func (r *pubsubRuntime) ensureTopic(topicName string) (*pubsub.Topic, error) {
