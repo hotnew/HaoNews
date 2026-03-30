@@ -203,6 +203,11 @@ func startSession(ctx context.Context, opts SessionOptions) (*session, error) {
 		NetworkID:       netCfg.NetworkID,
 		Channel:         firstNonEmpty(strings.TrimSpace(opts.Channel), "hao.news/live"),
 	}
+	if normalizeRole(opts.Role) != "host" {
+		if existing, err := store.LoadRoom(roomID); err == nil {
+			info = mergeRoomInfo(existing, info)
+		}
+	}
 	if err := store.SaveRoom(info); err != nil {
 		sub.Cancel()
 		_ = topic.Close()
@@ -392,6 +397,9 @@ func (s *session) publishControl(ctx context.Context, messageType string, payloa
 }
 
 func (s *session) publishRoomAnnouncement(ctx context.Context) error {
+	if s == nil || s.roleValue("participant") != "host" {
+		return nil
+	}
 	msg, err := NewSignedMessage(s.identity, s.identity.Author, s.info.RoomID, TypeRoomAnnounce, s.nextSeq(), 0, LivePayload{
 		ContentType: "application/json",
 		Metadata: map[string]any{
@@ -615,7 +623,7 @@ func roomInfoFromAnnouncement(event LiveMessage) RoomInfo {
 	return RoomInfo{
 		RoomID:      strings.TrimSpace(event.RoomID),
 		Title:       metadataStringValue(event.Payload.Metadata, "title"),
-		Creator:     firstNonEmpty(metadataStringValue(event.Payload.Metadata, "creator"), strings.TrimSpace(event.Sender)),
+		Creator:     strings.TrimSpace(event.Sender),
 		CreatorPubKey: firstNonEmpty(metadataStringValue(event.Payload.Metadata, "origin_public_key"), strings.TrimSpace(event.SenderPubKey)),
 		ParentPublicKey: metadataStringValue(event.Payload.Metadata, "parent_public_key"),
 		CreatedAt:   firstNonEmpty(metadataStringValue(event.Payload.Metadata, "created_at"), strings.TrimSpace(event.Timestamp)),

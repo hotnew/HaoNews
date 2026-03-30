@@ -97,8 +97,8 @@ func TestOptionalBoolFlagAndJoinAutoArchiveResolution(t *testing.T) {
 	if flagValue.IsSet() {
 		t.Fatal("flag should start unset")
 	}
-	if resolveLiveJoinAutoArchive("participant", &flagValue) != true {
-		t.Fatal("participant default should auto-archive")
+	if resolveLiveJoinAutoArchive("participant", &flagValue) != false {
+		t.Fatal("participant default should not auto-archive")
 	}
 	if resolveLiveJoinAutoArchive("viewer", &flagValue) != false {
 		t.Fatal("viewer default should not auto-archive")

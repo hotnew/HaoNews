@@ -291,6 +291,61 @@ func TestAppendEventSkipsImmediateDuplicate(t *testing.T) {
 	}
 }
 
+func TestAppendEventSkipsRecentDuplicateEvenWhenNotImmediate(t *testing.T) {
+	store, err := OpenLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	room := RoomInfo{
+		RoomID:    "room-dedupe-recent",
+		Title:     "Dedupe Recent Test",
+		Creator:   "agent://pc75/openclaw01",
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := store.SaveRoom(room); err != nil {
+		t.Fatalf("SaveRoom error = %v", err)
+	}
+	baseTime := time.Now().UTC()
+	first := LiveMessage{
+		Protocol:     ProtocolVersion,
+		Type:         TypeMessage,
+		RoomID:       room.RoomID,
+		Sender:       room.Creator,
+		SenderPubKey: strings.Repeat("a", 64),
+		Seq:          1,
+		Timestamp:    baseTime.Format(time.RFC3339),
+		Payload:      LivePayload{Content: "dedupe-check"},
+		Signature:    strings.Repeat("b", 128),
+	}
+	second := LiveMessage{
+		Protocol:     ProtocolVersion,
+		Type:         TypeMessage,
+		RoomID:       room.RoomID,
+		Sender:       room.Creator,
+		SenderPubKey: strings.Repeat("c", 64),
+		Seq:          2,
+		Timestamp:    baseTime.Add(time.Second).Format(time.RFC3339),
+		Payload:      LivePayload{Content: "another-event"},
+		Signature:    strings.Repeat("d", 128),
+	}
+	if err := store.AppendEvent(room.RoomID, first); err != nil {
+		t.Fatalf("first AppendEvent error = %v", err)
+	}
+	if err := store.AppendEvent(room.RoomID, second); err != nil {
+		t.Fatalf("second AppendEvent error = %v", err)
+	}
+	if err := store.AppendEvent(room.RoomID, first); err != nil {
+		t.Fatalf("third AppendEvent error = %v", err)
+	}
+	events, err := store.ReadEvents(room.RoomID)
+	if err != nil {
+		t.Fatalf("ReadEvents error = %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+}
+
 func TestSaveRoomPreservesIndexAndMergesInfo(t *testing.T) {
 	store, err := OpenLocalStore(t.TempDir())
 	if err != nil {
@@ -336,6 +391,53 @@ func TestSaveRoomPreservesIndexAndMergesInfo(t *testing.T) {
 	}
 	if rooms[0].EventCount != 1 {
 		t.Fatalf("rooms[0].EventCount = %d, want 1", rooms[0].EventCount)
+	}
+}
+
+func TestReadEventsIgnoresPartialTrailingJSONLine(t *testing.T) {
+	store, err := OpenLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	room := RoomInfo{
+		RoomID:    "room-partial-json",
+		Title:     "Partial JSON Test",
+		Creator:   "agent://pc75/openclaw01",
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := store.SaveRoom(room); err != nil {
+		t.Fatalf("SaveRoom error = %v", err)
+	}
+	event := LiveMessage{
+		Protocol:     ProtocolVersion,
+		Type:         TypeMessage,
+		RoomID:       room.RoomID,
+		Sender:       room.Creator,
+		SenderPubKey: strings.Repeat("a", 64),
+		Seq:          1,
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		Payload:      LivePayload{Content: "valid-event"},
+		Signature:    strings.Repeat("b", 128),
+	}
+	if err := store.AppendEvent(room.RoomID, event); err != nil {
+		t.Fatalf("AppendEvent error = %v", err)
+	}
+	path := filepath.Join(store.RoomDir(room.RoomID), "events.jsonl")
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile error = %v", err)
+	}
+	if _, err := file.WriteString("{\"protocol\":\"haonews-live/0.1\""); err != nil {
+		_ = file.Close()
+		t.Fatalf("WriteString error = %v", err)
+	}
+	_ = file.Close()
+	events, err := store.ReadEvents(room.RoomID)
+	if err != nil {
+		t.Fatalf("ReadEvents error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
 	}
 }
 

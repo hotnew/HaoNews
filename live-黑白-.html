@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hao.News Live 黑白名单说明</title>
+  <style>
+    :root {
+      --bg: #eef4ff;
+      --panel: #ffffff;
+      --ink: #17233c;
+      --muted: #5e6f90;
+      --line: #cdd9ef;
+      --accent: #2d63ea;
+      --accent-soft: #dfeaff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "SF Pro SC", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #f8fbff 0, #eef4ff 34%, #e6eefb 100%);
+      line-height: 1.7;
+    }
+    .page {
+      width: min(980px, calc(100vw - 40px));
+      margin: 32px auto 56px;
+    }
+    .hero,
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: 0 18px 48px rgba(28, 58, 122, 0.08);
+    }
+    .hero {
+      padding: 28px 30px;
+      margin-bottom: 18px;
+    }
+    .panel {
+      padding: 24px 26px;
+      margin-bottom: 16px;
+    }
+    h1, h2, h3 { margin: 0 0 14px; line-height: 1.2; }
+    h1 { font-size: 48px; }
+    h2 { font-size: 28px; }
+    h3 { font-size: 18px; color: var(--accent); }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0 0 12px 22px; padding: 0; }
+    li { margin: 0 0 8px; }
+    .eyebrow {
+      display: inline-block;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 12px;
+      margin-bottom: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 16px 18px;
+      background: #fbfdff;
+    }
+    .code {
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: #0f1a32;
+      color: #eaf0ff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      margin: 12px 0;
+    }
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .muted { color: var(--muted); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 15px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 12px 10px;
+      vertical-align: top;
+    }
+    th { color: var(--accent); }
+    @media (max-width: 720px) {
+      .page { width: min(100vw - 24px, 980px); margin: 18px auto 36px; }
+      .hero, .panel { border-radius: 22px; padding: 20px 18px; }
+      h1 { font-size: 34px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <span class="eyebrow">Live Moderation</span>
+      <h1>Live 黑白名单说明</h1>
+      <p>这份说明只讲 <code>Live</code> 专属的本地白名单 / 黑名单，不讲普通 feed 的白名单。它的目标是：在不改全网数据的前提下，只控制本机节点对 <code>Live</code> 房间和事件的可见性。</p>
+      <div class="pill-row">
+        <span class="pill">只作用于本机</span>
+        <span class="pill">同时支持父公钥和子公钥</span>
+        <span class="pill">regular / pending 双视图</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. 这套机制管什么</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>会管</h3>
+          <ul>
+            <li><code>/live</code> 房间列表</li>
+            <li><code>/live/&lt;room&gt;</code> 房间时间线</li>
+            <li><code>/api/live/rooms</code> 和单房间 API</li>
+            <li><code>/live/pending</code> 本地待处理视图</li>
+            <li><code>Live</code> 房间公告、事件、归档 notice 的本地显示</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>不会管</h3>
+          <ul>
+            <li>别的节点是否能看到这些 <code>Live</code> 数据</li>
+            <li>普通帖子、topic、sources 列表</li>
+            <li>删除全网数据</li>
+            <li>替代全局 writer policy</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>2. 配置字段</h2>
+      <p>写在 <code>~/.hao-news/subscriptions.json</code> 里：</p>
+      <div class="code">{
+  "live_allowed_origin_public_keys": [],
+  "live_blocked_origin_public_keys": [],
+  "live_allowed_parent_public_keys": [],
+  "live_blocked_parent_public_keys": []
+}</div>
+      <table>
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>作用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>live_allowed_origin_public_keys</code></td>
+            <td>只放行这些子公钥的 <code>Live</code> 内容</td>
+          </tr>
+          <tr>
+            <td><code>live_blocked_origin_public_keys</code></td>
+            <td>直接封禁这些子公钥的 <code>Live</code> 内容</td>
+          </tr>
+          <tr>
+            <td><code>live_allowed_parent_public_keys</code></td>
+            <td>放行这些父公钥下面全部子身份的 <code>Live</code> 内容</td>
+          </tr>
+          <tr>
+            <td><code>live_blocked_parent_public_keys</code></td>
+            <td>封禁这些父公钥下面全部子身份的 <code>Live</code> 内容</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>3. 匹配优先级</h2>
+      <p>优先级是固定的，顺序如下：</p>
+      <ol>
+        <li><code>live_blocked_origin_public_keys</code></li>
+        <li><code>live_blocked_parent_public_keys</code></li>
+        <li><code>live_allowed_origin_public_keys</code></li>
+        <li><code>live_allowed_parent_public_keys</code></li>
+        <li>都没命中就走默认可见性</li>
+      </ol>
+      <p class="muted">黑名单优先，子公钥优先。也就是“子 block 覆盖父 allow”，“父 block 也压过子 allow”。</p>
+    </section>
+
+    <section class="panel">
+      <h2>4. regular Live 和 pending Live 的区别</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>regular</h3>
+          <ul>
+            <li><code>/live</code></li>
+            <li><code>/live/&lt;room&gt;</code></li>
+            <li><code>/api/live/rooms</code></li>
+            <li><code>/api/live/rooms/&lt;room&gt;</code></li>
+          </ul>
+          <p>这里只显示本机规则允许看到的房间和事件。</p>
+        </div>
+        <div class="card">
+          <h3>pending</h3>
+          <ul>
+            <li><code>/live/pending</code></li>
+            <li><code>/live/pending/&lt;room&gt;</code></li>
+            <li><code>/api/live/pending</code></li>
+            <li><code>/api/live/pending/&lt;room&gt;</code></li>
+          </ul>
+          <p>这里专门看本机规则挡下来的房间或事件，方便运营和排查。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>5. 可见性字段</h2>
+      <p>当前页面和 API 会暴露这些状态：</p>
+      <div class="pill-row">
+        <span class="pill">default</span>
+        <span class="pill">allowed_origin</span>
+        <span class="pill">allowed_parent</span>
+        <span class="pill">blocked_origin</span>
+        <span class="pill">blocked_parent</span>
+        <span class="pill">blocked_default</span>
+      </div>
+      <p>另外，regular <code>Live</code> 视图现在也会带：</p>
+      <ul>
+        <li><code>pending_blocked_events</code></li>
+        <li>房间卡片上的 <code>待处理 N</code></li>
+        <li>房间页里的“本地待处理”入口</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>6. 现在的新数据要求</h2>
+      <p>新的 <code>Live</code> 消息和房间元数据，都会自动写入：</p>
+      <div class="code">origin_public_key
+parent_public_key</div>
+      <p>这样本机不需要再猜发送者的父 / 子身份，过滤会更稳定。</p>
+    </section>
+
+    <section class="panel">
+      <h2>7. 常见排查</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>现象</th>
+            <th>先看什么</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>房间在 <code>/live</code> 看不到</td>
+            <td>先去 <code>/live/pending</code> 看是否整房被挡</td>
+          </tr>
+          <tr>
+            <td>房间能进，但里面事件变少</td>
+            <td>看 regular 房间页的 <code>pending_blocked_events</code>，再点进 <code>/live/pending/&lt;room&gt;</code></td>
+          </tr>
+          <tr>
+            <td>API 看起来正常，但页面里少消息</td>
+            <td>对比 <code>/api/live/rooms/&lt;room&gt;</code> 和 <code>/api/live/pending/&lt;room&gt;</code></td>
+          </tr>
+          <tr>
+            <td>想确认规则命中了谁</td>
+            <td>看页面或 API 里的 <code>live_visibility</code> / <code>room_visibility</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>8. 最小示例</h2>
+      <p>例 1：只允许一个父身份进入本机 Live：</p>
+      <div class="code">{
+  "live_allowed_parent_public_keys": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ]
+}</div>
+      <p>例 2：允许一个父身份，但封其中一个子身份：</p>
+      <div class="code">{
+  "live_allowed_parent_public_keys": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "live_blocked_origin_public_keys": [
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ]
+}</div>
+      <p>例 3：整组封一个父身份：</p>
+      <div class="code">{
+  "live_blocked_parent_public_keys": [
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  ]
+}</div>
+    </section>
+  </main>
+</body>
+</html>

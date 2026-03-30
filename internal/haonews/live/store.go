@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"hao.news/internal/haonews"
@@ -85,23 +86,25 @@ func (s *LocalStore) SaveRoom(info RoomInfo) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	record := roomRecord{Info: info}
-	if current, err := os.ReadFile(filepath.Join(dir, "room.json")); err == nil {
-		var existing roomRecord
-		if err := json.Unmarshal(current, &existing); err == nil {
-			record.EventCount = existing.EventCount
-			record.LastEventAt = existing.LastEventAt
-			record.Info = mergeRoomInfo(existing.Info, info)
+	return s.withRoomLock(info.RoomID, func() error {
+		record := roomRecord{Info: info}
+		if current, err := os.ReadFile(filepath.Join(dir, "room.json")); err == nil {
+			var existing roomRecord
+			if err := json.Unmarshal(current, &existing); err == nil {
+				record.EventCount = existing.EventCount
+				record.LastEventAt = existing.LastEventAt
+				record.Info = mergeRoomInfo(existing.Info, info)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	data, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(dir, "room.json"), data, 0o644)
+		data, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			return err
+		}
+		data = append(data, '\n')
+		return writeFileAtomic(filepath.Join(dir, "room.json"), data, 0o644)
+	})
 }
 
 func (s *LocalStore) LoadRoom(roomID string) (RoomInfo, error) {
@@ -127,23 +130,25 @@ func (s *LocalStore) AppendEvent(roomID string, msg LiveMessage) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	path := filepath.Join(dir, "events.jsonl")
-	if duplicate, err := isImmediateDuplicateEvent(path, msg); err == nil && duplicate {
-		return nil
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	if _, err := file.Write(append(body, '\n')); err != nil {
-		return err
-	}
-	return s.updateRoomIndex(roomID, msg)
+	return s.withRoomLock(roomID, func() error {
+		path := filepath.Join(dir, "events.jsonl")
+		if duplicate, err := isImmediateDuplicateEvent(path, msg); err == nil && duplicate {
+			return nil
+		}
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		body, err := json.Marshal(msg)
+		if err != nil {
+			return err
+		}
+		if _, err := file.Write(append(body, '\n')); err != nil {
+			return err
+		}
+		return s.updateRoomIndex(roomID, msg)
+	})
 }
 
 func isImmediateDuplicateEvent(path string, msg LiveMessage) (bool, error) {
@@ -162,7 +167,7 @@ func isImmediateDuplicateEvent(path string, msg LiveMessage) (bool, error) {
 	if info.Size() == 0 {
 		return false, nil
 	}
-	const tailBytes int64 = 8192
+	const tailBytes int64 = 262144
 	size := info.Size()
 	readSize := size
 	if readSize > tailBytes {
@@ -180,9 +185,11 @@ func isImmediateDuplicateEvent(path string, msg LiveMessage) (bool, error) {
 		}
 		var last LiveMessage
 		if err := json.Unmarshal([]byte(line), &last); err != nil {
-			return false, nil
+			continue
 		}
-		return liveEventKey(last) == liveEventKey(msg), nil
+		if liveEventKey(last) == liveEventKey(msg) {
+			return true, nil
+		}
 	}
 	return false, nil
 }
@@ -221,7 +228,7 @@ func (s *LocalStore) ReadEvents(roomID string) ([]LiveMessage, error) {
 		}
 		var msg LiveMessage
 		if err := json.Unmarshal([]byte(line), &msg); err != nil {
-			return nil, err
+			continue
 		}
 		out = append(out, msg)
 	}
@@ -321,7 +328,7 @@ func (s *LocalStore) updateRoomIndex(roomID string, msg LiveMessage) error {
 		return err
 	}
 	body = append(body, '\n')
-	return os.WriteFile(path, body, 0o644)
+	return writeFileAtomic(path, body, 0o644)
 }
 
 func (s *LocalStore) SaveArchiveResult(roomID string, result ArchiveResult) error {
@@ -344,12 +351,14 @@ func (s *LocalStore) SaveArchiveResult(roomID string, result ArchiveResult) erro
 	if err := os.MkdirAll(s.RoomDir(roomID), 0o755); err != nil {
 		return err
 	}
-	body, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		return err
-	}
-	body = append(body, '\n')
-	return os.WriteFile(s.archivePath(roomID), body, 0o644)
+	return s.withRoomLock(roomID, func() error {
+		body, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			return err
+		}
+		body = append(body, '\n')
+		return writeFileAtomic(s.archivePath(roomID), body, 0o644)
+	})
 }
 
 func (s *LocalStore) LoadArchiveResult(roomID string) (*ArchiveRecord, error) {
@@ -375,16 +384,16 @@ func (s *LocalStore) LoadArchiveResult(roomID string) (*ArchiveRecord, error) {
 
 func mergeRoomInfo(existing, incoming RoomInfo) RoomInfo {
 	return RoomInfo{
-		RoomID:          firstNonEmptyInfo(incoming.RoomID, existing.RoomID),
-		Title:           firstNonEmptyInfo(incoming.Title, existing.Title),
-		Creator:         firstNonEmptyInfo(incoming.Creator, existing.Creator),
-		CreatorPubKey:   firstNonEmptyInfo(incoming.CreatorPubKey, existing.CreatorPubKey),
-		ParentPublicKey: firstNonEmptyInfo(incoming.ParentPublicKey, existing.ParentPublicKey),
-		CreatedAt:       firstNonEmptyInfo(incoming.CreatedAt, existing.CreatedAt),
-		NetworkID:       firstNonEmptyInfo(incoming.NetworkID, existing.NetworkID),
-		Channel:         firstNonEmptyInfo(incoming.Channel, existing.Channel),
+		RoomID:          firstNonEmptyInfo(existing.RoomID, incoming.RoomID),
+		Title:           firstNonEmptyInfo(existing.Title, incoming.Title),
+		Creator:         firstNonEmptyInfo(existing.Creator, incoming.Creator),
+		CreatorPubKey:   firstNonEmptyInfo(existing.CreatorPubKey, incoming.CreatorPubKey),
+		ParentPublicKey: firstNonEmptyInfo(existing.ParentPublicKey, incoming.ParentPublicKey),
+		CreatedAt:       firstNonEmptyInfo(existing.CreatedAt, incoming.CreatedAt),
+		NetworkID:       firstNonEmptyInfo(existing.NetworkID, incoming.NetworkID),
+		Channel:         firstNonEmptyInfo(existing.Channel, incoming.Channel),
 		Tags:            firstNonEmptySlice(incoming.Tags, existing.Tags),
-		Description:     firstNonEmptyInfo(incoming.Description, existing.Description),
+		Description:     firstNonEmptyInfo(existing.Description, incoming.Description),
 	}
 }
 
@@ -407,4 +416,46 @@ func firstNonEmptySlice(values ...[]string) []string {
 		}
 	}
 	return nil
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
+func (s *LocalStore) withRoomLock(roomID string, fn func() error) error {
+	if s == nil {
+		return fmt.Errorf("local store is required")
+	}
+	dir := s.RoomDir(roomID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	lockFile, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer lockFile.Close()
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer func() { _ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) }()
+	return fn()
 }

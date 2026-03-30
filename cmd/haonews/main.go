@@ -386,7 +386,7 @@ func resolveLiveJoinAutoArchive(role string, flag *optionalBoolFlag) bool {
 	if flag != nil && flag.IsSet() {
 		return flag.Value()
 	}
-	return strings.TrimSpace(role) != "viewer"
+	return false
 }
 
 func runLiveList(args []string) error {
