@@ -464,6 +464,40 @@ func TestRoomInfoFromAnnouncement(t *testing.T) {
 	}
 }
 
+func TestSaveRoomAuthoritativeOverridesPlaceholderOwner(t *testing.T) {
+	store, err := OpenLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	if err := store.SaveRoom(RoomInfo{
+		RoomID:          "room-authoritative",
+		Creator:         "agent://pc75/live-bravo",
+		CreatorPubKey:   strings.Repeat("b", 64),
+		ParentPublicKey: strings.Repeat("c", 64),
+		CreatedAt:       "2026-03-30T01:18:07Z",
+	}); err != nil {
+		t.Fatalf("SaveRoom placeholder error = %v", err)
+	}
+	if err := store.SaveRoomAuthoritative(RoomInfo{
+		RoomID:          "room-authoritative",
+		Title:           "Authoritative Room",
+		Creator:         "agent://pc75/openclaw01",
+		CreatorPubKey:   strings.Repeat("a", 64),
+		ParentPublicKey: strings.Repeat("c", 64),
+		CreatedAt:       "2026-03-30T01:18:17Z",
+		Channel:         "hao.news/live",
+	}); err != nil {
+		t.Fatalf("SaveRoomAuthoritative error = %v", err)
+	}
+	room, err := store.LoadRoom("room-authoritative")
+	if err != nil {
+		t.Fatalf("LoadRoom error = %v", err)
+	}
+	if room.Creator != "agent://pc75/openclaw01" || room.Title != "Authoritative Room" {
+		t.Fatalf("room = %#v, want authoritative owner/title", room)
+	}
+}
+
 func TestAnnouncementWatcherHandleArchiveNotice(t *testing.T) {
 	root := t.TempDir()
 	store, err := OpenLocalStore(root)
@@ -535,6 +569,49 @@ func TestAnnouncementWatcherHandleArchiveNotice(t *testing.T) {
 	}
 	if !strings.Contains(string(queueBody), result.Published.InfoHash) {
 		t.Fatalf("queue missing archive sync ref: %s", string(queueBody))
+	}
+}
+
+func TestAnnouncementWatcherJoinDoesNotOverrideExistingRoomOwner(t *testing.T) {
+	root := t.TempDir()
+	store, err := OpenLocalStore(root)
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	if err := store.SaveRoomAuthoritative(RoomInfo{
+		RoomID:          "room-owner-stable",
+		Title:           "Stable Room",
+		Creator:         "agent://pc75/openclaw01",
+		CreatorPubKey:   strings.Repeat("a", 64),
+		ParentPublicKey: strings.Repeat("c", 64),
+		CreatedAt:       "2026-03-30T01:18:17Z",
+		Channel:         "hao.news/live",
+	}); err != nil {
+		t.Fatalf("SaveRoomAuthoritative error = %v", err)
+	}
+	identity, err := haonews.NewAgentIdentity("agent://pc75", "agent://pc75/live-bravo", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("NewAgentIdentity error = %v", err)
+	}
+	event, err := NewSignedMessage(identity, identity.Author, "room-owner-stable", TypeJoin, 1, 0, LivePayload{
+		Metadata: map[string]any{
+			"origin_public_key": strings.Repeat("b", 64),
+			"parent_public_key": strings.Repeat("c", 64),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSignedMessage error = %v", err)
+	}
+	watcher := &AnnouncementWatcher{store: store}
+	if err := watcher.handleEvent(event); err != nil {
+		t.Fatalf("handleEvent error = %v", err)
+	}
+	room, err := store.LoadRoom("room-owner-stable")
+	if err != nil {
+		t.Fatalf("LoadRoom error = %v", err)
+	}
+	if room.Creator != "agent://pc75/openclaw01" || room.Title != "Stable Room" {
+		t.Fatalf("room = %#v, want original owner/title preserved", room)
 	}
 }
 

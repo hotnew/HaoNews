@@ -107,6 +107,35 @@ func (s *LocalStore) SaveRoom(info RoomInfo) error {
 	})
 }
 
+func (s *LocalStore) SaveRoomAuthoritative(info RoomInfo) error {
+	if s == nil {
+		return fmt.Errorf("local store is required")
+	}
+	dir := s.RoomDir(info.RoomID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return s.withRoomLock(info.RoomID, func() error {
+		record := roomRecord{Info: info}
+		if current, err := os.ReadFile(filepath.Join(dir, "room.json")); err == nil {
+			var existing roomRecord
+			if err := json.Unmarshal(current, &existing); err == nil {
+				record.EventCount = existing.EventCount
+				record.LastEventAt = existing.LastEventAt
+				record.Info = mergeRoomInfoAuthoritative(existing.Info, info)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		data, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			return err
+		}
+		data = append(data, '\n')
+		return writeFileAtomic(filepath.Join(dir, "room.json"), data, 0o644)
+	})
+}
+
 func (s *LocalStore) LoadRoom(roomID string) (RoomInfo, error) {
 	if s == nil {
 		return RoomInfo{}, fmt.Errorf("local store is required")
@@ -394,6 +423,21 @@ func mergeRoomInfo(existing, incoming RoomInfo) RoomInfo {
 		Channel:         firstNonEmptyInfo(existing.Channel, incoming.Channel),
 		Tags:            firstNonEmptySlice(incoming.Tags, existing.Tags),
 		Description:     firstNonEmptyInfo(existing.Description, incoming.Description),
+	}
+}
+
+func mergeRoomInfoAuthoritative(existing, incoming RoomInfo) RoomInfo {
+	return RoomInfo{
+		RoomID:          firstNonEmptyInfo(existing.RoomID, incoming.RoomID),
+		Title:           firstNonEmptyInfo(incoming.Title, existing.Title),
+		Creator:         firstNonEmptyInfo(incoming.Creator, existing.Creator),
+		CreatorPubKey:   firstNonEmptyInfo(incoming.CreatorPubKey, existing.CreatorPubKey),
+		ParentPublicKey: firstNonEmptyInfo(incoming.ParentPublicKey, existing.ParentPublicKey),
+		CreatedAt:       firstNonEmptyInfo(incoming.CreatedAt, existing.CreatedAt),
+		NetworkID:       firstNonEmptyInfo(incoming.NetworkID, existing.NetworkID),
+		Channel:         firstNonEmptyInfo(incoming.Channel, existing.Channel),
+		Tags:            firstNonEmptySlice(incoming.Tags, existing.Tags),
+		Description:     firstNonEmptyInfo(incoming.Description, existing.Description),
 	}
 }
 

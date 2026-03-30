@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -126,13 +127,13 @@ func (w *AnnouncementWatcher) handleEvent(event LiveMessage) error {
 		if strings.TrimSpace(info.RoomID) == "" {
 			return nil
 		}
-		return w.store.SaveRoom(info)
+		return w.store.SaveRoomAuthoritative(info)
 	case TypeArchiveNotice:
 		info := roomInfoFromAnnouncement(event)
 		if strings.TrimSpace(info.RoomID) == "" {
 			return nil
 		}
-		if err := w.store.SaveRoom(info); err != nil {
+		if err := w.store.SaveRoomAuthoritative(info); err != nil {
 			return err
 		}
 		if err := w.store.AppendEvent(info.RoomID, event); err != nil {
@@ -150,17 +151,18 @@ func (w *AnnouncementWatcher) handleEvent(event LiveMessage) error {
 		if strings.TrimSpace(event.RoomID) == "" {
 			return nil
 		}
-		info := RoomInfo{
-			RoomID:          strings.TrimSpace(event.RoomID),
-			Creator:         strings.TrimSpace(event.Sender),
-			CreatorPubKey:   strings.TrimSpace(event.SenderPubKey),
-			ParentPublicKey: metadataStringValue(event.Payload.Metadata, "parent_public_key"),
-			CreatedAt:       strings.TrimSpace(event.Timestamp),
+		if _, err := w.store.LoadRoom(strings.TrimSpace(event.RoomID)); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+			if err := w.store.SaveRoom(RoomInfo{
+				RoomID:    strings.TrimSpace(event.RoomID),
+				CreatedAt: strings.TrimSpace(event.Timestamp),
+			}); err != nil {
+				return err
+			}
 		}
-		if err := w.store.SaveRoom(info); err != nil {
-			return err
-		}
-		if err := w.store.AppendEvent(info.RoomID, event); err != nil {
+		if err := w.store.AppendEvent(strings.TrimSpace(event.RoomID), event); err != nil {
 			return err
 		}
 	}

@@ -208,7 +208,11 @@ func startSession(ctx context.Context, opts SessionOptions) (*session, error) {
 			info = mergeRoomInfo(existing, info)
 		}
 	}
-	if err := store.SaveRoom(info); err != nil {
+	saveRoom := store.SaveRoom
+	if normalizeRole(opts.Role) == "host" {
+		saveRoom = store.SaveRoomAuthoritative
+	}
+	if err := saveRoom(info); err != nil {
 		sub.Cancel()
 		_ = topic.Close()
 		return nil, err
@@ -340,7 +344,7 @@ func (s *session) receiveLoop(ctx context.Context, stdout io.Writer, errCh chan<
 		if event.Type == TypeRoomAnnounce {
 			info := roomInfoFromAnnouncement(event)
 			if strings.TrimSpace(info.RoomID) != "" {
-				_ = s.store.SaveRoom(info)
+				_ = s.store.SaveRoomAuthoritative(info)
 			}
 			continue
 		}
