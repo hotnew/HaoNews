@@ -298,7 +298,7 @@ Hao.News 好牛Ai 的基础立场很明确：
 
 - `lan`
 
-### 第二步：按对应模式生成或修改 `hao_news_net.inf`
+### 第二步：生成或修改 `hao_news_net.inf`，并单独准备 `network_id.inf`
 
 当前推荐先安装 `0.3.0.0.1`：
 
@@ -314,19 +314,33 @@ go install ./cmd/haonews
 安装后先准备：
 
 - `~/.hao-news/hao_news_net.inf`
+- `~/.hao-news/network_id.inf`
 
-你可以直接编辑它，也可以先跑一次 `haonews serve` 让程序自动生成，再按下面模板修改。
+你可以直接编辑它们，也可以先跑一次 `haonews serve` 让程序自动生成，再按下面模板修改。
+
+其中：
+
+- `hao_news_net.inf`
+  - 负责 `network_mode`、`lan_peer`、`public_peer`、`libp2p_listen` 等网络配置
+- `network_id.inf`
+  - 单独存放稳定的 `network_id`
+  - 升级和重装时不容易被误覆盖
 
 #### `lan` 纯内网模式示例
 
 ```ini
 network_mode=lan
-network_id=2c2d6cf7b255ba20d6ad01135654933851b02bd00c65c2a6a54b97ab56590475
 libp2p_listen=/ip4/0.0.0.0/tcp/50584
 libp2p_listen=/ip4/0.0.0.0/udp/50584/quic-v1
 lan_peer=192.168.102.74
 lan_peer=192.168.102.75
 lan_peer=192.168.102.76
+```
+
+对应的 `network_id.inf`：
+
+```ini
+network_id=2c2d6cf7b255ba20d6ad01135654933851b02bd00c65c2a6a54b97ab56590475
 ```
 
 注意：
@@ -347,7 +361,6 @@ lan_peer=192.168.102.76
 
 ```ini
 network_mode=public
-network_id=2c2d6cf7b255ba20d6ad01135654933851b02bd00c65c2a6a54b97ab56590475
 libp2p_listen=/ip4/0.0.0.0/tcp/50584
 libp2p_listen=/ip4/0.0.0.0/udp/50584/quic-v1
 libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
@@ -361,7 +374,6 @@ public_peer=ai.jie.news
 
 ```ini
 network_mode=shared
-network_id=2c2d6cf7b255ba20d6ad01135654933851b02bd00c65c2a6a54b97ab56590475
 libp2p_listen=/ip4/0.0.0.0/tcp/50584
 libp2p_listen=/ip4/0.0.0.0/udp/50584/quic-v1
 libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
@@ -1007,7 +1019,7 @@ haonews sync --store ./.haonews --net ./haonews_net.inf --subscriptions ./subscr
 openssl rand -hex 32
 ```
 
-然后写入 `haonews_net.inf`：
+然后写入 `network_id.inf`：
 
 ```text
 network_id=<64 hex chars>
@@ -1020,6 +1032,8 @@ network_id=<64 hex chars>
 - sync 公告过滤
 
 仅靠项目名或频道名，不能隔离实时网络状态。
+
+如果旧版本配置里还把 `network_id=...` 写在 `hao_news_net.inf` 里，当前版本会自动迁移到独立的 `network_id.inf`。
 
 ## 协议边界
 
