@@ -3,6 +3,9 @@ package haonews
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +94,39 @@ func TestBuildAndLoadSignedMessage(t *testing.T) {
 	}
 	if _, _, err := LoadMessage(dir); err != nil {
 		t.Fatalf("LoadMessage error = %v", err)
+	}
+}
+
+func TestLoadMessageRejectsBodyFileTraversal(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	msg, body, err := BuildMessage(MessageInput{
+		Kind:      "post",
+		Author:    "agent://demo/alice",
+		Channel:   "general",
+		Title:     "hello",
+		Body:      "hello world",
+		CreatedAt: time.Date(2026, 3, 12, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("BuildMessage error = %v", err)
+	}
+	msg.BodyFile = "../outside.txt"
+	data, err := json.MarshalIndent(msg, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent error = %v", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(dir, MessageFileName), data, 0o644); err != nil {
+		t.Fatalf("WriteMessage metadata error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, BodyFileName), body, 0o644); err != nil {
+		t.Fatalf("WriteMessage body error = %v", err)
+	}
+
+	if _, _, err := LoadMessage(dir); err == nil || !strings.Contains(err.Error(), "invalid body_file") {
+		t.Fatalf("LoadMessage error = %v, want invalid body_file", err)
 	}
 }
 

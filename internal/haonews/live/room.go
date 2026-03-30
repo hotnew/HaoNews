@@ -65,6 +65,26 @@ type session struct {
 	author          string
 }
 
+type sessionStartCleanup struct {
+	steps []func()
+}
+
+func (c *sessionStartCleanup) add(step func()) {
+	if step != nil {
+		c.steps = append(c.steps, step)
+	}
+}
+
+func (c *sessionStartCleanup) release() {
+	c.steps = nil
+}
+
+func (c *sessionStartCleanup) run() {
+	for i := len(c.steps) - 1; i >= 0; i-- {
+		c.steps[i]()
+	}
+}
+
 func Host(ctx context.Context, opts SessionOptions, stdin io.Reader, stdout io.Writer) (RoomInfo, error) {
 	s, err := startSession(ctx, opts)
 	if err != nil {
@@ -144,7 +164,7 @@ func PublishTaskUpdate(ctx context.Context, opts SessionOptions, metadata map[st
 	return s.info, nil
 }
 
-func startSession(ctx context.Context, opts SessionOptions) (*session, error) {
+func startSession(ctx context.Context, opts SessionOptions) (_ *session, err error) {
 	store, err := OpenLocalStore(opts.StoreRoot)
 	if err != nil {
 		return nil, err
@@ -177,6 +197,27 @@ func startSession(ctx context.Context, opts SessionOptions) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
+	cleanup := &sessionStartCleanup{}
+	cleanup.add(func() {
+		if mdnsService != nil {
+			_ = mdnsService.Close()
+		}
+	})
+	cleanup.add(func() {
+		if dhtRuntime != nil {
+			_ = dhtRuntime.Close()
+		}
+	})
+	cleanup.add(func() {
+		if h != nil {
+			_ = h.Close()
+		}
+	})
+	defer func() {
+		if err != nil {
+			cleanup.run()
+		}
+	}()
 	roomID := strings.TrimSpace(opts.RoomID)
 	if roomID == "" {
 		roomID, err = GenerateRoomID(author)
@@ -188,11 +229,16 @@ func startSession(ctx context.Context, opts SessionOptions) (*session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("join live bus topic: %w", err)
 	}
+	cleanup.add(func() {
+		_ = topic.Close()
+	})
 	sub, err := topic.Subscribe()
 	if err != nil {
-		_ = topic.Close()
 		return nil, fmt.Errorf("subscribe live bus topic: %w", err)
 	}
+	cleanup.add(func() {
+		sub.Cancel()
+	})
 	info := RoomInfo{
 		RoomID:          roomID,
 		Title:           strings.TrimSpace(opts.Title),
@@ -213,8 +259,6 @@ func startSession(ctx context.Context, opts SessionOptions) (*session, error) {
 		saveRoom = store.SaveRoomAuthoritative
 	}
 	if err := saveRoom(info); err != nil {
-		sub.Cancel()
-		_ = topic.Close()
 		return nil, err
 	}
 	s := &session{
@@ -236,6 +280,7 @@ func startSession(ctx context.Context, opts SessionOptions) (*session, error) {
 		identityFile: strings.TrimSpace(opts.IdentityFile),
 		author:       author,
 	}
+	cleanup.release()
 	if discoveryRuntime != nil {
 		discutil.Advertise(ctx, discoveryRuntime, GlobalNamespace)
 		discutil.Advertise(ctx, discoveryRuntime, RoomNamespace(roomID))
@@ -625,15 +670,15 @@ func (s *session) close() {
 
 func roomInfoFromAnnouncement(event LiveMessage) RoomInfo {
 	return RoomInfo{
-		RoomID:      strings.TrimSpace(event.RoomID),
-		Title:       metadataStringValue(event.Payload.Metadata, "title"),
-		Creator:     strings.TrimSpace(event.Sender),
-		CreatorPubKey: firstNonEmpty(metadataStringValue(event.Payload.Metadata, "origin_public_key"), strings.TrimSpace(event.SenderPubKey)),
+		RoomID:          strings.TrimSpace(event.RoomID),
+		Title:           metadataStringValue(event.Payload.Metadata, "title"),
+		Creator:         strings.TrimSpace(event.Sender),
+		CreatorPubKey:   firstNonEmpty(metadataStringValue(event.Payload.Metadata, "origin_public_key"), strings.TrimSpace(event.SenderPubKey)),
 		ParentPublicKey: metadataStringValue(event.Payload.Metadata, "parent_public_key"),
-		CreatedAt:   firstNonEmpty(metadataStringValue(event.Payload.Metadata, "created_at"), strings.TrimSpace(event.Timestamp)),
-		NetworkID:   metadataStringValue(event.Payload.Metadata, "network_id"),
-		Channel:     metadataStringValue(event.Payload.Metadata, "channel"),
-		Description: metadataStringValue(event.Payload.Metadata, "description"),
+		CreatedAt:       firstNonEmpty(metadataStringValue(event.Payload.Metadata, "created_at"), strings.TrimSpace(event.Timestamp)),
+		NetworkID:       metadataStringValue(event.Payload.Metadata, "network_id"),
+		Channel:         metadataStringValue(event.Payload.Metadata, "channel"),
+		Description:     metadataStringValue(event.Payload.Metadata, "description"),
 	}
 }
 

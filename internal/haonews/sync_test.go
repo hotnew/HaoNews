@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/torrent/metainfo"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -111,6 +112,29 @@ func TestMigrateHistoryManifestQueueRefsMovesToHistoryQueue(t *testing.T) {
 	}
 	if !strings.Contains(string(historyData), "history-manifest") {
 		t.Fatalf("history queue missing migrated history manifest: %q", string(historyData))
+	}
+}
+
+func TestRememberDirectPeerCapsPeerListPerInfoHash(t *testing.T) {
+	t.Parallel()
+
+	runtime := &syncRuntime{directPeers: make(map[string][]peer.ID)}
+	const infoHash = "93a71a010a59022c8670e06e2c92fa279f98d974"
+	for i := 0; i < maxDirectPeersPerInfoHash+3; i++ {
+		priv, _, err := crypto.GenerateEd25519Key(nil)
+		if err != nil {
+			t.Fatalf("GenerateEd25519Key(%d) error = %v", i, err)
+		}
+		id, err := peer.IDFromPrivateKey(priv)
+		if err != nil {
+			t.Fatalf("IDFromPrivateKey(%d) error = %v", i, err)
+		}
+		runtime.rememberDirectPeer(infoHash, id.String())
+	}
+
+	got := runtime.directPeerIDs(infoHash)
+	if len(got) != maxDirectPeersPerInfoHash {
+		t.Fatalf("len(directPeerIDs) = %d, want %d", len(got), maxDirectPeersPerInfoHash)
 	}
 }
 
@@ -383,9 +407,9 @@ func TestProbeLANAnchorsWritesHealthCache(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(lanBootstrapResponse{
-			NetworkID:       latestOrgNetworkID,
-			PeerID:          "QmTestPeer",
-			DialAddrs:       []string{"/ip4/192.168.102.75/tcp/50584"},
+			NetworkID: latestOrgNetworkID,
+			PeerID:    "QmTestPeer",
+			DialAddrs: []string{"/ip4/192.168.102.75/tcp/50584"},
 		})
 	}))
 	defer srv.Close()

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,7 +131,11 @@ func LoadMessage(dir string) (Message, string, error) {
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return Message{}, "", err
 	}
-	bodyBytes, err := os.ReadFile(filepath.Join(dir, msg.BodyFile))
+	bodyPath, err := resolveBodyFilePath(dir, msg.BodyFile)
+	if err != nil {
+		return Message{}, "", err
+	}
+	bodyBytes, err := os.ReadFile(bodyPath)
 	if err != nil {
 		return Message{}, "", err
 	}
@@ -138,6 +143,44 @@ func LoadMessage(dir string) (Message, string, error) {
 		return Message{}, "", err
 	}
 	return msg, string(bodyBytes), nil
+}
+
+func resolveBodyFilePath(dir, bodyFile string) (string, error) {
+	bodyFile = strings.TrimSpace(bodyFile)
+	if err := validateBodyFilePath(bodyFile); err != nil {
+		return "", fmt.Errorf("invalid body_file: %w", err)
+	}
+	baseDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve message dir: %w", err)
+	}
+	bodyPath, err := filepath.Abs(filepath.Join(baseDir, bodyFile))
+	if err != nil {
+		return "", fmt.Errorf("resolve body path: %w", err)
+	}
+	if bodyPath != filepath.Join(baseDir, bodyFile) {
+		return "", fmt.Errorf("body_file escapes message dir: %s", bodyFile)
+	}
+	return bodyPath, nil
+}
+
+func validateBodyFilePath(bodyFile string) error {
+	if bodyFile == "" {
+		return errors.New("body_file is empty")
+	}
+	if filepath.IsAbs(bodyFile) {
+		return errors.New("body_file must be relative")
+	}
+	if bodyFile != filepath.Base(bodyFile) {
+		return errors.New("body_file must be a plain file name")
+	}
+	if strings.Contains(bodyFile, "..") {
+		return errors.New("body_file must not contain '..'")
+	}
+	if strings.ContainsAny(bodyFile, `/\`) {
+		return errors.New("body_file must not contain path separators")
+	}
+	return nil
 }
 
 func ValidateMessage(msg Message, body []byte) error {

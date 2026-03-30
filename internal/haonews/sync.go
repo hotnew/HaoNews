@@ -211,27 +211,27 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 }
 
 type syncRuntime struct {
-	mu                 sync.Mutex
-	store              *Store
-	queuePath          string
-	historyQueuePath   string
-	mode               string
-	seed               bool
-	startedAt          time.Time
-	libp2p             *libp2pRuntime
-	pubsub             *pubsubRuntime
-	creditStore        *CreditStore
-	creditIdentity     *AgentIdentity
-	netCfg             NetworkBootstrapConfig
-	subscriptions      SyncSubscriptions
-	announced          map[string]struct{}
-	announcedProofs    map[string]struct{}
-	seeded             map[string]struct{}
-	directTransfer     bool
-	directPeers        map[string][]peer.ID
-	activity           SyncActivityStatus
-	lastLANProbeAt     time.Time
-	historyBootstrap   historyBootstrapState
+	mu               sync.Mutex
+	store            *Store
+	queuePath        string
+	historyQueuePath string
+	mode             string
+	seed             bool
+	startedAt        time.Time
+	libp2p           *libp2pRuntime
+	pubsub           *pubsubRuntime
+	creditStore      *CreditStore
+	creditIdentity   *AgentIdentity
+	netCfg           NetworkBootstrapConfig
+	subscriptions    SyncSubscriptions
+	announced        map[string]struct{}
+	announcedProofs  map[string]struct{}
+	seeded           map[string]struct{}
+	directTransfer   bool
+	directPeers      map[string][]peer.ID
+	activity         SyncActivityStatus
+	lastLANProbeAt   time.Time
+	historyBootstrap historyBootstrapState
 }
 
 type historyBootstrapState struct {
@@ -286,6 +286,8 @@ func (r *syncRuntime) queueRefs() int {
 	return r.activity.QueueRefs
 }
 
+const maxDirectPeersPerInfoHash = 8
+
 func (r *syncRuntime) rememberDirectPeer(infoHash, peerValue string) {
 	if r == nil {
 		return
@@ -310,7 +312,11 @@ func (r *syncRuntime) rememberDirectPeer(infoHash, peerValue string) {
 			return
 		}
 	}
-	r.directPeers[infoHash] = append(current, peerID)
+	current = append(current, peerID)
+	if len(current) > maxDirectPeersPerInfoHash {
+		current = append([]peer.ID(nil), current[len(current)-maxDirectPeersPerInfoHash:]...)
+	}
+	r.directPeers[infoHash] = current
 }
 
 func (r *syncRuntime) directPeerIDs(infoHash string) []peer.ID {

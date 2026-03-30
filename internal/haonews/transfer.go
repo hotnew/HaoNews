@@ -23,14 +23,15 @@ import (
 )
 
 const (
-	BundleTransferProtocol            = protocol.ID("/haonews/bundle-transfer/1.0")
-	defaultLibP2PTransferMaxSize      = 20 * 1024 * 1024
-	bundleTransferTimeout             = 30 * time.Second
-	bundleTransferRequestFetch   byte = 0x01
-	bundleTransferStatusOK       byte = 0x01
-	bundleTransferStatusNotFound byte = 0x02
-	bundleTransferStatusTooLarge byte = 0x03
-	bundleTransferStatusInvalid  byte = 0x04
+	BundleTransferProtocol                = protocol.ID("/haonews/bundle-transfer/1.0")
+	defaultLibP2PTransferMaxSize          = 20 * 1024 * 1024
+	absoluteMaxBundleTransferPayload      = 512 * 1024 * 1024
+	bundleTransferTimeout                 = 30 * time.Second
+	bundleTransferRequestFetch       byte = 0x01
+	bundleTransferStatusOK           byte = 0x01
+	bundleTransferStatusNotFound     byte = 0x02
+	bundleTransferStatusTooLarge     byte = 0x03
+	bundleTransferStatusInvalid      byte = 0x04
 )
 
 type bundleTransferProvider struct {
@@ -154,11 +155,8 @@ func FetchBundleViaLibP2P(
 		return "", err
 	}
 	payloadLen := binary.BigEndian.Uint32(lenBuf[:])
-	if payloadLen == 0 {
-		return "", errors.New("empty bundle transfer payload")
-	}
-	if int64(payloadLen) > maxBytes {
-		return "", fmt.Errorf("bundle transfer payload too large: %d", payloadLen)
+	if err := validateBundleTransferPayloadLength(payloadLen, maxBytes); err != nil {
+		return "", err
 	}
 	payload := make([]byte, payloadLen)
 	if _, err := io.ReadFull(stream, payload); err != nil {
@@ -193,6 +191,19 @@ func FetchBundleViaLibP2P(
 		return "", err
 	}
 	return contentDir, nil
+}
+
+func validateBundleTransferPayloadLength(payloadLen uint32, maxBytes int64) error {
+	if payloadLen == 0 {
+		return errors.New("empty bundle transfer payload")
+	}
+	if int64(payloadLen) > maxBytes {
+		return fmt.Errorf("bundle transfer payload too large: %d", payloadLen)
+	}
+	if payloadLen > absoluteMaxBundleTransferPayload {
+		return fmt.Errorf("bundle transfer payload exceeds absolute limit: %d", payloadLen)
+	}
+	return nil
 }
 
 func locateBundleContentDir(store *Store, infoHash string) (string, error) {

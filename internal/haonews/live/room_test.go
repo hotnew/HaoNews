@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"reflect"
 	"testing"
 )
 
@@ -41,5 +42,21 @@ func TestHandleInputLineExitCommandDoesNotPublish(t *testing.T) {
 	}
 	if !exitRequested {
 		t.Fatalf("handleInputLine should request exit for /exit")
+	}
+}
+
+func TestSessionStartCleanupRunsInReverseOrder(t *testing.T) {
+	t.Parallel()
+
+	var got []string
+	cleanup := &sessionStartCleanup{}
+	cleanup.add(func() { got = append(got, "host") })
+	cleanup.add(func() { got = append(got, "dht") })
+	cleanup.add(func() { got = append(got, "topic") })
+	cleanup.run()
+
+	want := []string{"topic", "dht", "host"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleanup order = %#v, want %#v", got, want)
 	}
 }
