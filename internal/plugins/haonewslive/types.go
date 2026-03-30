@@ -14,8 +14,24 @@ type liveIndexPageData struct {
 	NodeStatus   newsplugin.NodeStatus
 	Now          time.Time
 	Rooms        []live.RoomSummary
+	RoomLinks    map[string]liveRoomLinks
 	PendingCount int
 	SummaryStats []newsplugin.SummaryStat
+}
+
+type livePublicModerationPageData struct {
+	Project                      string
+	Version                      string
+	PageNav                      []newsplugin.NavItem
+	NodeStatus                   newsplugin.NodeStatus
+	Now                          time.Time
+	SaveOK                       bool
+	SaveError                    string
+	MutedOriginPublicKeys        []string
+	MutedParentPublicKeys        []string
+	PublicRateLimitMessages      int
+	PublicRateLimitWindowSeconds int
+	SummaryStats                 []newsplugin.SummaryStat
 }
 
 type livePendingIndexPageData struct {
@@ -29,52 +45,77 @@ type livePendingIndexPageData struct {
 }
 
 type liveRoomPageData struct {
-	Project        string
-	Version        string
-	PageNav        []newsplugin.NavItem
-	NodeStatus     newsplugin.NodeStatus
-	Now            time.Time
-	Room           live.RoomInfo
-	RoomVisibility string
-	PendingBlockedEvents int
-	Events         []live.LiveMessage
-	EventViews     []liveEventView
-	TaskSummaries  []liveTaskSummaryView
-	TaskByStatus   []liveTaskGroupView
-	TaskByAssignee []liveTaskGroupView
-	Roster         []live.RosterEntry
-	Archive        *live.ArchiveRecord
-	ShowHeartbeats bool
-	AutoRefresh    bool
+	Project                      string
+	Version                      string
+	PageNav                      []newsplugin.NavItem
+	NodeStatus                   newsplugin.NodeStatus
+	Now                          time.Time
+	Room                         live.RoomInfo
+	RoomLinks                    liveRoomLinks
+	RoomVisibility               string
+	PublicHintTitle              string
+	PublicHintBody               string
+	PublicHintExample            string
+	PublicGenerator              bool
+	PublicMutedEvents            int
+	PublicRateLimitedEvents      int
+	PublicRateLimitMessages      int
+	PublicRateLimitWindowSeconds int
+	PublicDefaultRooms           []livePublicRoomEntry
+	PendingBlockedEvents         int
+	Events                       []live.LiveMessage
+	EventViews                   []liveEventView
+	TaskSummaries                []liveTaskSummaryView
+	TaskByStatus                 []liveTaskGroupView
+	TaskByAssignee               []liveTaskGroupView
+	Roster                       []live.RosterEntry
+	Archive                      *live.ArchiveRecord
+	ShowHeartbeats               bool
+	AutoRefresh                  bool
+}
+
+type livePublicRoomEntry struct {
+	Name        string
+	Slug        string
+	Description string
+	RoomURL     string
+	APIURL      string
 }
 
 type livePendingRoomPageData struct {
-	Project          string
-	Version          string
-	PageNav          []newsplugin.NavItem
-	NodeStatus       newsplugin.NodeStatus
-	Now              time.Time
-	Room             live.RoomInfo
-	RoomVisibility   string
-	BlockedEvents    []live.LiveMessage
-	EventViews       []liveEventView
+	Project           string
+	Version           string
+	PageNav           []newsplugin.NavItem
+	NodeStatus        newsplugin.NodeStatus
+	Now               time.Time
+	Room              live.RoomInfo
+	RoomLinks         liveRoomLinks
+	RoomVisibility    string
+	BlockedEvents     []live.LiveMessage
+	EventViews        []liveEventView
 	BlockedEventCount int
-	ShowHeartbeats   bool
+	ShowHeartbeats    bool
 }
 
 type livePendingRoomSummary struct {
-	RoomID            string               `json:"room_id"`
-	Title             string               `json:"title"`
-	Creator           string               `json:"creator"`
-	CreatedAt         time.Time            `json:"created_at"`
-	LastEventAt       time.Time            `json:"last_event_at,omitempty"`
-	Channel           string               `json:"channel,omitempty"`
-	Archive           *live.ArchiveRecord  `json:"archive,omitempty"`
-	RoomVisibility    string               `json:"room_visibility,omitempty"`
-	BlockedEventCount int                  `json:"blocked_event_count"`
-	BlockedReason     string               `json:"blocked_reason,omitempty"`
-	PendingURL        string               `json:"pending_url,omitempty"`
-	APIURL            string               `json:"api_url,omitempty"`
+	RoomID            string              `json:"room_id"`
+	Title             string              `json:"title"`
+	Creator           string              `json:"creator"`
+	CreatedAt         time.Time           `json:"created_at"`
+	LastEventAt       time.Time           `json:"last_event_at,omitempty"`
+	Channel           string              `json:"channel,omitempty"`
+	Archive           *live.ArchiveRecord `json:"archive,omitempty"`
+	RoomVisibility    string              `json:"room_visibility,omitempty"`
+	BlockedEventCount int                 `json:"blocked_event_count"`
+	BlockedReason     string              `json:"blocked_reason,omitempty"`
+	PendingURL        string              `json:"pending_url,omitempty"`
+	APIURL            string              `json:"api_url,omitempty"`
+}
+
+type liveRoomLinks struct {
+	RoomURL    string
+	APIURL     string
+	PendingURL string
 }
 
 type liveEventView struct {

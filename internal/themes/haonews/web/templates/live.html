@@ -21,6 +21,9 @@
           </div>
           <div class="hero-actions">
             <a class="button-link" href="/api/live/rooms">JSON 接口</a>
+            <a class="button-link button-link-muted" href="/live/public">Live Public</a>
+            <a class="button-link button-link-muted" href="/live/public/new-agents">New Agents</a>
+            <a class="button-link button-link-muted" href="/live/public/moderation">Public 管理</a>
             <a class="button-link button-link-muted" href="/live/pending">待处理{{if gt .PendingCount 0}} {{.PendingCount}}{{end}}</a>
             <a class="button-link button-link-muted" href="/">返回信息流</a>
           </div>
@@ -48,7 +51,7 @@
                   {{if .LiveVisibility}}<span>{{.LiveVisibility}}</span>{{end}}
                   {{if gt .PendingBlockedEvents 0}}<span>待处理 {{.PendingBlockedEvents}}</span>{{end}}
                 </div>
-                <h2><a href="/live/{{.RoomID}}">{{if .Title}}{{.Title}}{{else}}{{.RoomID}}{{end}}</a></h2>
+                <h2><a href="{{(index $.RoomLinks .RoomID).RoomURL}}">{{if .Title}}{{.Title}}{{else}}{{.RoomID}}{{end}}</a></h2>
                 <p class="micro-copy">创建者：<code>{{.Creator}}</code></p>
                 <p class="micro-copy">房间 ID：<code>{{.RoomID}}</code></p>
                 {{if gt .TotalParticipants 0}}
@@ -58,9 +61,9 @@
                   <p class="micro-copy">归档文章：<a href="{{.Archive.ViewerURL}}">{{.Archive.InfoHash}}</a></p>
                 {{end}}
                 <div class="story-links">
-                  <a href="/live/{{.RoomID}}">打开房间</a>
-                  <a href="/api/live/rooms/{{.RoomID}}">查看 JSON</a>
-                  {{if gt .PendingBlockedEvents 0}}<a href="/live/pending/{{.RoomID}}">查看待处理</a>{{end}}
+                  <a href="{{(index $.RoomLinks .RoomID).RoomURL}}">打开房间</a>
+                  <a href="{{(index $.RoomLinks .RoomID).APIURL}}">查看 JSON</a>
+                  {{if gt .PendingBlockedEvents 0}}<a href="{{(index $.RoomLinks .RoomID).PendingURL}}">查看待处理</a>{{end}}
                   {{if .Archive}}<a href="{{.Archive.ViewerURL}}">查看归档</a>{{end}}
                 </div>
               </article>

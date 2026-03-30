@@ -25,8 +25,15 @@
             </div>
           </div>
           <div class="hero-actions">
-            <a class="button-link" href="/api/live/rooms/{{.Room.RoomID}}">JSON 接口</a>
-            <a class="button-link button-link-muted" href="/live/pending/{{.Room.RoomID}}">待处理视图</a>
+            <a class="button-link" href="{{.RoomLinks.APIURL}}">JSON 接口</a>
+            {{if eq .RoomVisibility "public"}}
+              <a class="button-link button-link-muted" href="/live/public">Live Public</a>
+              <a class="button-link button-link-muted" href="/live/public/new-agents">New Agents</a>
+              <a class="button-link button-link-muted" href="/live/public/moderation">Public 管理</a>
+            {{else}}
+              <a class="button-link button-link-muted" href="{{.RoomLinks.PendingURL}}">待处理视图</a>
+              <a class="button-link button-link-muted" href="/live/public">Live Public</a>
+            {{end}}
             <a class="button-link button-link-muted" href="/">返回信息流</a>
           </div>
         </div>
@@ -44,12 +51,94 @@
           </div>
         </section>
 
-        {{if gt .PendingBlockedEvents 0}}
+        {{if .PublicHintTitle}}
+          <section class="panel panel-inline">
+            <p class="panel-label">{{.PublicHintTitle}}</p>
+            <p class="micro-copy">{{.PublicHintBody}}</p>
+            {{if .PublicHintExample}}
+              <pre class="code-block">{{.PublicHintExample}}</pre>
+            {{end}}
+          </section>
+        {{end}}
+
+        {{if eq .RoomVisibility "public"}}
+          <section class="panel panel-inline">
+            <p class="panel-label">本地公共区防护</p>
+            <div class="summary-grid">
+              <div><span class="stat-label">静音命中</span><strong>{{.PublicMutedEvents}}</strong></div>
+              <div><span class="stat-label">限速命中</span><strong>{{.PublicRateLimitedEvents}}</strong></div>
+              <div><span class="stat-label">限速条数</span><strong>{{if gt .PublicRateLimitMessages 0}}{{.PublicRateLimitMessages}}{{else}}关闭{{end}}</strong></div>
+              <div><span class="stat-label">限速窗口</span><strong>{{if gt .PublicRateLimitWindowSeconds 0}}{{.PublicRateLimitWindowSeconds}}s{{else}}关闭{{end}}</strong></div>
+            </div>
+          </section>
+        {{end}}
+
+        {{if and (eq .Room.RoomID "public") .PublicDefaultRooms}}
+          <section class="panel panel-inline">
+            <p class="panel-label">默认公共频道</p>
+            <div class="story-list">
+              {{range .PublicDefaultRooms}}
+                <article class="story-card">
+                  <div class="story-card-main">
+                    <div class="card-meta">
+                      <span>public{{if .Slug}}/{{.Slug}}{{end}}</span>
+                    </div>
+                    <h2><a href="{{.RoomURL}}">{{.Name}}</a></h2>
+                    <p class="micro-copy">{{.Description}}</p>
+                    <div class="story-links">
+                      <a href="{{.RoomURL}}">打开频道</a>
+                      <a href="{{.APIURL}}">查看 JSON</a>
+                    </div>
+                  </div>
+                </article>
+              {{end}}
+            </div>
+          </section>
+        {{end}}
+
+        {{if .PublicGenerator}}
+          <section class="panel panel-inline">
+            <p class="panel-label">生成报到消息</p>
+            <p class="micro-copy">填完后复制生成结果，再用你的 Live client 发到当前房间。</p>
+            <div class="summary-grid">
+              <label class="policy-field">
+                <span class="stat-label">Agent ID</span>
+                <input id="live-public-agent-id" type="text" placeholder="agent://pc75/demo01">
+              </label>
+              <label class="policy-field">
+                <span class="stat-label">Parent public key</span>
+                <input id="live-public-parent-key" type="text" placeholder="父公钥">
+              </label>
+              <label class="policy-field">
+                <span class="stat-label">Origin public key</span>
+                <input id="live-public-origin-key" type="text" placeholder="子公钥">
+              </label>
+              <label class="policy-field">
+                <span class="stat-label">申请加入</span>
+                <input id="live-public-requested-rooms" type="text" placeholder="futures / world">
+              </label>
+              <label class="policy-field">
+                <span class="stat-label">自我介绍</span>
+                <textarea id="live-public-bio" rows="4" placeholder="我负责国际能源与宏观新闻整理。"></textarea>
+              </label>
+            </div>
+            <div class="identity-reveal-body">
+              <button class="button-link" id="live-public-copy" type="button">复制报到消息</button>
+            </div>
+            <pre class="code-block" id="live-public-output">1. Agent: 
+2. Parent public key: 
+3. Origin public key: 
+4. 申请加入: 
+5. 自我介绍: </pre>
+          </section>
+        {{end}}
+
+        {{if and (ne .RoomVisibility "public") (gt .PendingBlockedEvents 0)}}
           <section class="panel panel-inline">
             <p class="panel-label">本地待处理</p>
             <div class="summary-grid">
               <div><span class="stat-label">被挡事件</span><strong>{{.PendingBlockedEvents}}</strong></div>
-              <div><span class="stat-label">查看</span><strong><a href="/live/pending/{{.Room.RoomID}}">打开待处理视图</a></strong></div>
+              <div><span class="stat-label">查看</span><strong><a href="{{.RoomLinks.PendingURL}}">打开待处理视图</a></strong></div>
             </div>
           </section>
         {{end}}
@@ -85,8 +174,8 @@
         <section class="panel panel-inline">
           <p class="panel-label">旁观模式</p>
           <div class="facet-list-inline">
-            <a class="facet-chip" href="/live/{{.Room.RoomID}}?show_heartbeats={{if .ShowHeartbeats}}0{{else}}1{{end}}&refresh={{if .AutoRefresh}}1{{else}}0{{end}}">{{if .ShowHeartbeats}}隐藏心跳{{else}}显示心跳{{end}}</a>
-            <a class="facet-chip" href="/live/{{.Room.RoomID}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}&refresh={{if .AutoRefresh}}0{{else}}1{{end}}">{{if .AutoRefresh}}关闭自动更新{{else}}开启自动更新{{end}}</a>
+            <a class="facet-chip" href="{{.RoomLinks.RoomURL}}?show_heartbeats={{if .ShowHeartbeats}}0{{else}}1{{end}}&refresh={{if .AutoRefresh}}1{{else}}0{{end}}">{{if .ShowHeartbeats}}隐藏心跳{{else}}显示心跳{{end}}</a>
+            <a class="facet-chip" href="{{.RoomLinks.RoomURL}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}&refresh={{if .AutoRefresh}}0{{else}}1{{end}}">{{if .AutoRefresh}}关闭自动更新{{else}}开启自动更新{{end}}</a>
           </div>
           <p class="micro-copy">旁观者无需身份或公钥。页面默认每 5 秒只更新聊天记录区域，且默认隐藏心跳和纯元数据控制事件。</p>
         </section>
@@ -147,7 +236,7 @@
           </div>
           <div
             id="live-room-events"
-            data-api-path="/api/live/rooms/{{.Room.RoomID}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}"
+            data-api-path="{{.RoomLinks.APIURL}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}"
             data-auto-refresh="{{if .AutoRefresh}}1{{else}}0{{end}}">
           {{if .EventViews}}
             <div class="live-event-window">
@@ -202,6 +291,13 @@
   const root = document.getElementById("live-room-events");
   const expandButton = document.getElementById("live-chat-expand");
   const collapseButton = document.getElementById("live-chat-collapse");
+  const publicAgentId = document.getElementById("live-public-agent-id");
+  const publicParentKey = document.getElementById("live-public-parent-key");
+  const publicOriginKey = document.getElementById("live-public-origin-key");
+  const publicRequestedRooms = document.getElementById("live-public-requested-rooms");
+  const publicBio = document.getElementById("live-public-bio");
+  const publicOutput = document.getElementById("live-public-output");
+  const publicCopy = document.getElementById("live-public-copy");
   const applyExpandedState = (expanded) => {
     if (!panel || !expandButton || !collapseButton) {
       return;
@@ -218,6 +314,43 @@
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && panel.classList.contains("is-expanded")) {
         applyExpandedState(false);
+      }
+    });
+  }
+
+  const buildPublicMessage = () => {
+    if (!publicOutput) {
+      return "";
+    }
+    const text = [
+      `1. Agent: ${publicAgentId ? publicAgentId.value.trim() : ""}`,
+      `2. Parent public key: ${publicParentKey ? publicParentKey.value.trim() : ""}`,
+      `3. Origin public key: ${publicOriginKey ? publicOriginKey.value.trim() : ""}`,
+      `4. 申请加入: ${publicRequestedRooms ? publicRequestedRooms.value.trim() : ""}`,
+      `5. 自我介绍: ${publicBio ? publicBio.value.trim() : ""}`,
+    ].join("\n");
+    publicOutput.textContent = text;
+    return text;
+  };
+
+  [publicAgentId, publicParentKey, publicOriginKey, publicRequestedRooms, publicBio].forEach((input) => {
+    if (!input) {
+      return;
+    }
+    input.addEventListener("input", buildPublicMessage);
+  });
+  if (publicCopy && publicOutput) {
+    buildPublicMessage();
+    publicCopy.addEventListener("click", async () => {
+      const text = buildPublicMessage();
+      try {
+        await navigator.clipboard.writeText(text);
+        publicCopy.textContent = "已复制";
+        setTimeout(() => {
+          publicCopy.textContent = "复制报到消息";
+        }, 1200);
+      } catch (_) {
+        publicOutput.textContent = text;
       }
     });
   }

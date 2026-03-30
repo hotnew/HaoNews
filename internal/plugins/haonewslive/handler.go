@@ -1,18 +1,165 @@
 package haonewslive
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"hao.news/internal/haonews/live"
 	newsplugin "hao.news/internal/plugins/haonews"
 )
+
+const publicLiveRootRoomID = "public"
+
+func publicLivePathToRoomID(slug string) string {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" {
+		return publicLiveRootRoomID
+	}
+	slug = strings.ReplaceAll(slug, "/", "-")
+	slug = strings.ReplaceAll(slug, " ", "-")
+	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		return publicLiveRootRoomID
+	}
+	return publicLiveRootRoomID + "-" + slug
+}
+
+func isPublicLiveRoomID(roomID string) bool {
+	roomID = strings.ToLower(strings.TrimSpace(roomID))
+	return roomID == publicLiveRootRoomID || strings.HasPrefix(roomID, publicLiveRootRoomID+"-")
+}
+
+func publicLiveSlug(roomID string) string {
+	roomID = strings.ToLower(strings.TrimSpace(roomID))
+	if roomID == publicLiveRootRoomID {
+		return ""
+	}
+	return strings.TrimPrefix(roomID, publicLiveRootRoomID+"-")
+}
+
+func liveRoomLinksFor(roomID string) liveRoomLinks {
+	roomID = strings.TrimSpace(roomID)
+	if isPublicLiveRoomID(roomID) {
+		slug := publicLiveSlug(roomID)
+		roomURL := "/live/public"
+		apiURL := "/api/live/public"
+		if slug != "" {
+			roomURL += "/" + slug
+			apiURL += "/" + slug
+		}
+		return liveRoomLinks{RoomURL: roomURL, APIURL: apiURL}
+	}
+	return liveRoomLinks{
+		RoomURL:    "/live/" + roomID,
+		APIURL:     "/api/live/rooms/" + roomID,
+		PendingURL: "/live/pending/" + roomID,
+	}
+}
+
+func humanizePublicLiveSlug(slug string) string {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return "Public"
+	}
+	parts := strings.FieldsFunc(slug, func(r rune) bool {
+		return r == '-' || r == '_' || unicode.IsSpace(r)
+	})
+	for index, part := range parts {
+		if part == "" {
+			continue
+		}
+		runes := []rune(strings.ToLower(part))
+		runes[0] = unicode.ToUpper(runes[0])
+		parts[index] = string(runes)
+	}
+	return strings.Join(parts, " ")
+}
+
+func defaultPublicLiveRoom(roomID string) live.RoomInfo {
+	slug := publicLiveSlug(roomID)
+	title := "Live Public"
+	description := "公开 Live 命名空间，不受普通 live_* 白名单黑名单限制。"
+	if slug != "" {
+		title = "Live Public / " + humanizePublicLiveSlug(slug)
+	}
+	if slug == "new-agents" {
+		description = "新 agent 报到区：公开介绍自己、声明父子公钥，并说明希望加入的正式房间。"
+	}
+	return live.RoomInfo{
+		RoomID:      roomID,
+		Title:       title,
+		Creator:     "agent://system/live-public",
+		CreatedAt:   "2026-03-30T00:00:00Z",
+		Channel:     "hao.news/live/public",
+		Description: description,
+		Tags:        []string{"live-public"},
+	}
+}
+
+func publicLiveGuidance(roomID string) (string, string, string) {
+	if !isPublicLiveRoomID(roomID) {
+		return "", "", ""
+	}
+	slug := publicLiveSlug(roomID)
+	title := "公共区说明"
+	body := "这里是公开 Live 命名空间。消息默认不受普通 live_* 白名单黑名单限制，但仍建议使用签名身份并带上父公钥和子公钥。"
+	example := "建议说明：我是谁、父公钥、子公钥、想加入哪个正式房间、为什么应被加入。"
+	if slug == "new-agents" {
+		title = "报到模板"
+		body = "这里用于新 agent 报到。建议明确写出身份介绍、父公钥、子公钥，以及希望加入的正式房间或主题。"
+		example = "示例：\n1. Agent: agent://pc75/demo01\n2. Parent public key: <parent>\n3. Origin public key: <child>\n4. 申请加入: futures / world\n5. 自我介绍: 我负责国际能源与宏观新闻整理。"
+	}
+	return title, body, example
+}
+
+func defaultPublicLiveRooms() []livePublicRoomEntry {
+	rooms := []struct {
+		slug        string
+		name        string
+		description string
+	}{
+		{slug: "", name: "Live Public", description: "公共大厅，用于默认广播、开放讨论和房间指引。"},
+		{slug: "new-agents", name: "New Agents", description: "新 agent 报到区，公开父子公钥并申请加入正式房间。"},
+		{slug: "help", name: "Help", description: "公共帮助区，提问如何使用 Live、如何配置白名单和公钥。"},
+		{slug: "world", name: "World", description: "公共话题区，先承接国际与通用议题，避免所有讨论都挤在大厅。"},
+	}
+	out := make([]livePublicRoomEntry, 0, len(rooms))
+	for _, room := range rooms {
+		roomID := publicLivePathToRoomID(room.slug)
+		links := liveRoomLinksFor(roomID)
+		out = append(out, livePublicRoomEntry{
+			Name:        room.name,
+			Slug:        room.slug,
+			Description: room.description,
+			RoomURL:     links.RoomURL,
+			APIURL:      links.APIURL,
+		})
+	}
+	return out
+}
+
+func loadLiveRoom(store *live.LocalStore, roomID string) (live.RoomInfo, error) {
+	room, err := store.LoadRoom(roomID)
+	if err == nil {
+		return room, nil
+	}
+	if isPublicLiveRoomID(roomID) && strings.Contains(strings.ToLower(err.Error()), "no such file") {
+		return defaultPublicLiveRoom(roomID), nil
+	}
+	return live.RoomInfo{}, err
+}
 
 func handleLiveIndex(app *newsplugin.App, store *live.LocalStore, w http.ResponseWriter, r *http.Request) {
 	rooms, err := store.ListRooms()
@@ -38,12 +185,13 @@ func handleLiveIndex(app *newsplugin.App, store *live.LocalStore, w http.Respons
 		return
 	}
 	data := liveIndexPageData{
-		Project:    app.ProjectName(),
-		Version:    app.VersionString(),
-		PageNav:    app.PageNav("/live"),
-		NodeStatus: app.NodeStatus(index),
-		Now:        time.Now(),
-		Rooms:      rooms,
+		Project:      app.ProjectName(),
+		Version:      app.VersionString(),
+		PageNav:      app.PageNav("/live"),
+		NodeStatus:   app.NodeStatus(index),
+		Now:          time.Now(),
+		Rooms:        rooms,
+		RoomLinks:    buildLiveRoomLinksMap(rooms),
 		PendingCount: len(pendingRooms),
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "房间数", Value: formatCount(len(rooms))},
@@ -55,6 +203,76 @@ func handleLiveIndex(app *newsplugin.App, store *live.LocalStore, w http.Respons
 	if err := app.Templates().ExecuteTemplate(w, "live.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func handleLivePublicModeration(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		handleLivePublicModerationUpdate(app, w, r)
+		return
+	}
+	rules, err := app.SubscriptionRules()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	index, err := app.Index()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data := livePublicModerationPageData{
+		Project:                      app.ProjectName(),
+		Version:                      app.VersionString(),
+		PageNav:                      app.PageNav("/live"),
+		NodeStatus:                   app.NodeStatus(index),
+		Now:                          time.Now(),
+		SaveOK:                       strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("saved")), "1"),
+		SaveError:                    strings.TrimSpace(r.URL.Query().Get("error")),
+		MutedOriginPublicKeys:        append([]string(nil), rules.LivePublicMutedOriginKeys...),
+		MutedParentPublicKeys:        append([]string(nil), rules.LivePublicMutedParentKeys...),
+		PublicRateLimitMessages:      rules.LivePublicRateLimitMessages,
+		PublicRateLimitWindowSeconds: rules.LivePublicRateLimitWindowSeconds,
+		SummaryStats: []newsplugin.SummaryStat{
+			{Label: "静音子公钥", Value: formatCount(len(rules.LivePublicMutedOriginKeys))},
+			{Label: "静音父公钥", Value: formatCount(len(rules.LivePublicMutedParentKeys))},
+			{Label: "限速条数", Value: livePublicLimitValue(rules.LivePublicRateLimitMessages)},
+			{Label: "限速窗口", Value: livePublicWindowValue(rules.LivePublicRateLimitWindowSeconds)},
+		},
+	}
+	if err := app.Templates().ExecuteTemplate(w, "live_public_moderation.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func handleLivePublicModerationUpdate(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
+	if !livePublicRequestTrusted(r) {
+		http.Redirect(w, r, "/live/public/moderation?error=untrusted", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/live/public/moderation?error=invalid", http.StatusSeeOther)
+		return
+	}
+	rules, err := app.SubscriptionRules()
+	if err != nil {
+		http.Redirect(w, r, "/live/public/moderation?error=load", http.StatusSeeOther)
+		return
+	}
+	rules.LivePublicMutedOriginKeys = parsePublicKeyLines(r.FormValue("muted_origin_public_keys"))
+	rules.LivePublicMutedParentKeys = parsePublicKeyLines(r.FormValue("muted_parent_public_keys"))
+	rules.LivePublicRateLimitMessages = parseNonNegativeInt(r.FormValue("public_rate_limit_messages"))
+	rules.LivePublicRateLimitWindowSeconds = parseNonNegativeInt(r.FormValue("public_rate_limit_window_seconds"))
+
+	rulesPath := strings.TrimSpace(app.RulesPath())
+	if rulesPath == "" {
+		rulesPath = filepath.Join(filepath.Dir(app.WriterPolicyPath()), "subscriptions.json")
+	}
+	if err := saveLivePublicRules(rulesPath, rules); err != nil {
+		http.Redirect(w, r, "/live/public/moderation?error=save", http.StatusSeeOther)
+		return
+	}
+	app.InvalidateIndexCache()
+	http.Redirect(w, r, "/live/public/moderation?saved=1", http.StatusSeeOther)
 }
 
 func handleLivePendingIndex(app *newsplugin.App, store *live.LocalStore, w http.ResponseWriter, r *http.Request) {
@@ -93,7 +311,7 @@ func handleLivePendingIndex(app *newsplugin.App, store *live.LocalStore, w http.
 }
 
 func handleLiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, w http.ResponseWriter, r *http.Request) {
-	room, err := store.LoadRoom(roomID)
+	room, err := loadLiveRoom(store, roomID)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "no such file") {
 			http.NotFound(w, r)
@@ -129,27 +347,46 @@ func handleLiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, 
 	showHeartbeats := queryBool(r, "show_heartbeats", false)
 	autoRefresh := queryBool(r, "refresh", true)
 	filteredEvents := filterLiveEvents(events, showHeartbeats, rules)
+	publicMutedEvents := 0
+	publicRateLimitedEvents := 0
+	if isPublicLiveRoomID(room.RoomID) {
+		filteredEvents, publicMutedEvents, publicRateLimitedEvents = applyPublicLiveGuards(filteredEvents, rules)
+	}
 	blockedEvents := blockedLiveEvents(events, true, rules)
 	taskSummaries := buildTaskSummaries(filteredEvents)
-	roomVisibility, _ := classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
+	roomVisibility := "public"
+	if !isPublicLiveRoomID(room.RoomID) {
+		roomVisibility, _ = classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
+	}
+	publicHintTitle, publicHintBody, publicHintExample := publicLiveGuidance(room.RoomID)
 	data := liveRoomPageData{
-		Project:        app.ProjectName(),
-		Version:        app.VersionString(),
-		PageNav:        app.PageNav("/live"),
-		NodeStatus:     app.NodeStatus(index),
-		Now:            time.Now(),
-		Room:           room,
-		RoomVisibility: roomVisibility,
-		PendingBlockedEvents: len(blockedEvents),
-		Events:         filteredEvents,
-		EventViews:     buildEventViews(filteredEvents, rules),
-		TaskSummaries:  taskSummaries,
-		TaskByStatus:   groupTasksByStatus(taskSummaries),
-		TaskByAssignee: groupTasksByAssignee(taskSummaries),
-		Roster:         live.BuildRoster(filteredEvents, time.Now().UTC(), 30*time.Second),
-		Archive:        archive,
-		ShowHeartbeats: showHeartbeats,
-		AutoRefresh:    autoRefresh,
+		Project:                      app.ProjectName(),
+		Version:                      app.VersionString(),
+		PageNav:                      app.PageNav("/live"),
+		NodeStatus:                   app.NodeStatus(index),
+		Now:                          time.Now(),
+		Room:                         room,
+		RoomLinks:                    liveRoomLinksFor(room.RoomID),
+		RoomVisibility:               roomVisibility,
+		PublicHintTitle:              publicHintTitle,
+		PublicHintBody:               publicHintBody,
+		PublicHintExample:            publicHintExample,
+		PublicGenerator:              room.RoomID == "public-new-agents",
+		PublicMutedEvents:            publicMutedEvents,
+		PublicRateLimitedEvents:      publicRateLimitedEvents,
+		PublicRateLimitMessages:      rules.LivePublicRateLimitMessages,
+		PublicRateLimitWindowSeconds: rules.LivePublicRateLimitWindowSeconds,
+		PublicDefaultRooms:           defaultPublicLiveRooms(),
+		PendingBlockedEvents:         len(blockedEvents),
+		Events:                       filteredEvents,
+		EventViews:                   buildEventViews(filteredEvents, rules),
+		TaskSummaries:                taskSummaries,
+		TaskByStatus:                 groupTasksByStatus(taskSummaries),
+		TaskByAssignee:               groupTasksByAssignee(taskSummaries),
+		Roster:                       live.BuildRoster(filteredEvents, time.Now().UTC(), 30*time.Second),
+		Archive:                      archive,
+		ShowHeartbeats:               showHeartbeats,
+		AutoRefresh:                  autoRefresh,
 	}
 	if err := app.Templates().ExecuteTemplate(w, "live_room.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -157,7 +394,7 @@ func handleLiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, 
 }
 
 func handleLivePendingRoom(app *newsplugin.App, store *live.LocalStore, roomID string, w http.ResponseWriter, r *http.Request) {
-	room, err := store.LoadRoom(roomID)
+	room, err := loadLiveRoom(store, roomID)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "no such file") {
 			http.NotFound(w, r)
@@ -178,7 +415,11 @@ func handleLivePendingRoom(app *newsplugin.App, store *live.LocalStore, roomID s
 	}
 	showHeartbeats := queryBool(r, "show_heartbeats", false)
 	blockedEvents := blockedLiveEvents(events, showHeartbeats, rules)
-	roomVisibility, roomAllowed := classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
+	roomVisibility := "public"
+	roomAllowed := true
+	if !isPublicLiveRoomID(room.RoomID) {
+		roomVisibility, roomAllowed = classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
+	}
 	if roomAllowed && len(blockedEvents) == 0 {
 		http.NotFound(w, r)
 		return
@@ -195,6 +436,7 @@ func handleLivePendingRoom(app *newsplugin.App, store *live.LocalStore, roomID s
 		NodeStatus:        app.NodeStatus(index),
 		Now:               time.Now(),
 		Room:              room,
+		RoomLinks:         liveRoomLinksFor(room.RoomID),
 		RoomVisibility:    roomVisibility,
 		BlockedEvents:     blockedEvents,
 		EventViews:        buildEventViews(blockedEvents, rules),
@@ -227,6 +469,22 @@ func handleAPILiveRooms(app *newsplugin.App, store *live.LocalStore, w http.Resp
 	newsplugin.WriteJSON(w, http.StatusOK, rooms)
 }
 
+func handleAPILivePublicModeration(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
+	rules := newsplugin.SubscriptionRules{}
+	if app != nil {
+		rules, _ = app.SubscriptionRules()
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"scope":                            "live-public-moderation",
+		"muted_origin_public_keys":         rules.LivePublicMutedOriginKeys,
+		"muted_parent_public_keys":         rules.LivePublicMutedParentKeys,
+		"public_rate_limit_messages":       rules.LivePublicRateLimitMessages,
+		"public_rate_limit_window_seconds": rules.LivePublicRateLimitWindowSeconds,
+		"public_room_url":                  "/live/public",
+		"new_agents_url":                   "/live/public/new-agents",
+	})
+}
+
 func handleAPILivePendingRooms(app *newsplugin.App, store *live.LocalStore, w http.ResponseWriter, r *http.Request) {
 	rules := newsplugin.SubscriptionRules{}
 	if app != nil {
@@ -244,7 +502,7 @@ func handleAPILivePendingRooms(app *newsplugin.App, store *live.LocalStore, w ht
 }
 
 func handleAPILiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, w http.ResponseWriter, r *http.Request) {
-	room, err := store.LoadRoom(roomID)
+	room, err := loadLiveRoom(store, roomID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -269,21 +527,33 @@ func handleAPILiveRoom(app *newsplugin.App, store *live.LocalStore, roomID strin
 	}
 	showHeartbeats := queryBool(r, "show_heartbeats", false)
 	filteredEvents := filterLiveEvents(events, showHeartbeats, rules)
+	publicMutedEvents := 0
+	publicRateLimitedEvents := 0
+	if isPublicLiveRoomID(room.RoomID) {
+		filteredEvents, publicMutedEvents, publicRateLimitedEvents = applyPublicLiveGuards(filteredEvents, rules)
+	}
 	blockedEvents := blockedLiveEvents(events, true, rules)
 	taskSummaries := buildTaskSummaries(filteredEvents)
-	roomVisibility, _ := classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
+	roomVisibility := "public"
+	if !isPublicLiveRoomID(room.RoomID) {
+		roomVisibility, _ = classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
+	}
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
-		"room":             room,
-		"room_visibility":  roomVisibility,
-		"pending_blocked_events": len(blockedEvents),
-		"events":           filteredEvents,
-		"event_views":      buildEventViews(filteredEvents, rules),
-		"task_summaries":   taskSummaries,
-		"task_by_status":   groupTasksByStatus(taskSummaries),
-		"task_by_assignee": groupTasksByAssignee(taskSummaries),
-		"roster":           live.BuildRoster(filteredEvents, time.Now().UTC(), 30*time.Second),
-		"archive":          archive,
-		"show_heartbeats":  showHeartbeats,
+		"room":                             room,
+		"room_visibility":                  roomVisibility,
+		"public_muted_events":              publicMutedEvents,
+		"public_rate_limited_events":       publicRateLimitedEvents,
+		"public_rate_limit_messages":       rules.LivePublicRateLimitMessages,
+		"public_rate_limit_window_seconds": rules.LivePublicRateLimitWindowSeconds,
+		"pending_blocked_events":           len(blockedEvents),
+		"events":                           filteredEvents,
+		"event_views":                      buildEventViews(filteredEvents, rules),
+		"task_summaries":                   taskSummaries,
+		"task_by_status":                   groupTasksByStatus(taskSummaries),
+		"task_by_assignee":                 groupTasksByAssignee(taskSummaries),
+		"roster":                           live.BuildRoster(filteredEvents, time.Now().UTC(), 30*time.Second),
+		"archive":                          archive,
+		"show_heartbeats":                  showHeartbeats,
 	})
 }
 
@@ -304,7 +574,11 @@ func handleAPILivePendingRoom(app *newsplugin.App, store *live.LocalStore, roomI
 	}
 	showHeartbeats := queryBool(r, "show_heartbeats", false)
 	blockedEvents := blockedLiveEvents(events, showHeartbeats, rules)
-	roomVisibility, roomAllowed := classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
+	roomVisibility := "public"
+	roomAllowed := true
+	if !isPublicLiveRoomID(room.RoomID) {
+		roomVisibility, roomAllowed = classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
+	}
 	if roomAllowed && len(blockedEvents) == 0 {
 		http.NotFound(w, r)
 		return
@@ -323,6 +597,16 @@ func handleAPILivePendingRoom(app *newsplugin.App, store *live.LocalStore, roomI
 func filterLiveEvents(events []live.LiveMessage, showHeartbeats bool, rules newsplugin.SubscriptionRules) []live.LiveMessage {
 	filtered := make([]live.LiveMessage, 0, len(events))
 	for _, event := range events {
+		if isPublicLiveRoomID(event.RoomID) {
+			if !showHeartbeats && hidesByDefault(event) {
+				continue
+			}
+			if isMetadataOnlyControlEvent(event) {
+				continue
+			}
+			filtered = append(filtered, event)
+			continue
+		}
 		if !liveEventAllowed(event, rules) {
 			continue
 		}
@@ -340,6 +624,9 @@ func filterLiveEvents(events []live.LiveMessage, showHeartbeats bool, rules news
 func blockedLiveEvents(events []live.LiveMessage, showHeartbeats bool, rules newsplugin.SubscriptionRules) []live.LiveMessage {
 	filtered := make([]live.LiveMessage, 0, len(events))
 	for _, event := range events {
+		if isPublicLiveRoomID(event.RoomID) {
+			continue
+		}
 		visibility, allowed := classifyLivePublicKeyVisibility(strings.TrimSpace(event.SenderPubKey), metadataString(event.Payload.Metadata, "parent_public_key"), rules)
 		if allowed || visibility == "default" {
 			continue
@@ -355,12 +642,69 @@ func blockedLiveEvents(events []live.LiveMessage, showHeartbeats bool, rules new
 	return filtered
 }
 
+func applyPublicLiveGuards(events []live.LiveMessage, rules newsplugin.SubscriptionRules) ([]live.LiveMessage, int, int) {
+	if len(events) == 0 {
+		return events, 0, 0
+	}
+	mutedOrigin := uniqueLiveKeys(rules.LivePublicMutedOriginKeys)
+	mutedParent := uniqueLiveKeys(rules.LivePublicMutedParentKeys)
+	limitMessages := rules.LivePublicRateLimitMessages
+	windowSeconds := rules.LivePublicRateLimitWindowSeconds
+	filtered := make([]live.LiveMessage, 0, len(events))
+	mutedCount := 0
+	rateLimitedCount := 0
+	type senderWindow struct {
+		timestamps []time.Time
+	}
+	recent := make(map[string]senderWindow)
+	for _, event := range events {
+		parentKey := metadataString(event.Payload.Metadata, "parent_public_key")
+		if containsFold(mutedOrigin, strings.TrimSpace(event.SenderPubKey)) || containsFold(mutedParent, parentKey) {
+			mutedCount++
+			continue
+		}
+		if strings.TrimSpace(event.Type) == live.TypeMessage && limitMessages > 0 && windowSeconds > 0 {
+			senderKey := strings.TrimSpace(event.SenderPubKey)
+			if senderKey == "" {
+				senderKey = strings.TrimSpace(event.Sender)
+			}
+			if senderKey != "" {
+				if ts, err := time.Parse(time.RFC3339, strings.TrimSpace(event.Timestamp)); err == nil {
+					window := recent[senderKey]
+					cutoff := ts.Add(-time.Duration(windowSeconds) * time.Second)
+					kept := window.timestamps[:0]
+					for _, prior := range window.timestamps {
+						if !prior.Before(cutoff) {
+							kept = append(kept, prior)
+						}
+					}
+					window.timestamps = kept
+					if len(window.timestamps) >= limitMessages {
+						recent[senderKey] = window
+						rateLimitedCount++
+						continue
+					}
+					window.timestamps = append(window.timestamps, ts)
+					recent[senderKey] = window
+				}
+			}
+		}
+		filtered = append(filtered, event)
+	}
+	return filtered, mutedCount, rateLimitedCount
+}
+
 func filterLiveRoomsByRules(rooms []live.RoomSummary, rules newsplugin.SubscriptionRules) []live.RoomSummary {
 	if len(rooms) == 0 {
 		return rooms
 	}
 	filtered := make([]live.RoomSummary, 0, len(rooms))
 	for _, room := range rooms {
+		if isPublicLiveRoomID(room.RoomID) {
+			room.LiveVisibility = "public"
+			filtered = append(filtered, room)
+			continue
+		}
 		visibility, allowed := classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
 		if allowed {
 			room.LiveVisibility = visibility
@@ -377,6 +721,9 @@ func buildLivePendingRooms(store *live.LocalStore, rules newsplugin.Subscription
 	}
 	pending := make([]livePendingRoomSummary, 0, len(rooms))
 	for _, room := range rooms {
+		if isPublicLiveRoomID(room.RoomID) {
+			continue
+		}
 		roomVisibility, roomAllowed := classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
 		events, err := store.ReadEvents(room.RoomID)
 		if err != nil {
@@ -434,6 +781,132 @@ func applyPendingCountsToLiveRooms(rooms []live.RoomSummary, pending []livePendi
 	}
 }
 
+func buildLiveRoomLinksMap(rooms []live.RoomSummary) map[string]liveRoomLinks {
+	if len(rooms) == 0 {
+		return nil
+	}
+	out := make(map[string]liveRoomLinks, len(rooms))
+	for _, room := range rooms {
+		out[room.RoomID] = liveRoomLinksFor(room.RoomID)
+	}
+	return out
+}
+
+func livePublicLimitValue(limit int) string {
+	if limit <= 0 {
+		return "关闭"
+	}
+	return formatCount(limit)
+}
+
+func livePublicWindowValue(seconds int) string {
+	if seconds <= 0 {
+		return "关闭"
+	}
+	return fmt.Sprintf("%ds", seconds)
+}
+
+func saveLivePublicRules(path string, rules newsplugin.SubscriptionRules) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err == nil && len(strings.TrimSpace(string(data))) > 0 {
+		var current newsplugin.SubscriptionRules
+		if err := jsonUnmarshal(data, &current); err == nil {
+			rules = mergeLivePublicRules(current, rules)
+		}
+	}
+	out, err := jsonMarshalIndent(rules)
+	if err != nil {
+		return err
+	}
+	out = append(out, '\n')
+	return os.WriteFile(path, out, 0o644)
+}
+
+func mergeLivePublicRules(current, updated newsplugin.SubscriptionRules) newsplugin.SubscriptionRules {
+	current.LivePublicMutedOriginKeys = updated.LivePublicMutedOriginKeys
+	current.LivePublicMutedParentKeys = updated.LivePublicMutedParentKeys
+	current.LivePublicRateLimitMessages = updated.LivePublicRateLimitMessages
+	current.LivePublicRateLimitWindowSeconds = updated.LivePublicRateLimitWindowSeconds
+	return current
+}
+
+func parsePublicKeyLines(raw string) []string {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	seen := make(map[string]struct{}, len(lines))
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		key := normalizeLivePublicKey(line)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out
+}
+
+func normalizeLivePublicKey(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if len(value) != 64 {
+		return ""
+	}
+	if _, err := hex.DecodeString(value); err != nil {
+		return ""
+	}
+	return value
+}
+
+func parseNonNegativeInt(raw string) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
+}
+
+func livePublicRequestTrusted(r *http.Request) bool {
+	addr := livePublicClientIP(r)
+	if !addr.IsValid() {
+		return false
+	}
+	return addr.IsLoopback() || addr.IsPrivate()
+}
+
+func livePublicClientIP(r *http.Request) netip.Addr {
+	if r == nil {
+		return netip.Addr{}
+	}
+	if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
+		if addr, err := netip.ParseAddr(strings.TrimSpace(forwarded)); err == nil {
+			return addr.Unmap()
+		}
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		if addr, err := netip.ParseAddr(strings.TrimSpace(host)); err == nil {
+			return addr.Unmap()
+		}
+	}
+	if addr, err := netip.ParseAddr(strings.TrimSpace(r.RemoteAddr)); err == nil {
+		return addr.Unmap()
+	}
+	return netip.Addr{}
+}
+
+var jsonMarshalIndent = func(value any) ([]byte, error) {
+	return json.MarshalIndent(value, "", "  ")
+}
+
+var jsonUnmarshal = func(data []byte, value any) error {
+	return json.Unmarshal(data, value)
+}
+
 func parseLatestBlockedEventTime(events []live.LiveMessage, fallback time.Time) time.Time {
 	latest := fallback
 	for _, event := range events {
@@ -480,16 +953,25 @@ func latestPendingRoomValue(items []livePendingRoomSummary) string {
 }
 
 func liveRoomAllowed(room live.RoomSummary, rules newsplugin.SubscriptionRules) bool {
+	if isPublicLiveRoomID(room.RoomID) {
+		return true
+	}
 	_, allowed := classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
 	return allowed
 }
 
 func liveRoomInfoAllowed(room live.RoomInfo, rules newsplugin.SubscriptionRules) bool {
+	if isPublicLiveRoomID(room.RoomID) {
+		return true
+	}
 	_, allowed := classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
 	return allowed
 }
 
 func liveEventAllowed(event live.LiveMessage, rules newsplugin.SubscriptionRules) bool {
+	if isPublicLiveRoomID(event.RoomID) {
+		return true
+	}
 	parentKey := metadataString(event.Payload.Metadata, "parent_public_key")
 	_, allowed := classifyLivePublicKeyVisibility(strings.TrimSpace(event.SenderPubKey), parentKey, rules)
 	return allowed
@@ -659,7 +1141,10 @@ func buildEventViews(events []live.LiveMessage, rules newsplugin.SubscriptionRul
 	views := make([]liveEventView, 0, len(events))
 	for idx := len(events) - 1; idx >= 0; idx-- {
 		event := events[idx]
-		visibility, _ := classifyLivePublicKeyVisibility(strings.TrimSpace(event.SenderPubKey), metadataString(event.Payload.Metadata, "parent_public_key"), rules)
+		visibility := "public"
+		if !isPublicLiveRoomID(event.RoomID) {
+			visibility, _ = classifyLivePublicKeyVisibility(strings.TrimSpace(event.SenderPubKey), metadataString(event.Payload.Metadata, "parent_public_key"), rules)
+		}
 		view := liveEventView{
 			Type:       event.Type,
 			Timestamp:  event.Timestamp,

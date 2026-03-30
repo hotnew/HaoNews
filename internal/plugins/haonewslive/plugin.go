@@ -105,6 +105,29 @@ func newHandler(app *newsplugin.App, store *live.LocalStore, staticFS fs.FS) htt
 		}
 		handleLiveIndex(app, store, w, r)
 	})
+	mux.HandleFunc("/live/public", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/live/public" {
+			http.NotFound(w, r)
+			return
+		}
+		handleLiveRoom(app, store, publicLiveRootRoomID, w, r)
+	})
+	mux.HandleFunc("/live/public/moderation", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/live/public/moderation" {
+			http.NotFound(w, r)
+			return
+		}
+		handleLivePublicModeration(app, w, r)
+	})
+	mux.HandleFunc("/live/public/", func(w http.ResponseWriter, r *http.Request) {
+		slug := strings.TrimSpace(newsplugin.PathValue("/live/public/", r.URL.Path))
+		roomID := publicLivePathToRoomID(slug)
+		if roomID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		handleLiveRoom(app, store, roomID, w, r)
+	})
 	mux.HandleFunc("/live/pending", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/live/pending" {
 			http.NotFound(w, r)
@@ -134,6 +157,29 @@ func newHandler(app *newsplugin.App, store *live.LocalStore, staticFS fs.FS) htt
 			return
 		}
 		handleAPILiveRooms(app, store, w, r)
+	})
+	mux.HandleFunc("/api/live/public", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/live/public" {
+			http.NotFound(w, r)
+			return
+		}
+		handleAPILiveRoom(app, store, publicLiveRootRoomID, w, r)
+	})
+	mux.HandleFunc("/api/live/public/moderation", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/live/public/moderation" {
+			http.NotFound(w, r)
+			return
+		}
+		handleAPILivePublicModeration(app, w, r)
+	})
+	mux.HandleFunc("/api/live/public/", func(w http.ResponseWriter, r *http.Request) {
+		slug := strings.TrimSpace(newsplugin.PathValue("/api/live/public/", r.URL.Path))
+		roomID := publicLivePathToRoomID(slug)
+		if roomID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		handleAPILiveRoom(app, store, roomID, w, r)
 	})
 	mux.HandleFunc("/api/live/pending", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/live/pending" {

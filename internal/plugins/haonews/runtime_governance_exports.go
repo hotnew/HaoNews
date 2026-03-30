@@ -10,6 +10,10 @@ func (a *App) WriterPolicyPath() string {
 	return a.writerPath
 }
 
+func (a *App) RulesPath() string {
+	return a.rulesPath
+}
+
 func (a *App) GovernanceSummary() []SummaryStat {
 	return a.governanceSummary()
 }

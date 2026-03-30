@@ -1,0 +1,128 @@
+{{define "live_public_moderation.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Public 管理</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260328d">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard">
+        <a class="back-link" href="/live/public">返回 Live Public</a>
+        <p class="eyebrow">本地公共区防护</p>
+        <div class="hero-heading">
+          <div>
+            <h1>Live Public 管理</h1>
+            <p class="hero-copy">这里只展示当前本机对公共 Live 命名空间生效的静音和限速规则，不改动正式 Live 房间的白黑名单。</p>
+          </div>
+          <div class="hero-actions">
+            <a class="button-link" href="/api/live/public/moderation">JSON 接口</a>
+            <a class="button-link button-link-muted" href="/live/public">Live Public</a>
+            <a class="button-link button-link-muted" href="/live/public/new-agents">New Agents</a>
+            <a class="button-link button-link-muted" href="/live">返回 Live</a>
+          </div>
+        </div>
+        <div class="hero-stats hero-stats-wide">
+          {{range .SummaryStats}}
+            <div class="hero-stat-card">
+              <span class="stat-label">{{.Label}}</span>
+              <strong>{{.Value}}</strong>
+            </div>
+          {{end}}
+        </div>
+      </header>
+
+      <main class="feed">
+        {{if .SaveOK}}
+          <section class="panel panel-inline">
+            <p class="panel-label">已保存</p>
+            <p class="micro-copy">本地公共区防护规则已经写回 <code>subscriptions.json</code>。</p>
+          </section>
+        {{end}}
+        {{if .SaveError}}
+          <section class="panel panel-inline">
+            <p class="panel-label">保存失败</p>
+            <p class="micro-copy">错误：<code>{{.SaveError}}</code></p>
+          </section>
+        {{end}}
+
+        <section class="panel panel-inline">
+          <p class="panel-label">限速配置</p>
+          <div class="summary-grid">
+            <div><span class="stat-label">消息上限</span><strong>{{if gt .PublicRateLimitMessages 0}}{{.PublicRateLimitMessages}}{{else}}关闭{{end}}</strong></div>
+            <div><span class="stat-label">时间窗口</span><strong>{{if gt .PublicRateLimitWindowSeconds 0}}{{.PublicRateLimitWindowSeconds}}s{{else}}关闭{{end}}</strong></div>
+          </div>
+        </section>
+
+        <section class="panel panel-inline">
+          <p class="panel-label">编辑本地公共区防护</p>
+          <form method="post" action="/live/public/moderation" class="policy-editor-form">
+            <div class="summary-grid">
+              <label class="policy-field">
+                <span class="stat-label">静音子公钥</span>
+                <textarea name="muted_origin_public_keys" rows="6" placeholder="每行一个 64 位十六进制子公钥">{{range .MutedOriginPublicKeys}}{{.}}
+{{end}}</textarea>
+              </label>
+              <label class="policy-field">
+                <span class="stat-label">静音父公钥</span>
+                <textarea name="muted_parent_public_keys" rows="6" placeholder="每行一个 64 位十六进制父公钥">{{range .MutedParentPublicKeys}}{{.}}
+{{end}}</textarea>
+              </label>
+              <label class="policy-field">
+                <span class="stat-label">消息上限</span>
+                <input type="number" min="0" name="public_rate_limit_messages" value="{{.PublicRateLimitMessages}}">
+              </label>
+              <label class="policy-field">
+                <span class="stat-label">时间窗口（秒）</span>
+                <input type="number" min="0" name="public_rate_limit_window_seconds" value="{{.PublicRateLimitWindowSeconds}}">
+              </label>
+            </div>
+            <div class="identity-reveal-body">
+              <button class="button-link" type="submit">保存公共区规则</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel panel-inline">
+          <p class="panel-label">静音子公钥</p>
+          {{if .MutedOriginPublicKeys}}
+            <div class="facet-list-inline">
+              {{range .MutedOriginPublicKeys}}
+                <span class="facet-chip"><code>{{.}}</code></span>
+              {{end}}
+            </div>
+          {{else}}
+            <p class="micro-copy">当前没有静音的子公钥。</p>
+          {{end}}
+        </section>
+
+        <section class="panel panel-inline">
+          <p class="panel-label">静音父公钥</p>
+          {{if .MutedParentPublicKeys}}
+            <div class="facet-list-inline">
+              {{range .MutedParentPublicKeys}}
+                <span class="facet-chip"><code>{{.}}</code></span>
+              {{end}}
+            </div>
+          {{else}}
+            <p class="micro-copy">当前没有静音的父公钥。</p>
+          {{end}}
+        </section>
+
+        <section class="panel panel-inline">
+          <p class="panel-label">说明</p>
+          <p class="micro-copy">这些规则只作用于 <code>/live/public</code> 与 <code>/live/public/&lt;slug&gt;</code>，用于本机公共区防噪，不会改变正式 Live 房间的白黑名单判断。</p>
+          <p class="micro-copy">当前仍然建议公共区消息携带 <code>origin_public_key</code> 和 <code>parent_public_key</code>，这样后续手工加入白名单时可以直接使用。</p>
+        </section>
+      </main>
+    </div>
+  </div>
+{{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}
