@@ -363,30 +363,83 @@ body.post-page-body.sidebar-collapsed .page-shell {
 }
 
 .live-room-hero {
-  padding: 16px 18px;
-  gap: 12px;
-  margin-bottom: 16px;
+  padding: 12px 16px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .live-room-hero .eyebrow {
-  font-size: 14px;
+  font-size: 13px;
+}
+
+.live-room-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.live-room-topline .eyebrow,
+.live-room-topline .back-link {
+  margin: 0;
 }
 
 .live-room-hero .hero-heading {
-  align-items: center;
-  gap: 16px;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .live-room-hero h1 {
-  font-size: clamp(24px, 3vw, 36px);
+  font-size: clamp(18px, 2.4vw, 28px);
+  line-height: 1.05;
+  margin: 0;
 }
 
 .live-room-hero .hero-copy {
-  margin-top: 4px;
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.25;
 }
 
 .live-room-actions {
-  align-items: center;
+  align-items: flex-start;
+  align-content: flex-start;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 46%;
+}
+
+.live-room-hero .back-link {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.live-room-heading-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.live-room-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.live-room-summary-strip span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.live-room-summary-strip strong {
+  color: var(--ink);
+  font-size: 11px;
+  letter-spacing: 0.06em;
 }
 
 .eyebrow {
@@ -1025,9 +1078,10 @@ body.post-page-body.sidebar-collapsed .page-shell {
 .story-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: 2px 10px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.05;
 }
 
 .card-meta a,
@@ -1221,15 +1275,41 @@ dd {
   cursor: pointer;
 }
 
+.live-event-window {
+  height: min(44rem, 75vh);
+  min-height: 28rem;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding-right: 6px;
+  align-content: start;
+  scroll-behavior: smooth;
+}
+
+.live-event-item {
+  padding: 4px 14px;
+  border-radius: 18px;
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-soft);
+}
+
+.live-event-item h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+  line-height: 1.28;
+  word-break: break-word;
+}
+
 .live-heading-lines {
   display: grid;
-  gap: 6px;
-  margin: 8px 0 10px;
+  gap: 2px;
+  margin: 0 0 2px;
 }
 
 .live-heading-line {
   font-size: 18px;
-  line-height: 1.45;
+  line-height: 1.28;
   font-weight: 700;
   word-break: break-word;
   color: var(--text-strong);
@@ -1256,9 +1336,27 @@ dd {
 }
 
 .identity-reveal-body {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.live-event-more {
+  margin-left: auto;
+}
+
+.live-event-more summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.live-event-more summary::-webkit-details-marker {
+  display: none;
 }
 
 .identity-code {
@@ -1287,24 +1385,59 @@ dd {
 }
 
 .live-room-id-row {
-  margin-top: 10px;
-  gap: 8px 10px;
+  margin-top: 6px;
+  gap: 6px 8px;
 }
 
 .live-room-id-row .identity-code {
   display: inline-block;
   width: auto;
   max-width: min(100%, 260px);
-  padding: 8px 10px;
-  line-height: 1.35;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .live-room-id-row .identity-copy-button {
-  min-height: 38px;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.live-room-actions .button-link {
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .identity-copy-row .micro-copy {
   margin: 0;
+}
+
+.live-key-row {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.live-key-row .micro-copy {
+  font-size: 11px;
+  line-height: 1.05;
+}
+
+.live-key-row code {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.live-key-row .identity-copy-button {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 999px;
 }
 
 .pagination-size {

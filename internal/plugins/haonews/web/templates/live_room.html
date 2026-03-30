@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>好牛Ai Live 房间</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260328d">
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
 </head>
 <body>
   <div class="app-shell">
@@ -13,15 +13,22 @@
     <div class="page-shell">
       {{template "sidebarToggle" .}}
       <header class="hero hero-dashboard live-room-hero">
-        <a class="back-link" href="/live">返回 Live 列表</a>
-        <p class="eyebrow">Live 房间</p>
+        <div class="live-room-topline">
+          <a class="back-link" href="/live">返回 Live 列表</a>
+          <p class="eyebrow">Live 房间</p>
+        </div>
         <div class="hero-heading">
-          <div>
+          <div class="live-room-heading-main">
             <h1>{{if .Room.Title}}{{.Room.Title}}{{else}}{{.Room.RoomID}}{{end}}</h1>
             <p class="hero-copy">创建者：<code>{{.Room.Creator}}</code></p>
             <div class="identity-copy-row live-room-id-row">
               <code class="identity-code">{{.Room.RoomID}}</code>
               <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Room.RoomID}}">复制房间 ID</button>
+            </div>
+            <div class="live-room-summary-strip">
+              <span><strong>创建时间</strong>{{.Room.CreatedAt}}</span>
+              <span><strong>可见性</strong>{{if .RoomVisibility}}{{.RoomVisibility}}{{else}}default{{end}}</span>
+              <span><strong>频道</strong>{{if .Room.Channel}}{{.Room.Channel}}{{else}}hao.news/live{{end}}</span>
             </div>
           </div>
           <div class="hero-actions live-room-actions">
@@ -40,17 +47,6 @@
       </header>
 
       <main class="feed">
-        <section class="panel panel-inline">
-          <p class="panel-label">房间信息</p>
-          <div class="summary-grid">
-            <div><span class="stat-label">Room ID</span><strong>{{.Room.RoomID}}</strong></div>
-            <div><span class="stat-label">创建时间</span><strong>{{.Room.CreatedAt}}</strong></div>
-            <div><span class="stat-label">创建者</span><strong>{{.Room.Creator}}</strong></div>
-            <div><span class="stat-label">本地可见性</span><strong>{{if .RoomVisibility}}{{.RoomVisibility}}{{else}}default{{end}}</strong></div>
-            <div><span class="stat-label">归档频道</span><strong>{{if .Room.Channel}}{{.Room.Channel}}{{else}}hao.news/live{{end}}</strong></div>
-          </div>
-        </section>
-
         <section class="panel panel-inline live-chat-panel" id="live-chat-panel">
           <div class="panel-head panel-head-inline">
             <p class="panel-label">聊天记录</p>
@@ -72,6 +68,28 @@
                     <span>{{.Timestamp}}</span>
                     <a href="/?author={{urlquery .Sender}}">{{.Sender}}</a>
                     {{if .Visibility}}<span>{{.Visibility}}</span>{{end}}
+                    {{if .Fields}}
+                      <details class="live-event-more">
+                        <summary>more</summary>
+                        <div class="identity-reveal-body">
+                          {{range .Fields}}
+                            {{if eq .Key "origin_public_key"}}
+                              <div class="identity-copy-row live-key-row">
+                                <span class="micro-copy">子公钥：<code>{{printf "%.5s" .Value}}</code></span>
+                                <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Value}}">复制子公钥</button>
+                              </div>
+                            {{else if eq .Key "parent_public_key"}}
+                              <div class="identity-copy-row live-key-row">
+                                <span class="micro-copy">父公钥：<code>{{printf "%.5s" .Value}}</code></span>
+                                <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Value}}">复制父公钥</button>
+                              </div>
+                            {{else}}
+                              <span class="facet-chip">{{.Key}}={{.Value}}</span>
+                            {{end}}
+                          {{end}}
+                        </div>
+                      </details>
+                    {{end}}
                   </div>
                   {{if .HeadingLines}}
                     <div class="live-heading-lines">
@@ -95,25 +113,6 @@
                     {{if .Task.Description}}
                       <p class="micro-copy">{{.Task.Description}}</p>
                     {{end}}
-                  {{end}}
-                  {{if .Fields}}
-                    <div class="identity-reveal-body">
-                      {{range .Fields}}
-                        {{if eq .Key "origin_public_key"}}
-                          <div class="identity-copy-row">
-                            <span class="micro-copy">子公钥：<code>{{printf "%.5s" .Value}}</code></span>
-                            <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Value}}">复制子公钥</button>
-                          </div>
-                        {{else if eq .Key "parent_public_key"}}
-                          <div class="identity-copy-row">
-                            <span class="micro-copy">父公钥：<code>{{printf "%.5s" .Value}}</code></span>
-                            <button class="button-link button-link-muted identity-copy-button" type="button" data-copy-text="{{.Value}}">复制父公钥</button>
-                          </div>
-                        {{else}}
-                          <span class="facet-chip">{{.Key}}={{.Value}}</span>
-                        {{end}}
-                      {{end}}
-                    </div>
                   {{end}}
                 </article>
               {{end}}
@@ -389,6 +388,12 @@
     if (!Array.isArray(fields) || fields.length === 0) {
       return null;
     }
+    const details = document.createElement("details");
+    details.className = "live-event-more";
+    const summary = document.createElement("summary");
+    summary.textContent = "more";
+    details.appendChild(summary);
+
     const wrapper = document.createElement("div");
     wrapper.className = "identity-reveal-body";
     for (const field of fields) {
@@ -397,15 +402,15 @@
       }
       if (field.key === "origin_public_key" || field.key === "parent_public_key") {
         const row = document.createElement("div");
-        row.className = "identity-copy-row";
+        row.className = "identity-copy-row live-key-row";
 
-        const summary = document.createElement("span");
-        summary.className = "micro-copy";
+        const fieldSummary = document.createElement("span");
+        fieldSummary.className = "micro-copy";
         const code = document.createElement("code");
         code.textContent = String(field.value || "").slice(0, 5);
-        summary.textContent = `${field.key === "origin_public_key" ? "子公钥" : "父公钥"}：`;
-        summary.appendChild(code);
-        row.appendChild(summary);
+        fieldSummary.textContent = `${field.key === "origin_public_key" ? "子公钥" : "父公钥"}：`;
+        fieldSummary.appendChild(code);
+        row.appendChild(fieldSummary);
 
         const button = document.createElement("button");
         button.className = "button-link button-link-muted identity-copy-button";
@@ -423,7 +428,11 @@
       chip.textContent = `${field.key}=${field.value}`;
       wrapper.appendChild(chip);
     }
-    return wrapper.childElementCount > 0 ? wrapper : null;
+    if (wrapper.childElementCount === 0) {
+      return null;
+    }
+    details.appendChild(wrapper);
+    return details;
   };
 
   const renderTask = (task) => {
@@ -497,6 +506,15 @@
       senderLink.href = `/?author=${encodeURIComponent(event.sender || "")}`;
       senderLink.textContent = event.sender || "";
       meta.appendChild(senderLink);
+      if (event.visibility) {
+        const visibility = document.createElement("span");
+        visibility.textContent = event.visibility;
+        meta.appendChild(visibility);
+      }
+      const fields = renderFields(event.fields);
+      if (fields) {
+        meta.appendChild(fields);
+      }
       article.appendChild(meta);
 
       const heading = document.createElement("h2");
@@ -513,11 +531,6 @@
       const task = renderTask(event.task);
       if (task) {
         article.appendChild(task);
-      }
-
-      const fields = renderFields(event.fields);
-      if (fields) {
-        article.appendChild(fields);
       }
 
       windowEl.appendChild(article);
