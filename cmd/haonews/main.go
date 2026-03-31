@@ -717,7 +717,11 @@ func runCreditBalance(args []string) error {
 		return err
 	}
 	if strings.TrimSpace(*author) != "" {
-		return writeJSON(store.GetBalance(*author))
+		balance, err := store.GetBalanceResult(*author)
+		if err != nil {
+			return err
+		}
+		return writeJSON(balance)
 	}
 	balances, err := store.GetAllBalances()
 	if err != nil {

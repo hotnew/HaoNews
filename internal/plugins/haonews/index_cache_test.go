@@ -62,6 +62,61 @@ func TestAppIndexCachesUntilStoreSignatureChanges(t *testing.T) {
 	}
 }
 
+func TestCurrentIndexSignatureUsesQuickProbeCacheBetweenDeepChecks(t *testing.T) {
+	t.Parallel()
+
+	storeRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(storeRoot, "data"), 0o755); err != nil {
+		t.Fatalf("mkdir data: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(storeRoot, "torrents"), 0o755); err != nil {
+		t.Fatalf("mkdir torrents: %v", err)
+	}
+
+	oldDeepInterval := indexCacheDeepProbeInterval
+	indexCacheDeepProbeInterval = time.Hour
+	defer func() { indexCacheDeepProbeInterval = oldDeepInterval }()
+
+	oldFullFunc := currentIndexFullSignatureFunc
+	fullCalls := 0
+	currentIndexFullSignatureFunc = func(a *App, now time.Time, quickSignature string) (string, error) {
+		fullCalls++
+		return a.currentIndexFullSignature(now, quickSignature)
+	}
+	defer func() { currentIndexFullSignatureFunc = oldFullFunc }()
+
+	app := &App{
+		storeRoot:  storeRoot,
+		rulesPath:  filepath.Join(storeRoot, "config", "subscriptions.json"),
+		writerPath: filepath.Join(storeRoot, "config", "writer_policy.json"),
+	}
+
+	if _, err := app.currentIndexSignature(); err != nil {
+		t.Fatalf("first currentIndexSignature: %v", err)
+	}
+	if fullCalls == 0 {
+		t.Fatalf("full signature not called")
+	}
+	firstCalls := fullCalls
+
+	if _, err := app.currentIndexSignature(); err != nil {
+		t.Fatalf("second currentIndexSignature: %v", err)
+	}
+	if fullCalls != firstCalls {
+		t.Fatalf("full signature calls = %d, want %d", fullCalls, firstCalls)
+	}
+
+	if err := os.WriteFile(filepath.Join(storeRoot, "data", "touch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write touch file: %v", err)
+	}
+	if _, err := app.currentIndexSignature(); err != nil {
+		t.Fatalf("third currentIndexSignature: %v", err)
+	}
+	if fullCalls <= firstCalls {
+		t.Fatalf("full signature calls after quick change = %d, want > %d", fullCalls, firstCalls)
+	}
+}
+
 func TestContentSignatureForIndexIgnoresProbeOnlyChanges(t *testing.T) {
 	t.Parallel()
 

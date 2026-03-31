@@ -7,7 +7,7 @@ func (a *App) CreditBalance(author string) (haonews.CreditBalance, error) {
 	if err != nil {
 		return haonews.CreditBalance{}, err
 	}
-	return store.GetBalance(author), nil
+	return store.GetBalanceResult(author)
 }
 
 func (a *App) CreditBalances() ([]haonews.CreditBalance, error) {

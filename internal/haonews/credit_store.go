@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,6 +19,14 @@ type CreditStore struct {
 	CreditDir   string
 	ProofsDir   string
 	ArchivesDir string
+
+	cacheMu            sync.RWMutex
+	cachedProofs       []OnlineProof
+	cachedProofsByDate map[string][]OnlineProof
+	cachedProofsByAuth map[string][]OnlineProof
+	cacheDirty         bool
+	cacheLoadedAt      time.Time
+	cacheTTL           time.Duration
 }
 
 func OpenCreditStore(root string) (*CreditStore, error) {
@@ -30,6 +39,8 @@ func OpenCreditStore(root string) (*CreditStore, error) {
 		CreditDir:   filepath.Join(root, "credit"),
 		ProofsDir:   filepath.Join(root, "credit", "proofs"),
 		ArchivesDir: filepath.Join(root, "credit", "archives"),
+		cacheDirty:  true,
+		cacheTTL:    30 * time.Second,
 	}
 	for _, dir := range []string{store.Root, store.CreditDir, store.ProofsDir, store.ArchivesDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -63,7 +74,11 @@ func (s *CreditStore) SaveProof(proof OnlineProof) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0o644)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return err
+	}
+	s.markCacheDirty()
+	return nil
 }
 
 func (s *CreditStore) GetProofsByDate(date string) ([]OnlineProof, error) {
@@ -71,6 +86,15 @@ func (s *CreditStore) GetProofsByDate(date string) ([]OnlineProof, error) {
 	if _, err := time.Parse("2006-01-02", date); err != nil {
 		return nil, err
 	}
+	if err := s.ensureCache(); err != nil {
+		return nil, err
+	}
+	s.cacheMu.RLock()
+	defer s.cacheMu.RUnlock()
+	return cloneOnlineProofs(s.cachedProofsByDate[date]), nil
+}
+
+func (s *CreditStore) loadProofsByDateFromDisk(date string) ([]OnlineProof, error) {
 	proofs := make([]OnlineProof, 0)
 	seen := map[string]struct{}{}
 	dir := filepath.Join(s.ProofsDir, date)
@@ -130,10 +154,12 @@ func (s *CreditStore) GetProofsByAuthor(author, start, end string) ([]OnlineProo
 		}
 		endTime = endTime.Add(24*time.Hour - time.Nanosecond)
 	}
-	proofs, err := s.allProofs()
-	if err != nil {
+	if err := s.ensureCache(); err != nil {
 		return nil, err
 	}
+	s.cacheMu.RLock()
+	proofs := cloneOnlineProofs(s.cachedProofsByAuth[author])
+	s.cacheMu.RUnlock()
 	filtered := make([]OnlineProof, 0, len(proofs))
 	for _, proof := range proofs {
 		windowStart, _, err := proofWindow(proof)
@@ -156,17 +182,55 @@ func (s *CreditStore) GetProofsByAuthor(author, start, end string) ([]OnlineProo
 }
 
 func (s *CreditStore) GetBalance(author string) CreditBalance {
+	balance, err := s.GetBalanceResult(author)
+	if err != nil {
+		return CreditBalance{Author: strings.TrimSpace(author)}
+	}
+	return balance
+}
+
+func (s *CreditStore) GetBalanceResult(author string) (CreditBalance, error) {
 	author = strings.TrimSpace(author)
 	if author == "" {
-		return CreditBalance{}
+		return CreditBalance{}, nil
 	}
-	balances, _ := s.GetAllBalances()
-	for _, balance := range balances {
-		if balance.Author == author {
-			return balance
+	proofs, err := s.GetProofsByAuthor(author, "", "")
+	if err != nil {
+		return CreditBalance{Author: author}, err
+	}
+	if len(proofs) == 0 {
+		return CreditBalance{Author: author}, nil
+	}
+	ids := make(map[string]struct{}, len(proofs))
+	var first time.Time
+	var last time.Time
+	for _, proof := range proofs {
+		windowStart, _, err := proofWindow(proof)
+		if err != nil {
+			return CreditBalance{Author: author}, err
 		}
+		if first.IsZero() || windowStart.Before(first) {
+			first = windowStart
+		}
+		if last.IsZero() || windowStart.After(last) {
+			last = windowStart
+		}
+		ids[proof.ProofID] = struct{}{}
 	}
-	return CreditBalance{Author: author}
+	credits := len(ids)
+	maxPossible := maxPossibleCredits(first, time.Now().UTC())
+	onlinePct := 0.0
+	if maxPossible > 0 {
+		onlinePct = float64(credits) * 100 / float64(maxPossible)
+	}
+	return CreditBalance{
+		Author:      author,
+		Credits:     credits,
+		MaxPossible: maxPossible,
+		FirstProof:  first.Format(time.RFC3339),
+		LastProof:   last.Format(time.RFC3339),
+		OnlinePct:   onlinePct,
+	}, nil
 }
 
 func (s *CreditStore) GetAllBalances() ([]CreditBalance, error) {
@@ -389,17 +453,29 @@ func (s *CreditStore) CleanOldProofs(keepDays int) (int, error) {
 		}
 		removed += len(proofs)
 	}
+	if removed > 0 {
+		s.markCacheDirty()
+	}
 	return removed, nil
 }
 
 func (s *CreditStore) allProofs() ([]OnlineProof, error) {
+	if err := s.ensureCache(); err != nil {
+		return nil, err
+	}
+	s.cacheMu.RLock()
+	defer s.cacheMu.RUnlock()
+	return cloneOnlineProofs(s.cachedProofs), nil
+}
+
+func (s *CreditStore) loadAllProofsFromDisk() ([]OnlineProof, error) {
 	days, err := s.allStoredDays()
 	if err != nil {
 		return nil, err
 	}
 	proofs := make([]OnlineProof, 0)
 	for _, day := range days {
-		dayProofs, err := s.GetProofsByDate(day)
+		dayProofs, err := s.loadProofsByDateFromDisk(day)
 		if err != nil {
 			return nil, err
 		}
@@ -464,6 +540,9 @@ func (s *CreditStore) ArchiveProofs(keepDays int) (int, int, error) {
 		}
 		archivedDays++
 		archivedProofs += len(proofs)
+	}
+	if archivedProofs > 0 {
+		s.markCacheDirty()
 	}
 	return archivedDays, archivedProofs, nil
 }
@@ -636,6 +715,67 @@ func (s *CreditStore) allStoredDays() ([]string, error) {
 	}
 	sort.Strings(days)
 	return days, nil
+}
+
+func (s *CreditStore) ensureCache() error {
+	s.cacheMu.RLock()
+	cacheReady := !s.cacheDirty && !s.cacheLoadedAt.IsZero() && time.Since(s.cacheLoadedAt) < s.cacheTTL
+	s.cacheMu.RUnlock()
+	if cacheReady {
+		return nil
+	}
+
+	proofs, err := s.loadAllProofsFromDisk()
+	if err != nil {
+		return err
+	}
+	byDate := make(map[string][]OnlineProof)
+	byAuthor := make(map[string][]OnlineProof)
+	for _, proof := range proofs {
+		windowStart, _, err := proofWindow(proof)
+		if err != nil {
+			return err
+		}
+		day := windowStart.Format("2006-01-02")
+		byDate[day] = append(byDate[day], proof)
+		author := strings.TrimSpace(proof.Node.Author)
+		if author != "" {
+			byAuthor[author] = append(byAuthor[author], proof)
+		}
+	}
+	for day := range byDate {
+		sortProofs(byDate[day])
+	}
+	for author := range byAuthor {
+		sortProofs(byAuthor[author])
+	}
+
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if !s.cacheDirty && !s.cacheLoadedAt.IsZero() && time.Since(s.cacheLoadedAt) < s.cacheTTL {
+		return nil
+	}
+	s.cachedProofs = proofs
+	s.cachedProofsByDate = byDate
+	s.cachedProofsByAuth = byAuthor
+	s.cacheDirty = false
+	s.cacheLoadedAt = time.Now()
+	return nil
+}
+
+func (s *CreditStore) markCacheDirty() {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.cacheDirty = true
+}
+
+func cloneOnlineProofs(values []OnlineProof) []OnlineProof {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]OnlineProof, len(values))
+	copy(out, values)
+	return out
 }
 
 func mergeProofs(left, right []OnlineProof) []OnlineProof {

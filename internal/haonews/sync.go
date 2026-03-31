@@ -54,7 +54,29 @@ const (
 	maxSyncRefsPerPass    = 3
 	lanHealthProbeEvery   = 60 * time.Second
 	recentRealtimeWindow  = 2 * time.Hour
+	syncStatusWriteEvery  = 1500 * time.Millisecond
 )
+
+func syncRefStageTimeouts(total time.Duration) (time.Duration, time.Duration) {
+	if total <= 0 {
+		return defaultSyncRefTimeout / 2, defaultSyncRefTimeout / 2
+	}
+	if total < 2*time.Second {
+		return total / 2, total - (total / 2)
+	}
+	direct := total / 3
+	if direct < 2*time.Second {
+		direct = 2 * time.Second
+	}
+	if direct > 8*time.Second {
+		direct = 8 * time.Second
+	}
+	fallback := total - direct
+	if fallback <= 0 {
+		fallback = total
+	}
+	return direct, fallback
+}
 
 func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) error {
 	store, err := OpenStore(opts.StoreRoot)
@@ -232,6 +254,8 @@ type syncRuntime struct {
 	activity         SyncActivityStatus
 	lastLANProbeAt   time.Time
 	historyBootstrap historyBootstrapState
+	lastStatusWrite  time.Time
+	lastStatusSig    string
 }
 
 type historyBootstrapState struct {
@@ -352,8 +376,36 @@ func (r *syncRuntime) clearDirectPeers(infoHash string) {
 }
 
 func (r *syncRuntime) writeStatus(ctx context.Context) error {
+	status := r.buildStatus(ctx)
+	signature, err := syncStatusSignature(status)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	r.mu.Lock()
+	lastWrite := r.lastStatusWrite
+	lastSig := r.lastStatusSig
+	r.mu.Unlock()
+	if lastSig == signature {
+		return nil
+	}
+	if !lastWrite.IsZero() && now.Sub(lastWrite) < syncStatusWriteEvery {
+		return nil
+	}
+	if err := writeSyncStatus(r.store, status); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.lastStatusWrite = now
+	r.lastStatusSig = signature
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *syncRuntime) buildStatus(ctx context.Context) SyncRuntimeStatus {
 	r.mu.Lock()
 	activity := r.activity
+	historyBootstrap := r.historyBootstrap
 	r.mu.Unlock()
 	status := SyncRuntimeStatus{
 		StartedAt:    r.startedAt,
@@ -365,16 +417,25 @@ func (r *syncRuntime) writeStatus(ctx context.Context) error {
 		NetworkID:    r.netCfg.NetworkID,
 		SyncActivity: activity,
 		HistoryBootstrap: SyncHistoryBootstrapStatus{
-			FirstSyncCompleted:     r.historyBootstrap.FirstSyncCompleted,
-			Mode:                   r.historyBootstrap.HistoryBootstrapMode,
-			LastHistoryBootstrapAt: r.historyBootstrap.LastHistoryBootstrapAt,
-			RecentPagesLimit:       r.historyBootstrap.RecentPagesLimit,
-			RecentRefsLimit:        r.historyBootstrap.RecentRefsLimit,
+			FirstSyncCompleted:     historyBootstrap.FirstSyncCompleted,
+			Mode:                   historyBootstrap.HistoryBootstrapMode,
+			LastHistoryBootstrapAt: historyBootstrap.LastHistoryBootstrapAt,
+			RecentPagesLimit:       historyBootstrap.RecentPagesLimit,
+			RecentRefsLimit:        historyBootstrap.RecentRefsLimit,
 		},
 	}
 	status.LibP2P = r.libp2p.Status(ctx)
 	status.PubSub = r.pubsub.Status()
-	return writeSyncStatus(r.store, status)
+	return status
+}
+
+func syncStatusSignature(status SyncRuntimeStatus) (string, error) {
+	status.UpdatedAt = time.Time{}
+	data, err := json.Marshal(status)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func (r *syncRuntime) processQueue(ctx context.Context, direct []string, timeout time.Duration, logf func(string, ...any)) error {
@@ -1705,8 +1766,7 @@ func syncRef(
 	libp2pRuntime *libp2pRuntime,
 	directPeerIDs []peer.ID,
 ) SyncItemResult {
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	directTimeout, fallbackTimeout := syncRefStageTimeouts(timeout)
 
 	var (
 		directAttempted    bool
@@ -1722,12 +1782,14 @@ func syncRef(
 	}
 	if directTransfer && ref.InfoHash != "" && libp2pRuntime != nil && libp2pRuntime.host != nil && len(directPeerIDs) > 0 {
 		directAttempted = true
+		directCtx, directCancel := context.WithTimeout(ctx, directTimeout)
+		defer directCancel()
 		for _, peerID := range directPeerIDs {
-			if connectErr := libp2pRuntime.ensurePeerConnected(runCtx, peerID); connectErr != nil {
+			if connectErr := libp2pRuntime.ensurePeerConnected(directCtx, peerID); connectErr != nil {
 				directFailureNotes = append(directFailureNotes, peerID.String()+": "+connectErr.Error())
 				continue
 			}
-			contentDir, fetchErr := FetchBundleViaLibP2P(runCtx, libp2pRuntime.host, peerID, ref.InfoHash, store, libp2pRuntime.transferMaxSize)
+			contentDir, fetchErr := FetchBundleViaLibP2P(directCtx, libp2pRuntime.host, peerID, ref.InfoHash, store, libp2pRuntime.transferMaxSize)
 			if fetchErr != nil {
 				directFailureNotes = append(directFailureNotes, peerID.String()+": "+fetchErr.Error())
 				continue
@@ -1764,7 +1826,9 @@ func syncRef(
 			}
 		}
 	}
-	contentDir, fallbackErr := fetchBundleFallback(runCtx, store, ref, peerSources, rules.MaxBundleMB)
+	fallbackCtx, fallbackCancel := context.WithTimeout(ctx, fallbackTimeout)
+	contentDir, fallbackErr := fetchBundleFallback(fallbackCtx, store, ref, peerSources, rules.MaxBundleMB)
+	fallbackCancel()
 	if fallbackErr == nil {
 		message := "bundle imported via HTTP fallback"
 		if directAttempted && len(directFailureNotes) > 0 {

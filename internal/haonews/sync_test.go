@@ -199,6 +199,103 @@ func TestEnsureSyncLayoutMigratesLegacyQueueToHistory(t *testing.T) {
 	}
 }
 
+func TestWriteStatusSkipsRedundantWritesWithinThrottleWindow(t *testing.T) {
+	t.Parallel()
+
+	store, err := OpenStore(filepath.Join(t.TempDir(), ".haonews"))
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	runtime := &syncRuntime{
+		store:     store,
+		queuePath: filepath.Join(store.Root, "sync", "realtime.txt"),
+		mode:      "poll",
+		startedAt: time.Now().UTC(),
+		netCfg:    NetworkBootstrapConfig{NetworkID: "test-network"},
+	}
+	ctx := context.Background()
+	if err := runtime.writeStatus(ctx); err != nil {
+		t.Fatalf("writeStatus(first) error = %v", err)
+	}
+	path := syncStatusPath(store)
+	firstData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(first) error = %v", err)
+	}
+	if err := runtime.writeStatus(ctx); err != nil {
+		t.Fatalf("writeStatus(second) error = %v", err)
+	}
+	secondData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(second) error = %v", err)
+	}
+	if string(firstData) != string(secondData) {
+		t.Fatalf("status file changed despite identical status within throttle window")
+	}
+
+	time.Sleep(syncStatusWriteEvery + 50*time.Millisecond)
+	runtime.recordResult(SyncItemResult{Ref: "haonews-sync://bundle/test", InfoHash: "abc123", Status: "imported"})
+	if err := runtime.writeStatus(ctx); err != nil {
+		t.Fatalf("writeStatus(third) error = %v", err)
+	}
+	thirdData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(third) error = %v", err)
+	}
+	if string(secondData) == string(thirdData) {
+		t.Fatalf("status file did not change after activity update")
+	}
+}
+
+func TestSyncRefStageTimeoutsSplitsBudget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		total           time.Duration
+		wantDirectMin   time.Duration
+		wantDirectMax   time.Duration
+		wantFallbackMin time.Duration
+	}{
+		{
+			name:            "default budget",
+			total:           0,
+			wantDirectMin:   defaultSyncRefTimeout / 2,
+			wantDirectMax:   defaultSyncRefTimeout / 2,
+			wantFallbackMin: defaultSyncRefTimeout / 2,
+		},
+		{
+			name:            "small budget halves evenly",
+			total:           1500 * time.Millisecond,
+			wantDirectMin:   750 * time.Millisecond,
+			wantDirectMax:   750 * time.Millisecond,
+			wantFallbackMin: 750 * time.Millisecond,
+		},
+		{
+			name:            "normal budget reserves fallback majority",
+			total:           20 * time.Second,
+			wantDirectMin:   6 * time.Second,
+			wantDirectMax:   7 * time.Second,
+			wantFallbackMin: 12 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			direct, fallback := syncRefStageTimeouts(tt.total)
+			if direct < tt.wantDirectMin || direct > tt.wantDirectMax {
+				t.Fatalf("direct = %v, want between %v and %v", direct, tt.wantDirectMin, tt.wantDirectMax)
+			}
+			if fallback < tt.wantFallbackMin {
+				t.Fatalf("fallback = %v, want >= %v", fallback, tt.wantFallbackMin)
+			}
+			if tt.total > 0 && direct+fallback != tt.total {
+				t.Fatalf("budget mismatch: direct=%v fallback=%v total=%v", direct, fallback, tt.total)
+			}
+		})
+	}
+}
+
 func TestLoadNetworkBootstrapConfig(t *testing.T) {
 	t.Parallel()
 

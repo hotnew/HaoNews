@@ -39,6 +39,7 @@ type App struct {
 	options         AppOptions
 	indexMu         sync.Mutex
 	indexCache      cachedIndexState
+	probeCache      cachedProbeState
 	indexBuildCh    chan struct{}
 	responseMu      sync.Mutex
 	responseCache   map[string]cachedHTTPResponse
@@ -70,6 +71,12 @@ type cachedIndexState struct {
 	index            Index
 	recheckAt        time.Time
 	ready            bool
+}
+
+type cachedProbeState struct {
+	quickSignature string
+	fullSignature  string
+	fullCheckedAt  time.Time
 }
 
 type cachedHTTPResponse struct {
@@ -224,20 +231,20 @@ type PostCardData struct {
 }
 
 type DirectoryPageData struct {
-	Project      string
-	Version      string
+	Project        string
+	Version        string
 	StartupPending bool
 	StartupMessage string
-	Kind         string
-	Path         string
-	APIPath      string
-	Now          time.Time
-	Options      FeedOptions
-	PageNav      []NavItem
-	TabOptions   []TabOption
-	Items        []DirectoryItem
-	SummaryStats []SummaryStat
-	NodeStatus   NodeStatus
+	Kind           string
+	Path           string
+	APIPath        string
+	Now            time.Time
+	Options        FeedOptions
+	PageNav        []NavItem
+	TabOptions     []TabOption
+	Items          []DirectoryItem
+	SummaryStats   []SummaryStat
+	NodeStatus     NodeStatus
 }
 
 type PostPageData struct {

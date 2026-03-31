@@ -163,6 +163,89 @@ func TestCreditStoreStats(t *testing.T) {
 	}
 }
 
+func TestCreditStoreCacheInvalidatesAfterSaveProof(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := OpenCreditStore(root)
+	if err != nil {
+		t.Fatalf("OpenCreditStore error = %v", err)
+	}
+	window := AlignToWindow(time.Now().UTC())
+	proof1 := mustCreditProof(t, "agent://alice/credit/online", window.Add(-20*time.Minute), "hao-news-mainnet")
+	proof2 := mustCreditProof(t, "agent://alice/credit/online", window.Add(-10*time.Minute), "hao-news-mainnet")
+	if err := store.SaveProof(proof1); err != nil {
+		t.Fatalf("SaveProof(proof1) error = %v", err)
+	}
+	proofs, err := store.GetProofsSince(time.Time{})
+	if err != nil {
+		t.Fatalf("GetProofsSince(first) error = %v", err)
+	}
+	if len(proofs) != 1 {
+		t.Fatalf("first proofs len = %d, want 1", len(proofs))
+	}
+	if err := store.SaveProof(proof2); err != nil {
+		t.Fatalf("SaveProof(proof2) error = %v", err)
+	}
+	proofs, err = store.GetProofsSince(time.Time{})
+	if err != nil {
+		t.Fatalf("GetProofsSince(second) error = %v", err)
+	}
+	if len(proofs) != 2 {
+		t.Fatalf("second proofs len = %d, want 2", len(proofs))
+	}
+}
+
+func TestCreditStoreGetBalanceUsesAuthorScopedView(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := OpenCreditStore(root)
+	if err != nil {
+		t.Fatalf("OpenCreditStore error = %v", err)
+	}
+	window := AlignToWindow(time.Now().UTC())
+	if err := store.SaveProof(mustCreditProof(t, "agent://alice/credit/online", window.Add(-20*time.Minute), "hao-news-mainnet")); err != nil {
+		t.Fatalf("SaveProof(alice) error = %v", err)
+	}
+	if err := store.SaveProof(mustCreditProof(t, "agent://bob/credit/online", window.Add(-10*time.Minute), "hao-news-mainnet")); err != nil {
+		t.Fatalf("SaveProof(bob) error = %v", err)
+	}
+	balance := store.GetBalance("agent://alice/credit/online")
+	if balance.Author != "agent://alice/credit/online" {
+		t.Fatalf("balance.Author = %q", balance.Author)
+	}
+	if balance.Credits != 1 {
+		t.Fatalf("balance.Credits = %d, want 1", balance.Credits)
+	}
+}
+
+func TestCreditStoreGetBalanceResultReturnsErrorForCorruptProof(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := OpenCreditStore(root)
+	if err != nil {
+		t.Fatalf("OpenCreditStore error = %v", err)
+	}
+	window := AlignToWindow(time.Now().UTC())
+	day := window.Format("2006-01-02")
+	dayDir := filepath.Join(store.ProofsDir, day)
+	if err := os.MkdirAll(dayDir, 0o755); err != nil {
+		t.Fatalf("mkdir day dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dayDir, "corrupt.json"), []byte("{broken"), 0o644); err != nil {
+		t.Fatalf("write corrupt proof: %v", err)
+	}
+
+	if _, err := store.GetBalanceResult("agent://alice/credit/online"); err == nil {
+		t.Fatalf("GetBalanceResult error = nil, want non-nil")
+	}
+	if got := store.GetBalance("agent://alice/credit/online"); got.Author != "agent://alice/credit/online" || got.Credits != 0 {
+		t.Fatalf("GetBalance fallback = %#v", got)
+	}
+}
+
 func mustCreditProof(t *testing.T, author string, windowStart time.Time, networkID string) OnlineProof {
 	t.Helper()
 	return mustCreditProofWithWitnessRole(t, author, windowStart, networkID, "dht_neighbor")

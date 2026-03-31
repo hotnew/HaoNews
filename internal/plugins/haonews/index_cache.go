@@ -12,7 +12,14 @@ import (
 )
 
 var indexCacheProbeInterval = 2 * time.Second
+var indexCacheDeepProbeInterval = 30 * time.Second
 var coldStartGraceWindow = 45 * time.Second
+
+var writePathSignatureFunc = writePathSignature
+var writePathQuickSignatureFunc = writePathQuickSignature
+var currentIndexFullSignatureFunc = func(a *App, now time.Time, quickSignature string) (string, error) {
+	return a.currentIndexFullSignature(now, quickSignature)
+}
 
 func (a *App) buildIndex() (Index, error) {
 	index, err := a.loadIndex(a.storeRoot, a.project)
@@ -32,9 +39,6 @@ func (a *App) buildIndex() (Index, error) {
 		return Index{}, err
 	}
 	PrepareMarkdownArchive(&index, a.archive)
-	if a.loadRules != nil {
-		index = ApplySubscriptionRules(index, a.project, rules)
-	}
 	decisions, err := LoadModerationDecisions(ModerationDecisionsPath(a.writerPath))
 	if err != nil {
 		return Index{}, err
@@ -103,6 +107,24 @@ func contentSignatureForIndex(index Index) string {
 }
 
 func (a *App) currentIndexSignature() (string, error) {
+	now := time.Now()
+	quickSignature, err := a.currentIndexQuickSignature()
+	if err != nil {
+		return "", err
+	}
+	a.indexMu.Lock()
+	if a.probeCache.fullSignature != "" &&
+		a.probeCache.quickSignature == quickSignature &&
+		now.Before(a.probeCache.fullCheckedAt.Add(indexCacheDeepProbeInterval)) {
+		signature := a.probeCache.fullSignature
+		a.indexMu.Unlock()
+		return signature, nil
+	}
+	a.indexMu.Unlock()
+	return currentIndexFullSignatureFunc(a, now, quickSignature)
+}
+
+func (a *App) currentIndexQuickSignature() (string, error) {
 	digester := fnv.New64a()
 	roots := []string{
 		filepath.Join(a.storeRoot, "data"),
@@ -114,11 +136,77 @@ func (a *App) currentIndexSignature() (string, error) {
 		revocationDirForWriterPolicy(a.writerPath),
 	}
 	for _, root := range roots {
-		if err := writePathSignature(digester, root); err != nil {
+		if err := writePathQuickSignatureFunc(digester, root); err != nil {
 			return "", err
 		}
 	}
 	return fmt.Sprintf("%x", digester.Sum64()), nil
+}
+
+func (a *App) currentIndexFullSignature(now time.Time, quickSignature string) (string, error) {
+	digester := fnv.New64a()
+	roots := []string{
+		filepath.Join(a.storeRoot, "data"),
+		filepath.Join(a.storeRoot, "torrents"),
+		a.rulesPath,
+		a.writerPath,
+		ModerationDecisionsPath(a.writerPath),
+		delegationDirForWriterPolicy(a.writerPath),
+		revocationDirForWriterPolicy(a.writerPath),
+	}
+	for _, root := range roots {
+		if err := writePathSignatureFunc(digester, root); err != nil {
+			return "", err
+		}
+	}
+	signature := fmt.Sprintf("%x", digester.Sum64())
+	a.indexMu.Lock()
+	a.probeCache = cachedProbeState{
+		quickSignature: quickSignature,
+		fullSignature:  signature,
+		fullCheckedAt:  now,
+	}
+	a.indexMu.Unlock()
+	return signature, nil
+}
+
+func writePathQuickSignature(digester hash.Hash64, root string) error {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return nil
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			_, _ = fmt.Fprintf(digester, "%s|missing\n", root)
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		_, _ = fmt.Fprintf(digester, "%s|file|%d|%d\n", root, info.ModTime().UnixNano(), info.Size())
+		return nil
+	}
+	_, _ = fmt.Fprintf(digester, "%s|dir|%d\n", root, info.ModTime().UnixNano())
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		meta, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(
+			digester,
+			"%s|%t|%d|%d\n",
+			filepath.ToSlash(entry.Name()),
+			entry.IsDir(),
+			meta.ModTime().UnixNano(),
+			meta.Size(),
+		)
+	}
+	return nil
 }
 
 func writePathSignature(digester hash.Hash64, root string) error {
@@ -162,6 +250,7 @@ func writePathSignature(digester hash.Hash64, root string) error {
 func (a *App) invalidateIndexCache() {
 	a.indexMu.Lock()
 	a.indexCache = cachedIndexState{}
+	a.probeCache = cachedProbeState{}
 	a.indexBuildCh = nil
 	a.indexMu.Unlock()
 	a.responseMu.Lock()

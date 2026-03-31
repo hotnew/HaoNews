@@ -55,7 +55,7 @@ type pubsubRuntime struct {
 	pubsub    *pubsub.PubSub
 	discovery *routingdisc.RoutingDiscovery
 
-	mu                  sync.Mutex
+	mu                  sync.RWMutex
 	topics              map[string]*pubsub.Topic
 	subscriptions       map[string]*pubsub.Subscription
 	joinedTopics        []string
@@ -153,27 +153,29 @@ func (r *pubsubRuntime) Status() SyncPubSubStatus {
 	if r == nil {
 		return SyncPubSubStatus{}
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
 	status := r.status
-	status.JoinedTopics = append([]string(nil), r.joinedTopics...)
-	status.DiscoveryNamespaces = append([]string(nil), r.discoveryNamespaces...)
-	status.DiscoveryFeeds = append([]string(nil), r.status.DiscoveryFeeds...)
-	status.DiscoveryTopics = append([]string(nil), r.status.DiscoveryTopics...)
-	status.TopicWhitelist = append([]string(nil), r.status.TopicWhitelist...)
-	status.TopicAliasPairs = append([]string(nil), r.status.TopicAliasPairs...)
-	status.AllowedOriginKeys = append([]string(nil), r.status.AllowedOriginKeys...)
-	status.BlockedOriginKeys = append([]string(nil), r.status.BlockedOriginKeys...)
-	status.AllowedParentKeys = append([]string(nil), r.status.AllowedParentKeys...)
-	status.BlockedParentKeys = append([]string(nil), r.status.BlockedParentKeys...)
-	status.LiveAllowedOriginKeys = append([]string(nil), r.status.LiveAllowedOriginKeys...)
-	status.LiveBlockedOriginKeys = append([]string(nil), r.status.LiveBlockedOriginKeys...)
-	status.LiveAllowedParentKeys = append([]string(nil), r.status.LiveAllowedParentKeys...)
-	status.LiveBlockedParentKeys = append([]string(nil), r.status.LiveBlockedParentKeys...)
-	status.LivePublicMutedOriginKeys = append([]string(nil), r.status.LivePublicMutedOriginKeys...)
-	status.LivePublicMutedParentKeys = append([]string(nil), r.status.LivePublicMutedParentKeys...)
-	status.LivePublicRateLimitMessages = r.status.LivePublicRateLimitMessages
-	status.LivePublicRateLimitWindowSeconds = r.status.LivePublicRateLimitWindowSeconds
+	r.mu.RUnlock()
+	return cloneSyncPubSubStatus(status)
+}
+
+func cloneSyncPubSubStatus(status SyncPubSubStatus) SyncPubSubStatus {
+	status.JoinedTopics = append([]string(nil), status.JoinedTopics...)
+	status.DiscoveryNamespaces = append([]string(nil), status.DiscoveryNamespaces...)
+	status.DiscoveryFeeds = append([]string(nil), status.DiscoveryFeeds...)
+	status.DiscoveryTopics = append([]string(nil), status.DiscoveryTopics...)
+	status.TopicWhitelist = append([]string(nil), status.TopicWhitelist...)
+	status.TopicAliasPairs = append([]string(nil), status.TopicAliasPairs...)
+	status.AllowedOriginKeys = append([]string(nil), status.AllowedOriginKeys...)
+	status.BlockedOriginKeys = append([]string(nil), status.BlockedOriginKeys...)
+	status.AllowedParentKeys = append([]string(nil), status.AllowedParentKeys...)
+	status.BlockedParentKeys = append([]string(nil), status.BlockedParentKeys...)
+	status.LiveAllowedOriginKeys = append([]string(nil), status.LiveAllowedOriginKeys...)
+	status.LiveBlockedOriginKeys = append([]string(nil), status.LiveBlockedOriginKeys...)
+	status.LiveAllowedParentKeys = append([]string(nil), status.LiveAllowedParentKeys...)
+	status.LiveBlockedParentKeys = append([]string(nil), status.LiveBlockedParentKeys...)
+	status.LivePublicMutedOriginKeys = append([]string(nil), status.LivePublicMutedOriginKeys...)
+	status.LivePublicMutedParentKeys = append([]string(nil), status.LivePublicMutedParentKeys...)
 	return status
 }
 
