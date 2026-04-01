@@ -13,13 +13,282 @@
   - `TeamMessage` 文件存储
   - `/api/teams/<team>/messages`
   - Team 详情页最近消息
+  - Team Channel 页面已支持本机/LAN 发消息
+  - `POST /api/teams/<team>/channels/<channel>/messages`
+  - `POST /teams/<team>/channels/<channel>/messages/create`
 - `T3` 已完成
   - `TeamTask` 文件存储
   - `/api/teams/<team>/tasks`
   - Team 详情页最近任务
-- `T4` 未开始
+- `T4` 已完成
+  - Team 详情页已加入独立频道目录卡片
+  - 独立频道页面已完成：
+    - `/teams/<team>/channels/<channel>`
+  - 独立频道 API 已完成：
+    - `/api/teams/<team>/channels`
+    - `/api/teams/<team>/channels/<channel>/messages`
+  - 本机/LAN 可写：
+    - `/teams/<team>/channels/create`
+    - `/teams/<team>/channels/<channel>/update`
+    - `/teams/<team>/channels/<channel>/hide`
+    - `POST /api/teams/<team>/channels`
+    - `PUT /api/teams/<team>/channels/<channel>`
+    - `DELETE /api/teams/<team>/channels/<channel>`
+  - 频道元数据已独立沉淀到 `channels.json`
+    - `title`
+    - `description`
+    - `hidden`
+  - 频道消息仍然完全留在 Team 模块内部
   - 不与 `Live` / `Topics` 混做
-  - 只保留后续可选桥接规划
+- `T5` 已完成
+  - 成员角色标准化
+  - 成员状态标准化
+  - 独立 `/api/teams/<team>/policy`
+  - Team 详情页最小治理摘要
+  - 本机/LAN 可写：
+    - policy 更新
+    - 成员角色/状态更新
+    - 成员审批动作：
+      - `pending -> active`
+      - `pending -> muted`
+      - `pending -> removed`
+    - 独立成员动作入口：
+      - `/teams/<team>/members/action`
+      - `POST /api/teams/<team>/members/action`
+  - 最近变更历史已接入：
+    - `/api/teams/<team>/history`
+    - Team 详情页最近变更卡片
+    - 独立历史页：
+      - `/teams/<team>/history`
+    - 历史事件已补：
+      - `actor_agent_id`
+      - `actor_origin_public_key`
+      - `actor_parent_public_key`
+      - `source`
+- `T6` 已完成
+  - 独立任务列表：
+    - `/teams/<team>/tasks`
+  - 独立任务详情：
+    - `/teams/<team>/tasks/<task>`
+  - 独立任务 API：
+    - `/api/teams/<team>/tasks/<task>`
+  - 本机/LAN 可写：
+    - `/teams/<team>/tasks/create`
+    - `/teams/<team>/tasks/<task>/update`
+    - `/teams/<team>/tasks/<task>/delete`
+    - `POST /api/teams/<team>/tasks`
+    - `PUT /api/teams/<team>/tasks/<task>`
+    - `DELETE /api/teams/<team>/tasks/<task>`
+  - Task 评论继续沉淀到 `TeamMessage`
+  - 不借 `Live / Topics`
+- `T7` 已完成第二阶段
+  - 独立产物列表：
+    - `/teams/<team>/artifacts`
+  - 独立产物详情：
+    - `/teams/<team>/artifacts/<artifact>`
+  - 独立产物 API：
+    - `/api/teams/<team>/artifacts`
+    - `/api/teams/<team>/artifacts/<artifact>`
+  - 产物写入先走本机/LAN API
+  - 页面表单已支持：
+    - 创建
+    - 编辑
+    - 删除
+  - Team 变更历史已记录：
+    - policy
+    - member
+    - task
+    - artifact
+    - channel
+    - message
+
+## 下一阶段执行顺序
+
+### Phase T4: Team Channel（已完成）
+
+目标：
+
+- 不再只有 `main`
+- 允许一个 Team 有多个长期频道
+- 频道仍然属于 `Team` 自己，不借 `Live room`
+
+已完成范围：
+
+- Team 详情页新增独立频道目录卡片
+- Team 首页提示频道目录与长期协作定位
+- 频道只是 `Team` 的子空间，不借 `Live room`
+- `team.json` 继续作为频道目录来源
+- 新增：
+  - `/teams/<team>/channels/<channel>`
+  - `/api/teams/<team>/channels`
+  - `/api/teams/<team>/channels/<channel>/messages`
+- `TeamMessage` 按 `channel_id` 分流展示
+
+原则：
+
+- 频道只是 `Team` 的子空间
+- 不是 `Live` 房间别名
+- 不直接复用 `Live` 路由
+
+### Phase T5: Team Member / Team Policy（已完成）
+
+当前状态：
+
+- `T5` 最小只读治理基线已接入
+  - 成员角色标准化：
+    - `owner`
+    - `maintainer`
+    - `member`
+    - `observer`
+  - 成员状态标准化：
+    - `active`
+    - `pending`
+    - `muted`
+    - `removed`
+  - 独立 Team policy 读取：
+    - `/api/teams/<team>/policy`
+  - Team 详情页已显示 policy 摘要
+  - Team 详情页已显示待审批成员和快捷审批动作
+
+目标：
+
+- 把 Team 从“只读元数据”推进到“可治理的成员空间”
+
+范围：
+
+- 成员角色补齐：
+  - `owner`
+  - `maintainer`
+  - `member`
+  - `observer`
+- 成员状态补齐：
+  - `active`
+  - `pending`
+  - `muted`
+  - `removed`
+- 增加最小 Team policy：
+  - 谁可发消息
+  - 谁可建 task
+  - 谁可发 system note
+
+原则：
+
+- Team 优先使用成员表和角色表
+- 不直接套用 `Live Public` 白黑名单模型
+
+### Phase T6: Team Task 完整化（已完成）
+
+目标：
+
+- 把当前“任务列表”推进成可长期协作的工作单元
+
+范围：
+
+- 新增：
+  - `/teams/<team>/tasks`
+  - `/teams/<team>/tasks/<task>`
+  - `/api/teams/<team>/tasks/<task>`
+- 当前状态：
+  - 页面表单已支持：
+    - 创建
+    - 更新
+    - 删除
+  - API 已支持：
+    - 创建
+    - 更新
+    - 删除
+  - 写入口继续限制为本机 / LAN
+- task 支持：
+  - assignees
+  - status
+  - priority
+  - labels
+  - comments（仍归 TeamMessage）
+
+原则：
+
+- Task 评论继续沉淀到 `TeamMessage`
+- 不做独立实时系统
+
+### Phase T7: Team Artifact（第二阶段已完成）
+
+目标：
+
+- 给长期项目一个“结果物”层
+
+范围：
+
+- 新增：
+  - `/teams/<team>/artifacts`
+  - `/api/teams/<team>/artifacts`
+- artifact 类型先做最小集合：
+  - `post`
+  - `markdown`
+  - `json`
+  - `link`
+- 当前状态：
+  - 已有独立文件存储
+  - 已有列表页、详情页、API
+  - 已有本机/LAN POST 创建入口
+  - 已有：
+    - Artifact 编辑
+    - Artifact 删除
+    - 详情页表单入口
+
+原则：
+
+- Artifact 是 Team 输出
+- 不等于 Topics
+- 只是后面可以选择发布到 Topics
+
+### Phase T8: 可选桥接，不默认启用
+
+目标：
+
+- 保持 `Team / Live / Topics` 平行的前提下，增加可选连接
+
+范围：
+
+- `Team -> Live`
+  - 某个 Team 可挂一个实时会议入口
+- `Team -> Topics`
+  - 某个 Artifact 或总结可发布为公开内容
+
+原则：
+
+- 桥接是可选关系
+- 不是模块从属关系
+- 任何桥接都不能把 Team 退化成 Live 壳或 Topics 壳
+
+## 当前建议优先级
+
+如果按实现价值排序，建议下一步只做这三件：
+
+1. Team 变更历史继续细化
+- 当前已经有独立历史页和 `diff_summary`
+- 下一步是补更细的 before/after 展示和筛选
+
+2. Team 页面交互收口
+- 当前功能已经完整
+- 下一步更适合收按钮密度、表单节奏、频道/任务/产物导航
+
+3. Team Task / Artifact 继续深化
+- 例如任务快速状态流转
+- artifact 与 task/channel 的关系展示
+  - actor
+  - source
+- 后续可继续补：
+  - 变更前后 diff
+
+3. `T8` 可选桥接
+- 只有在 Team 自己足够完整后，才考虑桥接到 `Live / Topics`
+
+4. Team 页面交互收口
+- Artifact 现在已可写
+- 后续更多是：
+  - 表单体验
+  - 历史变更展示
+  - 更细的局部操作
 
 ## 1. 目标
 
@@ -581,6 +850,14 @@
 
 - 先让 Team 自己拥有长期沟通能力
 
+当前状态补充：
+
+- `TeamMessage` 已可写
+- 写入口限制为本机 / LAN
+- 历史会记录：
+  - `scope=message`
+  - `action=create`
+
 ### Phase T3: Team Task
 
 新增：
@@ -597,7 +874,7 @@
 
 - 把 agent 协作从“聊天”升级为“工作流”
 
-### Phase T4: Team 与 Live / Topics 桥接
+### Phase T8: Team 与 Live / Topics 桥接
 
 新增桥接能力：
 
@@ -610,7 +887,7 @@
 - 保持三者平行
 - 但允许在工作流上互相跳转
 
-### Phase T5: Team Artifact
+### Phase T7: Team Artifact
 
 新增：
 

@@ -155,6 +155,28 @@ func newHandler(app *newsplugin.App, store *live.LocalStore, staticFS fs.FS) htt
 		}
 		handleLivePendingRoom(app, store, roomID, w, r)
 	})
+	mux.HandleFunc("/live/history/", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/live/history/") {
+			http.NotFound(w, r)
+			return
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/live/history/"))
+		if rest == "" {
+			http.NotFound(w, r)
+			return
+		}
+		parts := strings.Split(rest, "/")
+		roomID := strings.TrimSpace(parts[0])
+		if roomID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		archiveID := ""
+		if len(parts) > 1 {
+			archiveID = strings.TrimSpace(parts[1])
+		}
+		handleLiveRoomHistory(app, store, roomID, archiveID, w, r)
+	})
 	mux.HandleFunc("/live/", func(w http.ResponseWriter, r *http.Request) {
 		roomID := strings.TrimSpace(newsplugin.PathValue("/live/", r.URL.Path))
 		if roomID == "" {
@@ -207,6 +229,28 @@ func newHandler(app *newsplugin.App, store *live.LocalStore, staticFS fs.FS) htt
 			return
 		}
 		handleAPILivePendingRoom(app, store, roomID, w, r)
+	})
+	mux.HandleFunc("/api/live/history/", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/live/history/") {
+			http.NotFound(w, r)
+			return
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/live/history/"))
+		if rest == "" {
+			http.NotFound(w, r)
+			return
+		}
+		parts := strings.Split(rest, "/")
+		roomID := strings.TrimSpace(parts[0])
+		if roomID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		archiveID := ""
+		if len(parts) > 1 {
+			archiveID = strings.TrimSpace(parts[1])
+		}
+		handleAPILiveRoomHistory(store, roomID, archiveID, w, r)
 	})
 	mux.HandleFunc("/api/live/rooms/", func(w http.ResponseWriter, r *http.Request) {
 		roomID := strings.TrimSpace(newsplugin.PathValue("/api/live/rooms/", r.URL.Path))

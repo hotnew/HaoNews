@@ -1,0 +1,123 @@
+{{define "team_artifact.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Team 产物详情</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard live-room-hero">
+        <div class="live-room-topline">
+          <a class="back-link" href="/teams/{{.Team.TeamID}}/artifacts">返回产物列表</a>
+          <p class="eyebrow">Team Artifact</p>
+        </div>
+        <div class="hero-heading">
+          <div class="live-room-heading-main">
+            <h1>{{.Artifact.Title}}</h1>
+            {{if .Artifact.Summary}}<p class="hero-copy">{{.Artifact.Summary}}</p>{{end}}
+            <div class="live-room-summary-strip">
+              <span><strong>Artifact ID</strong>{{.Artifact.ArtifactID}}</span>
+              <span><strong>类型</strong>{{.Artifact.Kind}}</span>
+              <span><strong>频道</strong>{{.Artifact.ChannelID}}</span>
+              <span><strong>Team</strong>{{.Team.TeamID}}</span>
+            </div>
+          </div>
+          <div class="hero-actions live-room-actions">
+            <a class="button-link" href="/api/teams/{{.Team.TeamID}}/artifacts/{{urlquery .Artifact.ArtifactID}}">Artifact JSON</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/artifacts">全部产物</a>
+          </div>
+        </div>
+      </header>
+      <main class="feed">
+        <section class="panel panel-inline">
+          <p class="panel-label">产物摘要</p>
+          <div class="hero-stats hero-stats-wide">
+            {{range .SummaryStats}}
+              <div class="hero-stat-card">
+                <span class="stat-label">{{.Label}}</span>
+                <strong>{{.Value}}</strong>
+              </div>
+            {{end}}
+            <div class="hero-stat-card">
+              <span class="stat-label">创建者</span>
+              <strong>{{if .Artifact.CreatedBy}}<a href="/?author={{urlquery .Artifact.CreatedBy}}">{{.Artifact.CreatedBy}}</a>{{else}}-{{end}}</strong>
+            </div>
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">编辑产物</p>
+          <form method="post" action="/teams/{{.Team.TeamID}}/artifacts/{{urlquery .Artifact.ArtifactID}}/update" class="settings-form">
+            <label>
+              <span>标题</span>
+              <input type="text" name="title" value="{{.Artifact.Title}}">
+            </label>
+            <label>
+              <span>类型</span>
+              <input type="text" name="kind" value="{{.Artifact.Kind}}">
+            </label>
+            <label>
+              <span>频道</span>
+              <input type="text" name="channel_id" value="{{.Artifact.ChannelID}}">
+            </label>
+            <label>
+              <span>摘要</span>
+              <input type="text" name="summary" value="{{.Artifact.Summary}}">
+            </label>
+            <label>
+              <span>链接</span>
+              <input type="text" name="link_url" value="{{.Artifact.LinkURL}}">
+            </label>
+            <label>
+              <span>标签</span>
+              <input type="text" name="labels" value="{{joinStrings .Artifact.Labels}}">
+            </label>
+            <label>
+              <span>正文</span>
+              <textarea name="content" rows="10">{{.Artifact.Content}}</textarea>
+            </label>
+            <button class="button-link" type="submit">保存产物</button>
+          </form>
+          <form method="post" action="/teams/{{.Team.TeamID}}/artifacts/{{urlquery .Artifact.ArtifactID}}/delete" class="settings-form">
+            <button class="button-link button-link-muted" type="submit">删除产物</button>
+          </form>
+        </section>
+        {{if .Artifact.LinkURL}}
+        <section class="panel panel-inline">
+          <p class="panel-label">外部链接</p>
+          <p><a href="{{.Artifact.LinkURL}}">{{.Artifact.LinkURL}}</a></p>
+        </section>
+        {{end}}
+        {{if .Artifact.Content}}
+        <section class="panel panel-inline">
+          <p class="panel-label">正文</p>
+          <pre class="code-block">{{.Artifact.Content}}</pre>
+        </section>
+        {{end}}
+        <section class="panel panel-inline">
+          <p class="panel-label">最近产物</p>
+          {{if .Artifacts}}
+            <div class="facet-list-inline">
+              {{range .Artifacts}}
+                <a class="facet-chip{{if eq .ArtifactID $.Artifact.ArtifactID}} facet-chip-active{{end}}" href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">
+                  {{.Title}}
+                </a>
+              {{end}}
+            </div>
+          {{else}}
+            <p class="micro-copy">当前没有更多 Team Artifact。</p>
+          {{end}}
+        </section>
+      </main>
+    </div>
+  </div>
+{{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

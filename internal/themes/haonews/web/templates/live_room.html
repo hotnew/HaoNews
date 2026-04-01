@@ -231,6 +231,31 @@
         {{end}}
 
         <section class="panel panel-inline">
+          <p class="panel-label">本地历史归档</p>
+          {{if .HistoryArchives}}
+            <div class="story-list">
+              {{range .HistoryArchives}}
+                <article class="story-card">
+                  <div class="story-card-main">
+                    <div class="card-meta">
+                      <span>{{.ArchivedAt}}</span>
+                      <span>{{.EventCount}} 条</span>
+                    </div>
+                    <h2><a href="/live/history/{{$.Room.RoomID}}/{{.ArchiveID}}">{{if .StartAt}}{{.StartAt}}{{else}}历史批次{{end}}{{if .EndAt}} 至 {{.EndAt}}{{end}}</a></h2>
+                    <div class="story-links">
+                      <a href="/live/history/{{$.Room.RoomID}}/{{.ArchiveID}}">查看历史</a>
+                      <a href="/api/live/history/{{$.Room.RoomID}}/{{.ArchiveID}}">查看 JSON</a>
+                    </div>
+                  </div>
+                </article>
+              {{end}}
+            </div>
+          {{else}}
+            <p class="micro-copy">当前还没有本地历史归档。后续消息超过当前窗口时，被裁掉的旧聊天会自动沉到这里。</p>
+          {{end}}
+        </section>
+
+        <section class="panel panel-inline">
           <p class="panel-label">参与者</p>
           {{if .Roster}}
             <div class="facet-list-inline live-roster-chips">

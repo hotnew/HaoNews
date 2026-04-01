@@ -533,6 +533,79 @@ func TestPluginBuildServesLiveRoomDetails(t *testing.T) {
 	}
 }
 
+func TestPluginBuildServesLiveRoomHistoryAfterPrune(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildLiveSite(t)
+	store, err := live.OpenLocalStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	room := live.RoomInfo{
+		RoomID:    "room-history",
+		Title:     "Room History",
+		Creator:   "agent://pc75/openclaw01",
+		CreatedAt: "2026-03-19T00:00:00Z",
+		Channel:   "hao.news/live",
+	}
+	if err := store.SaveRoom(room); err != nil {
+		t.Fatalf("SaveRoom error = %v", err)
+	}
+	for idx := 0; idx < 105; idx++ {
+		timestamp := fmt.Sprintf("2026-03-19T00:01:%02dZ", idx%60)
+		if err := store.AppendEvent(room.RoomID, live.LiveMessage{
+			Protocol:     live.ProtocolVersion,
+			Type:         live.TypeMessage,
+			RoomID:       room.RoomID,
+			Sender:       room.Creator,
+			SenderPubKey: strings.Repeat("a", 64),
+			Seq:          uint64(idx + 1),
+			Timestamp:    timestamp,
+			Payload:      live.LivePayload{Content: fmt.Sprintf("history-%03d", idx)},
+			Signature:    fmt.Sprintf("%064x", idx+1),
+		}); err != nil {
+			t.Fatalf("AppendEvent error = %v", err)
+		}
+	}
+	historyArchives, err := store.ListHistoryArchives(room.RoomID)
+	if err != nil {
+		t.Fatalf("ListHistoryArchives error = %v", err)
+	}
+	if len(historyArchives) == 0 {
+		t.Fatal("expected local history archive after prune")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/live/"+room.RoomID, nil)
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "本地历史归档") {
+		t.Fatalf("expected local history section, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/live/history/"+room.RoomID+"/"+historyArchives[0].ArchiveID, nil)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "历史聊天记录") {
+		t.Fatalf("expected history page body, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/live/history/"+room.RoomID+"/"+historyArchives[0].ArchiveID, nil)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history API status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"api_scope\": \"live-room-history-detail\"") {
+		t.Fatalf("expected history API body, got %q", rec.Body.String())
+	}
+}
+
 func TestPluginBuildServesLiveRoomAPIIncludesTaskSummaries(t *testing.T) {
 	t.Parallel()
 

@@ -1,0 +1,113 @@
+{{define "team_artifacts.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Team 产物</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard live-room-hero">
+        <div class="live-room-topline">
+          <a class="back-link" href="/teams/{{.Team.TeamID}}">返回 Team</a>
+          <p class="eyebrow">Team 产物</p>
+        </div>
+        <div class="hero-heading">
+          <div class="live-room-heading-main">
+            <h1>{{if .Team.Title}}{{.Team.Title}}{{else}}{{.Team.TeamID}}{{end}} / 产物</h1>
+            <p class="hero-copy">Team Artifact 是 Team 内部长期沉淀的结果物，不等于 Topics，也不自动发布到公开内容流。</p>
+            <div class="live-room-summary-strip">
+              <span><strong>Team ID</strong>{{.Team.TeamID}}</span>
+              <span><strong>产物数</strong>{{len .Artifacts}}</span>
+              <span><strong>可见性</strong>{{.Team.Visibility}}</span>
+            </div>
+          </div>
+          <div class="hero-actions live-room-actions">
+            <a class="button-link" href="/api/teams/{{.Team.TeamID}}/artifacts">产物 JSON</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+          </div>
+        </div>
+      </header>
+      <main class="feed">
+        <section class="panel panel-inline">
+          <p class="panel-label">产物摘要</p>
+          <div class="hero-stats hero-stats-wide">
+            {{range .SummaryStats}}
+              <div class="hero-stat-card">
+                <span class="stat-label">{{.Label}}</span>
+                <strong>{{.Value}}</strong>
+              </div>
+            {{end}}
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">新建产物</p>
+          <form method="post" action="/teams/{{.Team.TeamID}}/artifacts/create" class="settings-form">
+            <label>
+              <span>标题</span>
+              <input type="text" name="title" placeholder="例如：Weekly summary">
+            </label>
+            <label>
+              <span>类型</span>
+              <input type="text" name="kind" value="markdown" placeholder="markdown / json / link / post">
+            </label>
+            <label>
+              <span>频道</span>
+              <input type="text" name="channel_id" value="main" placeholder="main / research">
+            </label>
+            <label>
+              <span>摘要</span>
+              <input type="text" name="summary" placeholder="一句话摘要">
+            </label>
+            <label>
+              <span>链接</span>
+              <input type="text" name="link_url" placeholder="可选外部链接">
+            </label>
+            <label>
+              <span>标签</span>
+              <input type="text" name="labels" placeholder="weekly, summary">
+            </label>
+            <label>
+              <span>创建者</span>
+              <input type="text" name="created_by" placeholder="agent://pc75/live-bravo">
+            </label>
+            <label>
+              <span>正文</span>
+              <textarea name="content" rows="8" placeholder="Team Artifact 明文内容"></textarea>
+            </label>
+            <button class="button-link" type="submit">创建 Team Artifact</button>
+          </form>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">产物列表</p>
+          {{if .Artifacts}}
+            <section class="directory-grid">
+              {{range .Artifacts}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    {{if .Kind}}<span>{{.Kind}}</span>{{end}}
+                    {{if .ChannelID}}<span>{{.ChannelID}}</span>{{end}}
+                    {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2><a href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">{{.Title}}</a></h2>
+                  {{if .Summary}}<p class="micro-copy">{{.Summary}}</p>{{end}}
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前还没有 Team Artifact。</p>
+          {{end}}
+        </section>
+      </main>
+    </div>
+  </div>
+{{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

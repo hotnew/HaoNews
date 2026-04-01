@@ -70,8 +70,23 @@ type liveRoomPageData struct {
 	TaskByAssignee               []liveTaskGroupView
 	Roster                       []live.RosterEntry
 	Archive                      *live.ArchiveRecord
+	HistoryArchives              []live.RoomHistoryArchive
 	ShowHeartbeats               bool
 	AutoRefresh                  bool
+}
+
+type liveRoomHistoryPageData struct {
+	Project         string
+	Version         string
+	PageNav         []newsplugin.NavItem
+	NodeStatus      newsplugin.NodeStatus
+	Now             time.Time
+	Room            live.RoomInfo
+	RoomLinks       liveRoomLinks
+	Archive         *live.RoomHistoryArchive
+	Archives        []live.RoomHistoryArchive
+	EventViews      []liveEventView
+	ArchiveNotFound bool
 }
 
 type livePublicRoomEntry struct {

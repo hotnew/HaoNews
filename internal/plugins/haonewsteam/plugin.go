@@ -62,12 +62,118 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 		handleTeamIndex(app, store, w, r)
 	})
 	mux.HandleFunc("/teams/", func(w http.ResponseWriter, r *http.Request) {
-		teamID := teamcore.NormalizeTeamID(strings.TrimSpace(newsplugin.PathValue("/teams/", r.URL.Path)))
+		trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/teams/"), "/")
+		if trimmed == "" {
+			http.NotFound(w, r)
+			return
+		}
+		parts := strings.Split(trimmed, "/")
+		teamID := teamcore.NormalizeTeamID(parts[0])
 		if teamID == "" {
 			http.NotFound(w, r)
 			return
 		}
-		handleTeam(app, store, teamID, w, r)
+		if len(parts) == 1 {
+			handleTeam(app, store, teamID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "tasks" {
+			handleTeamTasks(app, store, teamID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "history" {
+			handleTeamHistory(app, store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "tasks" && parts[2] == "create" && r.Method == http.MethodPost {
+			handleTeamTaskCreate(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "tasks" {
+			handleTeamTask(app, store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "update" && r.Method == http.MethodPost {
+			handleTeamTaskUpdate(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "delete" && r.Method == http.MethodPost {
+			handleTeamTaskDelete(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "artifacts" && parts[2] == "create" && r.Method == http.MethodPost {
+			handleTeamArtifactCreate(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "artifacts" && parts[3] == "update" && r.Method == http.MethodPost {
+			handleTeamArtifactUpdate(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "artifacts" && parts[3] == "delete" && r.Method == http.MethodPost {
+			handleTeamArtifactDelete(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "artifacts" {
+			handleTeamArtifacts(app, store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "artifacts" {
+			handleTeamArtifact(app, store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "policy" && r.Method == http.MethodPost {
+			handleTeamPolicyUpdate(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "members" && parts[2] == "action" && r.Method == http.MethodPost {
+			handleTeamMemberAction(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "members" && parts[2] == "update" && r.Method == http.MethodPost {
+			handleTeamMemberUpdate(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "channels" && parts[2] == "create" && r.Method == http.MethodPost {
+			handleTeamChannelCreate(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "channels" && parts[3] == "update" && r.Method == http.MethodPost {
+			channelID := normalizeTeamChannel(parts[2])
+			if channelID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			handleTeamChannelUpdate(store, teamID, channelID, w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "channels" && parts[3] == "hide" && r.Method == http.MethodPost {
+			channelID := normalizeTeamChannel(parts[2])
+			if channelID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			handleTeamChannelHide(store, teamID, channelID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "channels" {
+			channelID := normalizeTeamChannel(parts[2])
+			if channelID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			handleTeamChannel(app, store, teamID, channelID, w, r)
+			return
+		}
+		if len(parts) == 5 && parts[1] == "channels" && parts[3] == "messages" && parts[4] == "create" && r.Method == http.MethodPost {
+			channelID := normalizeTeamChannel(parts[2])
+			if channelID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			handleTeamChannelMessageCreate(store, teamID, channelID, w, r)
+			return
+		}
+		http.NotFound(w, r)
 	})
 	mux.HandleFunc("/api/teams", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/teams" {
@@ -83,7 +189,7 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 			return
 		}
 		parts := strings.Split(trimmed, "/")
-		if len(parts) > 2 {
+		if len(parts) > 4 {
 			http.NotFound(w, r)
 			return
 		}
@@ -96,16 +202,62 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 			handleAPITeam(store, teamID, w, r)
 			return
 		}
-		if parts[1] == "members" {
+		if len(parts) == 2 && parts[1] == "channels" {
+			handleAPITeamChannels(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "channels" {
+			channelID := normalizeTeamChannel(parts[2])
+			if channelID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			handleAPITeamChannel(store, teamID, channelID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "policy" {
+			handleAPITeamPolicy(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "history" {
+			handleAPITeamHistory(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "members" {
 			handleAPITeamMembers(store, teamID, w, r)
 			return
 		}
-		if parts[1] == "messages" {
+		if len(parts) == 3 && parts[1] == "members" && parts[2] == "action" {
+			handleAPITeamMemberAction(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "messages" {
 			handleAPITeamMessages(store, teamID, w, r)
 			return
 		}
-		if parts[1] == "tasks" {
+		if len(parts) == 2 && parts[1] == "tasks" {
 			handleAPITeamTasks(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "tasks" {
+			handleAPITeamTask(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "artifacts" {
+			handleAPITeamArtifacts(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "artifacts" {
+			handleAPITeamArtifact(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "channels" && parts[3] == "messages" {
+			channelID := normalizeTeamChannel(parts[2])
+			if channelID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			handleAPITeamChannelMessages(store, teamID, channelID, w, r)
 			return
 		}
 		http.NotFound(w, r)

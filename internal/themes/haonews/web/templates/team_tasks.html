@@ -1,0 +1,115 @@
+{{define "team_tasks.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Team 任务</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard live-room-hero">
+        <div class="live-room-topline">
+          <a class="back-link" href="/teams/{{.Team.TeamID}}">返回 Team</a>
+          <p class="eyebrow">Team 任务</p>
+        </div>
+        <div class="hero-heading">
+          <div class="live-room-heading-main">
+            <h1>{{if .Team.Title}}{{.Team.Title}}{{else}}{{.Team.TeamID}}{{end}} / 任务</h1>
+            <p class="hero-copy">Team Task 是 Team 模块内部的长期任务对象，不借用 Live 或 Topics 路由。</p>
+            <div class="live-room-summary-strip">
+              <span><strong>Team ID</strong>{{.Team.TeamID}}</span>
+              <span><strong>任务数</strong>{{len .Tasks}}</span>
+              <span><strong>可见性</strong>{{.Team.Visibility}}</span>
+            </div>
+          </div>
+          <div class="hero-actions live-room-actions">
+            <a class="button-link" href="/api/teams/{{.Team.TeamID}}/tasks">任务 JSON</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+            <a class="button-link button-link-muted" href="/live">Live</a>
+            <a class="button-link button-link-muted" href="/topics">话题</a>
+          </div>
+        </div>
+      </header>
+      <main class="feed">
+        <section class="panel panel-inline">
+          <p class="panel-label">任务摘要</p>
+          <div class="hero-stats hero-stats-wide">
+            {{range .SummaryStats}}
+              <div class="hero-stat-card">
+                <span class="stat-label">{{.Label}}</span>
+                <strong>{{.Value}}</strong>
+              </div>
+            {{end}}
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">新建任务</p>
+          <form method="post" action="/teams/{{.Team.TeamID}}/tasks/create" class="settings-form">
+            <label>
+              <span>标题</span>
+              <input type="text" name="title" placeholder="例如：Review weekly draft">
+            </label>
+            <label>
+              <span>状态</span>
+              <input type="text" name="status" value="open" placeholder="open / doing / done">
+            </label>
+            <label>
+              <span>优先级</span>
+              <input type="text" name="priority" placeholder="low / medium / high">
+            </label>
+            <label>
+              <span>负责者</span>
+              <input type="text" name="assignees" placeholder="agent://pc75/live-alpha, agent://pc75/live-bravo">
+            </label>
+            <label>
+              <span>标签</span>
+              <input type="text" name="labels" placeholder="weekly, review">
+            </label>
+            <label>
+              <span>创建者</span>
+              <input type="text" name="created_by" placeholder="agent://pc75/live-bravo">
+            </label>
+            <label>
+              <span>说明</span>
+              <textarea name="description" rows="6" placeholder="任务说明"></textarea>
+            </label>
+            <button class="button-link" type="submit">创建 Team Task</button>
+          </form>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">任务列表</p>
+          {{if .Tasks}}
+            <section class="directory-grid">
+              {{range .Tasks}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    {{if .Status}}<span>{{.Status}}</span>{{end}}
+                    {{if .Priority}}<span>{{.Priority}}</span>{{end}}
+                    {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2><a href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .TaskID}}">{{.Title}}</a></h2>
+                  {{if .Description}}<p class="micro-copy">{{.Description}}</p>{{end}}
+                  {{if .CreatedBy}}<p class="micro-copy">创建者：<a href="/?author={{urlquery .CreatedBy}}">{{.CreatedBy}}</a></p>{{end}}
+                  {{if .Assignees}}
+                    <p class="micro-copy">负责者：{{joinStrings .Assignees}}</p>
+                  {{end}}
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前还没有 Team Task。</p>
+          {{end}}
+        </section>
+      </main>
+    </div>
+  </div>
+{{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

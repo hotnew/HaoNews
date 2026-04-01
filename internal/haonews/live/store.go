@@ -54,6 +54,16 @@ type ArchiveRecord struct {
 	ArchivedAt  string `json:"archived_at"`
 }
 
+type RoomHistoryArchive struct {
+	ArchiveID  string        `json:"archive_id"`
+	RoomID     string        `json:"room_id"`
+	ArchivedAt string        `json:"archived_at"`
+	StartAt    string        `json:"start_at,omitempty"`
+	EndAt      string        `json:"end_at,omitempty"`
+	EventCount int           `json:"event_count"`
+	Events     []LiveMessage `json:"events,omitempty"`
+}
+
 type roomRecord struct {
 	Info        RoomInfo `json:"info"`
 	EventCount  int      `json:"event_count"`
@@ -93,6 +103,14 @@ func (s *LocalStore) RoomDir(roomID string) string {
 
 func (s *LocalStore) archivePath(roomID string) string {
 	return filepath.Join(s.RoomDir(roomID), "archive.json")
+}
+
+func (s *LocalStore) historyDir(roomID string) string {
+	return filepath.Join(s.RoomDir(roomID), "history")
+}
+
+func (s *LocalStore) historyPath(roomID, archiveID string) string {
+	return filepath.Join(s.historyDir(roomID), strings.TrimSpace(archiveID)+".json")
 }
 
 func (s *LocalStore) SaveRoom(info RoomInfo) error {
@@ -419,9 +437,12 @@ func (s *LocalStore) pruneRoomEvents(roomID string) error {
 	if err != nil {
 		return err
 	}
-	pruned := retainRecentLiveEvents(events, LiveRoomRetainNonHeartbeatEvents, LiveRoomRetainHeartbeatEvents)
+	pruned, dropped := retainRecentLiveEvents(events, LiveRoomRetainNonHeartbeatEvents, LiveRoomRetainHeartbeatEvents)
 	if len(pruned) == len(events) {
 		return nil
+	}
+	if err := s.savePrunedHistory(roomID, dropped); err != nil {
+		return err
 	}
 	var body []byte
 	for _, event := range pruned {
@@ -435,9 +456,9 @@ func (s *LocalStore) pruneRoomEvents(roomID string) error {
 	return writeFileAtomic(path, body, 0o644)
 }
 
-func retainRecentLiveEvents(events []LiveMessage, keepNonHeartbeat, keepHeartbeat int) []LiveMessage {
+func retainRecentLiveEvents(events []LiveMessage, keepNonHeartbeat, keepHeartbeat int) ([]LiveMessage, []LiveMessage) {
 	if len(events) == 0 {
-		return nil
+		return nil, nil
 	}
 	keep := make([]bool, len(events))
 	nonHeartbeatCount := 0
@@ -457,12 +478,15 @@ func retainRecentLiveEvents(events []LiveMessage, keepNonHeartbeat, keepHeartbea
 		}
 	}
 	out := make([]LiveMessage, 0, nonHeartbeatCount+heartbeatCount)
+	dropped := make([]LiveMessage, 0, len(events)-len(out))
 	for index, event := range events {
 		if keep[index] {
 			out = append(out, event)
+			continue
 		}
+		dropped = append(dropped, event)
 	}
-	return out
+	return out, dropped
 }
 
 func countIndexedLiveEvents(events []LiveMessage) int {
@@ -627,6 +651,81 @@ func (s *LocalStore) redisDelete(keys ...string) {
 		return
 	}
 	_ = s.redis.Delete(s.redisContext(), filtered...)
+}
+
+func (s *LocalStore) savePrunedHistory(roomID string, dropped []LiveMessage) error {
+	visible := archiveDisplayEvents(dropped)
+	if len(visible) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(s.historyDir(roomID), 0o755); err != nil {
+		return err
+	}
+	archiveID := time.Now().UTC().Format("20060102T150405.000000000Z0700")
+	startAt, endAt := archiveEventRange(visible)
+	record := RoomHistoryArchive{
+		ArchiveID:  archiveID,
+		RoomID:     strings.TrimSpace(roomID),
+		ArchivedAt: time.Now().UTC().Format(time.RFC3339),
+		StartAt:    startAt,
+		EndAt:      endAt,
+		EventCount: len(visible),
+		Events:     visible,
+	}
+	body, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+	return writeFileAtomic(s.historyPath(roomID, archiveID), body, 0o644)
+}
+
+func (s *LocalStore) ListHistoryArchives(roomID string) ([]RoomHistoryArchive, error) {
+	if s == nil {
+		return nil, fmt.Errorf("local store is required")
+	}
+	entries, err := os.ReadDir(s.historyDir(roomID))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]RoomHistoryArchive, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(s.historyDir(roomID), entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		var record RoomHistoryArchive
+		if err := json.Unmarshal(body, &record); err != nil {
+			return nil, err
+		}
+		record.Events = nil
+		out = append(out, record)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ArchivedAt > out[j].ArchivedAt
+	})
+	return out, nil
+}
+
+func (s *LocalStore) LoadHistoryArchive(roomID, archiveID string) (*RoomHistoryArchive, error) {
+	if s == nil {
+		return nil, fmt.Errorf("local store is required")
+	}
+	body, err := os.ReadFile(s.historyPath(roomID, archiveID))
+	if err != nil {
+		return nil, err
+	}
+	var record RoomHistoryArchive
+	if err := json.Unmarshal(body, &record); err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 func mergeRoomInfo(existing, incoming RoomInfo) RoomInfo {

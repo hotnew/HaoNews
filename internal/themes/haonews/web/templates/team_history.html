@@ -1,0 +1,123 @@
+{{define "team_history.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Team 历史</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard live-room-hero">
+        <div class="live-room-topline">
+          <a class="back-link" href="/teams/{{.Team.TeamID}}">返回 Team</a>
+          <p class="eyebrow">Team 历史</p>
+        </div>
+        <div class="hero-heading">
+          <div class="live-room-heading-main">
+            <h1>{{if .Team.Title}}{{.Team.Title}}{{else}}{{.Team.TeamID}}{{end}} / 历史</h1>
+            <p class="hero-copy">Team 历史只记录 Team 模块内部的治理、任务与产物变更，不借用 Live 或 Topics。</p>
+            <div class="live-room-summary-strip">
+              <span><strong>Team ID</strong>{{.Team.TeamID}}</span>
+              <span><strong>变更数</strong>{{len .History}}</span>
+              <span><strong>可见性</strong>{{.Team.Visibility}}</span>
+            </div>
+          </div>
+          <div class="hero-actions live-room-actions">
+            <a class="button-link" href="/api/teams/{{.Team.TeamID}}/history">历史 JSON</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/artifacts">产物</a>
+          </div>
+        </div>
+      </header>
+      <main class="feed">
+        <section class="panel panel-inline">
+          <p class="panel-label">历史摘要</p>
+          <div class="hero-stats hero-stats-wide">
+            {{range .SummaryStats}}
+              <div class="hero-stat-card">
+                <span class="stat-label">{{.Label}}</span>
+                <strong>{{.Value}}</strong>
+              </div>
+            {{end}}
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">筛选</p>
+          <form method="get" action="/teams/{{.Team.TeamID}}/history" class="settings-form">
+            <label>
+              <span>Scope</span>
+              <select name="scope">
+                <option value="">全部</option>
+                {{range .Scopes}}
+                  <option value="{{.}}"{{if eq . $.FilterScope}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <span>Source</span>
+              <select name="source">
+                <option value="">全部</option>
+                {{range .Sources}}
+                  <option value="{{.}}"{{if eq . $.FilterSource}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <span>Actor</span>
+              <input type="text" name="actor" value="{{.FilterActor}}" placeholder="agent://pc75/...">
+            </label>
+            <button class="button-link" type="submit">应用筛选</button>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/history">重置</a>
+          </form>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">全部变更</p>
+          {{if .History}}
+            <section class="story-list">
+              {{range .History}}
+                <article class="story-card">
+                  <div class="card-meta">
+                    {{if .Scope}}<span>{{.Scope}}</span>{{end}}
+                    {{if .Action}}<span>{{.Action}}</span>{{end}}
+                    {{if .Source}}<span>{{.Source}}</span>{{end}}
+                    {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2>{{.Summary}}</h2>
+                  {{if .SubjectID}}<p class="micro-copy">对象：<code>{{.SubjectID}}</code></p>{{end}}
+                  {{if .ActorAgentID}}<p class="micro-copy">执行者：<a href="/?author={{urlquery .ActorAgentID}}">{{.ActorAgentID}}</a></p>{{end}}
+                  {{if .ActorOriginPublicKey}}<p class="micro-copy">子公钥：<code>{{printf "%.12s" .ActorOriginPublicKey}}</code></p>{{end}}
+                  {{if .ActorParentPublicKey}}<p class="micro-copy">父公钥：<code>{{printf "%.12s" .ActorParentPublicKey}}</code></p>{{end}}
+                  {{$diff := index .Metadata "diff_summary"}}{{if $diff}}<p class="micro-copy">摘要：{{$diff}}</p>{{end}}
+                  {{$before := index .Metadata "status_before"}}{{$after := index .Metadata "status_after"}}
+                  {{if or $before $after}}<p class="micro-copy">状态：{{if $before}}{{$before}}{{else}}-{{end}} → {{if $after}}{{$after}}{{else}}-{{end}}</p>{{end}}
+                  {{$roleBefore := index .Metadata "role_before"}}{{$roleAfter := index .Metadata "role_after"}}
+                  {{if or $roleBefore $roleAfter}}<p class="micro-copy">角色：{{if $roleBefore}}{{$roleBefore}}{{else}}-{{end}} → {{if $roleAfter}}{{$roleAfter}}{{else}}-{{end}}</p>{{end}}
+                  {{$titleBefore := index .Metadata "title_before"}}{{$titleAfter := index .Metadata "title_after"}}
+                  {{if or $titleBefore $titleAfter}}<p class="micro-copy">标题：{{if $titleBefore}}{{$titleBefore}}{{else}}-{{end}} → {{if $titleAfter}}{{$titleAfter}}{{else}}-{{end}}</p>{{end}}
+                  {{$priorityBefore := index .Metadata "priority_before"}}{{$priorityAfter := index .Metadata "priority_after"}}
+                  {{if or $priorityBefore $priorityAfter}}<p class="micro-copy">优先级：{{if $priorityBefore}}{{$priorityBefore}}{{else}}-{{end}} → {{if $priorityAfter}}{{$priorityAfter}}{{else}}-{{end}}</p>{{end}}
+                  {{$channelBefore := index .Metadata "channel_before"}}{{$channelAfter := index .Metadata "channel_after"}}
+                  {{if or $channelBefore $channelAfter}}<p class="micro-copy">频道：{{if $channelBefore}}{{$channelBefore}}{{else}}-{{end}} → {{if $channelAfter}}{{$channelAfter}}{{else}}-{{end}}</p>{{end}}
+                  {{$hiddenBefore := index .Metadata "hidden_before"}}{{$hiddenAfter := index .Metadata "hidden_after"}}
+                  {{if or $hiddenBefore $hiddenAfter}}<p class="micro-copy">隐藏：{{if $hiddenBefore}}{{$hiddenBefore}}{{else}}-{{end}} → {{if $hiddenAfter}}{{$hiddenAfter}}{{else}}-{{end}}</p>{{end}}
+                  {{if .Metadata}}<pre class="json-output">{{prettyJSON .Metadata}}</pre>{{end}}
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前还没有 Team 历史记录。</p>
+          {{end}}
+        </section>
+      </main>
+    </div>
+  </div>
+{{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

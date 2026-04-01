@@ -339,6 +339,11 @@ func handleLiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	historyArchives, err := store.ListHistoryArchives(roomID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	index, err := app.Index()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -386,10 +391,71 @@ func handleLiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, 
 		TaskByAssignee:               groupTasksByAssignee(taskSummaries),
 		Roster:                       live.BuildRoster(filteredEvents, time.Now().UTC(), 30*time.Second),
 		Archive:                      archive,
+		HistoryArchives:              formatHistoryArchives(historyArchives),
 		ShowHeartbeats:               showHeartbeats,
 		AutoRefresh:                  autoRefresh,
 	}
 	if err := app.Templates().ExecuteTemplate(w, "live_room.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func handleLiveRoomHistory(app *newsplugin.App, store *live.LocalStore, roomID, archiveID string, w http.ResponseWriter, r *http.Request) {
+	room, err := loadLiveRoom(store, roomID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such file") {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	archives, err := store.ListHistoryArchives(roomID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var selected *live.RoomHistoryArchive
+	notFound := false
+	if archiveID != "" {
+		selected, err = store.LoadHistoryArchive(roomID, archiveID)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			notFound = true
+		}
+	} else if len(archives) > 0 {
+		selected, err = store.LoadHistoryArchive(roomID, archives[0].ArchiveID)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	index, err := app.Index()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	room.CreatedAt = formatLiveDisplayTime(room.CreatedAt)
+	if selected != nil {
+		selected = formatHistoryArchive(selected)
+	}
+	data := liveRoomHistoryPageData{
+		Project:         app.ProjectName(),
+		Version:         app.VersionString(),
+		PageNav:         app.PageNav("/live"),
+		NodeStatus:      app.NodeStatus(index),
+		Now:             time.Now(),
+		Room:            room,
+		RoomLinks:       liveRoomLinksFor(roomID),
+		Archive:         selected,
+		Archives:        formatHistoryArchives(archives),
+		EventViews:      buildEventViews(historyArchiveEvents(selected), newsplugin.SubscriptionRules{}),
+		ArchiveNotFound: notFound,
+	}
+	if err := app.Templates().ExecuteTemplate(w, "live_history.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -527,6 +593,11 @@ func handleAPILiveRoom(app *newsplugin.App, store *live.LocalStore, roomID strin
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	historyArchives, err := store.ListHistoryArchives(roomID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	showHeartbeats := queryBool(r, "show_heartbeats", false)
 	filteredEvents := filterLiveEvents(events, showHeartbeats, rules)
 	publicMutedEvents := 0
@@ -555,7 +626,35 @@ func handleAPILiveRoom(app *newsplugin.App, store *live.LocalStore, roomID strin
 		"task_by_assignee":                 groupTasksByAssignee(taskSummaries),
 		"roster":                           live.BuildRoster(filteredEvents, time.Now().UTC(), 30*time.Second),
 		"archive":                          archive,
+		"history_archives":                 formatHistoryArchives(historyArchives),
 		"show_heartbeats":                  showHeartbeats,
+	})
+}
+
+func handleAPILiveRoomHistory(store *live.LocalStore, roomID, archiveID string, w http.ResponseWriter, r *http.Request) {
+	archives, err := store.ListHistoryArchives(roomID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if archiveID == "" {
+		newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+			"room_id":   roomID,
+			"archives":  formatHistoryArchives(archives),
+			"api_scope": "live-room-history",
+		})
+		return
+	}
+	record, err := store.LoadHistoryArchive(roomID, archiveID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"room_id":     roomID,
+		"archive":     formatHistoryArchive(record),
+		"event_views": buildEventViews(historyArchiveEvents(record), newsplugin.SubscriptionRules{}),
+		"api_scope":   "live-room-history-detail",
 	})
 }
 
@@ -1318,6 +1417,42 @@ func formatLiveDisplayTime(raw string) string {
 		return raw
 	}
 	return ts.Local().Format("2006-01-02 15:04:05 MST")
+}
+
+func formatHistoryArchives(items []live.RoomHistoryArchive) []live.RoomHistoryArchive {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]live.RoomHistoryArchive, 0, len(items))
+	for _, item := range items {
+		copyItem := item
+		copyItem.Events = nil
+		copyItem.ArchivedAt = formatLiveDisplayTime(copyItem.ArchivedAt)
+		copyItem.StartAt = formatLiveDisplayTime(copyItem.StartAt)
+		copyItem.EndAt = formatLiveDisplayTime(copyItem.EndAt)
+		out = append(out, copyItem)
+	}
+	return out
+}
+
+func formatHistoryArchive(item *live.RoomHistoryArchive) *live.RoomHistoryArchive {
+	if item == nil {
+		return nil
+	}
+	copyItem := *item
+	copyItem.ArchivedAt = formatLiveDisplayTime(copyItem.ArchivedAt)
+	copyItem.StartAt = formatLiveDisplayTime(copyItem.StartAt)
+	copyItem.EndAt = formatLiveDisplayTime(copyItem.EndAt)
+	return &copyItem
+}
+
+func historyArchiveEvents(item *live.RoomHistoryArchive) []live.LiveMessage {
+	if item == nil || len(item.Events) == 0 {
+		return nil
+	}
+	events := make([]live.LiveMessage, len(item.Events))
+	copy(events, item.Events)
+	return events
 }
 
 func buildTaskUpdateView(metadata map[string]any) *liveTaskUpdateView {

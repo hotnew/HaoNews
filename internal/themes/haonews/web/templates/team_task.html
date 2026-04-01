@@ -1,0 +1,131 @@
+{{define "team_task.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Team Task 详情</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard live-room-hero">
+        <div class="live-room-topline">
+          <a class="back-link" href="/teams/{{.Team.TeamID}}/tasks">返回任务列表</a>
+          <p class="eyebrow">Team Task</p>
+        </div>
+        <div class="hero-heading">
+          <div class="live-room-heading-main">
+            <h1>{{.Task.Title}}</h1>
+            {{if .Task.Description}}<p class="hero-copy">{{.Task.Description}}</p>{{end}}
+            <div class="live-room-summary-strip">
+              <span><strong>Task ID</strong>{{.Task.TaskID}}</span>
+              <span><strong>状态</strong>{{if .Task.Status}}{{.Task.Status}}{{else}}-{{end}}</span>
+              <span><strong>优先级</strong>{{if .Task.Priority}}{{.Task.Priority}}{{else}}-{{end}}</span>
+              <span><strong>Team</strong>{{.Team.TeamID}}</span>
+            </div>
+          </div>
+          <div class="hero-actions live-room-actions">
+            <a class="button-link" href="/api/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}">Task JSON</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+          </div>
+        </div>
+      </header>
+      <main class="feed">
+        <section class="panel panel-inline">
+          <p class="panel-label">任务摘要</p>
+          <div class="hero-stats hero-stats-wide">
+            {{range .SummaryStats}}
+              <div class="hero-stat-card">
+                <span class="stat-label">{{.Label}}</span>
+                <strong>{{.Value}}</strong>
+              </div>
+            {{end}}
+            <div class="hero-stat-card">
+              <span class="stat-label">创建者</span>
+              <strong>{{if .Task.CreatedBy}}<a href="/?author={{urlquery .Task.CreatedBy}}">{{.Task.CreatedBy}}</a>{{else}}-{{end}}</strong>
+            </div>
+            <div class="hero-stat-card">
+              <span class="stat-label">负责者</span>
+              <strong>{{if .Task.Assignees}}{{joinStrings .Task.Assignees}}{{else}}-{{end}}</strong>
+            </div>
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">编辑任务</p>
+          <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/update" class="settings-form">
+            <label>
+              <span>标题</span>
+              <input type="text" name="title" value="{{.Task.Title}}">
+            </label>
+            <label>
+              <span>状态</span>
+              <input type="text" name="status" value="{{.Task.Status}}">
+            </label>
+            <label>
+              <span>优先级</span>
+              <input type="text" name="priority" value="{{.Task.Priority}}">
+            </label>
+            <label>
+              <span>负责者</span>
+              <input type="text" name="assignees" value="{{joinStrings .Task.Assignees}}">
+            </label>
+            <label>
+              <span>标签</span>
+              <input type="text" name="labels" value="{{joinStrings .Task.Labels}}">
+            </label>
+            <label>
+              <span>说明</span>
+              <textarea name="description" rows="8">{{.Task.Description}}</textarea>
+            </label>
+            <button class="button-link" type="submit">保存任务</button>
+          </form>
+          <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/delete" class="settings-form">
+            <button class="button-link button-link-muted" type="submit">删除任务</button>
+          </form>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">最近任务</p>
+          {{if .Tasks}}
+            <div class="facet-list-inline">
+              {{range .Tasks}}
+                <a class="facet-chip{{if eq .TaskID $.Task.TaskID}} facet-chip-active{{end}}" href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .TaskID}}">
+                  {{.Title}}
+                </a>
+              {{end}}
+            </div>
+          {{else}}
+            <p class="micro-copy">当前没有更多 Team Task。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">关联消息</p>
+          {{if .Messages}}
+            <section class="story-list">
+              {{range .Messages}}
+                <article class="story-card">
+                  <div class="card-meta">
+                    {{if .ChannelID}}<span><a href="/teams/{{$.Team.TeamID}}/channels/{{urlquery .ChannelID}}">{{.ChannelID}}</a></span>{{end}}
+                    {{if .MessageType}}<span>{{.MessageType}}</span>{{end}}
+                    {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                    {{if .AuthorAgentID}}<span><a href="/?author={{urlquery .AuthorAgentID}}">{{.AuthorAgentID}}</a></span>{{end}}
+                  </div>
+                  <h2>{{.Content}}</h2>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前还没有和这个任务绑定的 TeamMessage。</p>
+          {{end}}
+        </section>
+      </main>
+    </div>
+  </div>
+{{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

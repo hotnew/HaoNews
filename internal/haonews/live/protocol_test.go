@@ -531,6 +531,25 @@ func TestAppendEventPrunesRoomToRecentHundredNonHeartbeatEvents(t *testing.T) {
 	if rooms[0].EventCount != LiveRoomRetainNonHeartbeatEvents {
 		t.Fatalf("rooms[0].EventCount = %d, want %d", rooms[0].EventCount, LiveRoomRetainNonHeartbeatEvents)
 	}
+	historyArchives, err := store.ListHistoryArchives(room.RoomID)
+	if err != nil {
+		t.Fatalf("ListHistoryArchives error = %v", err)
+	}
+	if len(historyArchives) == 0 {
+		t.Fatal("expected local history archive after pruning")
+	}
+	history, err := store.LoadHistoryArchive(room.RoomID, historyArchives[0].ArchiveID)
+	if err != nil {
+		t.Fatalf("LoadHistoryArchive error = %v", err)
+	}
+	if history.EventCount == 0 || len(history.Events) == 0 {
+		t.Fatalf("history archive = %#v, want visible retained events", history)
+	}
+	for _, event := range history.Events {
+		if event.Type == TypeHeartbeat || event.Type == TypeArchiveNotice {
+			t.Fatalf("history archive should hide heartbeat/archive notice, got %q", event.Type)
+		}
+	}
 }
 
 func TestRoomInfoFromAnnouncement(t *testing.T) {

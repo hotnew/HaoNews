@@ -1,0 +1,117 @@
+{{define "live_history.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Live 历史归档</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard live-room-hero">
+        <div class="live-room-topline">
+          <a class="back-link" href="{{.RoomLinks.RoomURL}}">返回房间</a>
+          <p class="eyebrow">Live 历史归档</p>
+        </div>
+        <div class="hero-heading">
+          <div class="live-room-heading-main">
+            <h1>{{if .Room.Title}}{{.Room.Title}}{{else}}{{.Room.RoomID}}{{end}}</h1>
+            <div class="live-room-summary-strip">
+              <span><strong>房间</strong>{{.Room.RoomID}}</span>
+              <span><strong>创建者</strong>{{.Room.Creator}}</span>
+              <span><strong>历史批次</strong>{{len .Archives}}</span>
+            </div>
+          </div>
+          <div class="hero-actions live-room-actions">
+            <a class="button-link" href="/api/live/history/{{.Room.RoomID}}">JSON 接口</a>
+            <a class="button-link button-link-muted" href="{{.RoomLinks.RoomURL}}">返回聊天</a>
+          </div>
+        </div>
+      </header>
+
+      <main class="feed">
+        {{if .Archives}}
+          <section class="panel panel-inline">
+            <p class="panel-label">历史批次</p>
+            <div class="story-list">
+              {{range .Archives}}
+                <article class="story-card">
+                  <div class="story-card-main">
+                    <div class="card-meta">
+                      <span>{{.ArchivedAt}}</span>
+                      <span>{{.EventCount}} 条</span>
+                    </div>
+                    <h2><a href="/live/history/{{$.Room.RoomID}}/{{.ArchiveID}}">{{if .StartAt}}{{.StartAt}}{{else}}历史批次{{end}}{{if .EndAt}} 至 {{.EndAt}}{{end}}</a></h2>
+                  </div>
+                </article>
+              {{end}}
+            </div>
+          </section>
+        {{end}}
+
+        {{if .ArchiveNotFound}}
+          <section class="panel panel-inline">
+            <p class="panel-label">历史批次不存在</p>
+            <p class="micro-copy">这个本地历史批次已经不存在，或房间还没有生成滚动归档。</p>
+          </section>
+        {{end}}
+
+        {{if .Archive}}
+          <section class="panel panel-inline">
+            <p class="panel-label">当前批次</p>
+            <div class="summary-grid">
+              <div><span class="stat-label">归档时间</span><strong>{{.Archive.ArchivedAt}}</strong></div>
+              <div><span class="stat-label">起始时间</span><strong>{{if .Archive.StartAt}}{{.Archive.StartAt}}{{else}}-{{end}}</strong></div>
+              <div><span class="stat-label">结束时间</span><strong>{{if .Archive.EndAt}}{{.Archive.EndAt}}{{else}}-{{end}}</strong></div>
+              <div><span class="stat-label">事件数</span><strong>{{.Archive.EventCount}}</strong></div>
+            </div>
+          </section>
+
+          <section class="panel panel-inline live-chat-panel">
+            <div class="panel-head panel-head-inline">
+              <p class="panel-label">历史聊天记录</p>
+            </div>
+            {{if .EventViews}}
+              <div class="live-event-window">
+                {{range .EventViews}}
+                  <article class="live-event-item">
+                    <div class="card-meta">
+                      <span>{{.Type}}</span>
+                      <span>{{.Timestamp}}</span>
+                      <a href="/?author={{urlquery .Sender}}">{{.Sender}}</a>
+                    </div>
+                    {{if .HeadingLines}}
+                      <div class="live-heading-lines">
+                        {{range .HeadingLines}}
+                          <div class="live-heading-line">{{.}}</div>
+                        {{end}}
+                      </div>
+                    {{else}}
+                      <h2>{{.Heading}}</h2>
+                    {{end}}
+                    {{if .Task}}
+                      <div class="summary-grid">
+                        {{if .Task.TaskID}}<div><span class="stat-label">任务 ID</span><strong>{{.Task.TaskID}}</strong></div>{{end}}
+                        {{if .Task.Status}}<div><span class="stat-label">状态</span><strong>{{.Task.Status}}</strong></div>{{end}}
+                        {{if .Task.AssignedTo}}<div><span class="stat-label">负责人</span><strong>{{.Task.AssignedTo}}</strong></div>{{end}}
+                        {{if .Task.Progress}}<div><span class="stat-label">进度</span><strong>{{.Task.Progress}}</strong></div>{{end}}
+                      </div>
+                    {{end}}
+                  </article>
+                {{end}}
+              </div>
+            {{else}}
+              <p class="micro-copy">当前历史批次没有可显示事件。</p>
+            {{end}}
+          </section>
+        {{end}}
+      </main>
+    </div>
+  </div>
+</body>
+</html>
+{{end}}

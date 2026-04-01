@@ -24,11 +24,16 @@
             <div class="live-room-summary-strip">
               <span><strong>Team ID</strong>{{.Team.TeamID}}</span>
               <span><strong>可见性</strong>{{.Team.Visibility}}</span>
+              <span><strong>频道数</strong>{{len .Channels}}</span>
               <span><strong>Owner</strong>{{if .Team.OwnerAgentID}}{{.Team.OwnerAgentID}}{{else}}-{{end}}</span>
             </div>
           </div>
           <div class="hero-actions live-room-actions">
             <a class="button-link" href="/api/teams/{{.Team.TeamID}}">JSON 接口</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/history">变更历史</a>
+            <a class="button-link button-link-muted" href="/api/teams/{{.Team.TeamID}}/policy">Policy JSON</a>
+            <a class="button-link button-link-muted" href="/api/teams/{{.Team.TeamID}}/history">历史 JSON</a>
+            <a class="button-link button-link-muted" href="/api/teams/{{.Team.TeamID}}/channels">频道 JSON</a>
             <a class="button-link button-link-muted" href="/api/teams/{{.Team.TeamID}}/members">成员 JSON</a>
             <a class="button-link button-link-muted" href="/api/teams/{{.Team.TeamID}}/messages">消息 JSON</a>
             <a class="button-link button-link-muted" href="/api/teams/{{.Team.TeamID}}/tasks">任务 JSON</a>
@@ -51,7 +56,140 @@
           </div>
         </section>
         <section class="panel panel-inline">
+          <p class="panel-label">Team Policy</p>
+          <div class="hero-stats hero-stats-wide">
+            <div class="hero-stat-card">
+              <span class="stat-label">消息</span>
+              <strong>{{joinStrings .Policy.MessageRoles}}</strong>
+            </div>
+            <div class="hero-stat-card">
+              <span class="stat-label">任务</span>
+              <strong>{{joinStrings .Policy.TaskRoles}}</strong>
+            </div>
+            <div class="hero-stat-card">
+              <span class="stat-label">系统说明</span>
+              <strong>{{joinStrings .Policy.SystemNoteRoles}}</strong>
+            </div>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/policy" class="settings-form">
+            <label>
+              <span>消息角色</span>
+              <input type="text" name="message_roles" value="{{joinStrings .Policy.MessageRoles}}" placeholder="owner, maintainer, member">
+            </label>
+            <label>
+              <span>任务角色</span>
+              <input type="text" name="task_roles" value="{{joinStrings .Policy.TaskRoles}}" placeholder="owner, maintainer, member">
+            </label>
+            <label>
+              <span>系统说明角色</span>
+              <input type="text" name="system_note_roles" value="{{joinStrings .Policy.SystemNoteRoles}}" placeholder="owner, maintainer">
+            </label>
+            <button class="button-link" type="submit">保存 Team Policy</button>
+          </form>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">频道目录</p>
+          <form method="post" action="/teams/{{.Team.TeamID}}/channels/create" class="settings-form">
+            <label>
+              <span>频道 ID</span>
+              <input type="text" name="channel_id" placeholder="research / ops / planning">
+            </label>
+            <label>
+              <span>频道标题</span>
+              <input type="text" name="title" placeholder="Research / Ops / Planning">
+            </label>
+            <label>
+              <span>频道说明</span>
+              <textarea name="description" rows="2" placeholder="Team 内部长期沟通，不借 Live / Topics。"></textarea>
+            </label>
+            <button class="button-link" type="submit">创建 Team Channel</button>
+          </form>
+          {{if .Channels}}
+            <section class="directory-grid">
+              {{range .Channels}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    <span>Team 子空间</span>
+                    {{if eq .ChannelID "main"}}<span>主频道</span>{{end}}
+                    {{if .Hidden}}<span>hidden</span>{{end}}
+                    {{if .MessageCount}}<span>{{.MessageCount}} 条消息</span>{{end}}
+                  </div>
+                  <h2 id="channel-{{.ChannelID}}">{{if .Title}}{{.Title}}{{else}}{{.ChannelID}}{{end}}</h2>
+                  <p class="micro-copy"><code>{{.ChannelID}}</code></p>
+                  {{if .Description}}<p class="micro-copy">{{.Description}}</p>{{else}}<p class="micro-copy">频道消息会长期沉淀在 Team 内部，不借用 Live 房间或 Topics 路由。</p>{{end}}
+                  <div class="story-links">
+                    <a href="/teams/{{$.Team.TeamID}}/channels/{{urlquery .ChannelID}}">打开频道</a>
+                    <a href="/api/teams/{{$.Team.TeamID}}/channels/{{urlquery .ChannelID}}/messages">查看该频道 JSON</a>
+                    <a href="#channel-{{.ChannelID}}">本页定位</a>
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前还没有频道配置，后续会在 Team JSON 和模板层中逐步补齐独立频道视图。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">待审批成员</p>
+          {{if .PendingMembers}}
+            <section class="directory-grid">
+              {{range .PendingMembers}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    <span>{{.Role}}</span>
+                    <span>{{.Status}}</span>
+                  </div>
+                  <h2><a href="/?author={{urlquery .AgentID}}">{{.AgentID}}</a></h2>
+                  <p class="micro-copy">审批流完全留在 Team 内部，不借 Live/Topics 规则。</p>
+                  <div class="story-links">
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action">
+                      <input type="hidden" name="agent_id" value="{{.AgentID}}">
+                      <input type="hidden" name="action" value="approve">
+                      <button class="button-link" type="submit">审批通过</button>
+                    </form>
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action">
+                      <input type="hidden" name="agent_id" value="{{.AgentID}}">
+                      <input type="hidden" name="action" value="mute">
+                      <button class="button-link button-link-muted" type="submit">静音</button>
+                    </form>
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action">
+                      <input type="hidden" name="agent_id" value="{{.AgentID}}">
+                      <input type="hidden" name="action" value="remove">
+                      <button class="button-link button-link-muted" type="submit">移除</button>
+                    </form>
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前没有待审批成员。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
           <p class="panel-label">成员</p>
+          <form method="post" action="/teams/{{.Team.TeamID}}/members/update" class="settings-form">
+            <label>
+              <span>Agent ID</span>
+              <input type="text" name="agent_id" placeholder="agent://pc75/live-alpha">
+            </label>
+            <label>
+              <span>角色</span>
+              <input type="text" name="role" placeholder="owner / maintainer / member / observer">
+            </label>
+            <label>
+              <span>状态</span>
+              <input type="text" name="status" placeholder="active / pending / muted / removed">
+            </label>
+            <label>
+              <span>子公钥</span>
+              <input type="text" name="origin_public_key" placeholder="optional origin public key">
+            </label>
+            <label>
+              <span>父公钥</span>
+              <input type="text" name="parent_public_key" placeholder="optional parent public key">
+            </label>
+            <button class="button-link" type="submit">保存成员状态</button>
+          </form>
           {{if .Members}}
             <section class="directory-grid">
               {{range .Members}}
@@ -61,8 +199,31 @@
                     {{if .Status}}<span>{{.Status}}</span>{{end}}
                   </div>
                   <h2><a href="/?author={{urlquery .AgentID}}">{{.AgentID}}</a></h2>
+                  <p class="micro-copy">成员治理完全留在 Team 模块内，不借 Live/Topics 白黑名单。</p>
                   {{if .OriginPublicKey}}<p class="micro-copy">子公钥：<code>{{printf "%.12s" .OriginPublicKey}}</code></p>{{end}}
                   {{if .ParentPublicKey}}<p class="micro-copy">父公钥：<code>{{printf "%.12s" .ParentPublicKey}}</code></p>{{end}}
+                  <div class="story-links">
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action">
+                      <input type="hidden" name="agent_id" value="{{.AgentID}}">
+                      <input type="hidden" name="action" value="approve">
+                      <button class="button-link" type="submit">激活</button>
+                    </form>
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action">
+                      <input type="hidden" name="agent_id" value="{{.AgentID}}">
+                      <input type="hidden" name="action" value="pending">
+                      <button class="button-link button-link-muted" type="submit">待审批</button>
+                    </form>
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action">
+                      <input type="hidden" name="agent_id" value="{{.AgentID}}">
+                      <input type="hidden" name="action" value="mute">
+                      <button class="button-link button-link-muted" type="submit">静音</button>
+                    </form>
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action">
+                      <input type="hidden" name="agent_id" value="{{.AgentID}}">
+                      <input type="hidden" name="action" value="remove">
+                      <button class="button-link button-link-muted" type="submit">移除</button>
+                    </form>
+                  </div>
                 </article>
               {{end}}
             </section>
@@ -71,15 +232,11 @@
           {{end}}
         </section>
         <section class="panel panel-inline">
-          <p class="panel-label">频道</p>
-          <div class="facet-list-inline">
-            {{range .Team.Channels}}
-              <span class="facet-chip">{{.}}</span>
-            {{end}}
-          </div>
-        </section>
-        <section class="panel panel-inline">
           <p class="panel-label">最近任务</p>
+          <div class="story-links">
+            <a href="/teams/{{.Team.TeamID}}/tasks">查看全部任务</a>
+            <a href="/api/teams/{{.Team.TeamID}}/tasks">任务 JSON</a>
+          </div>
           {{if .Tasks}}
             <section class="directory-grid">
               {{range .Tasks}}
@@ -89,7 +246,7 @@
                     {{if .Priority}}<span>{{.Priority}}</span>{{end}}
                     {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
                   </div>
-                  <h2>{{.Title}}</h2>
+                  <h2><a href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .TaskID}}">{{.Title}}</a></h2>
                   {{if .Description}}<p class="micro-copy">{{.Description}}</p>{{end}}
                   {{if .CreatedBy}}<p class="micro-copy">创建者：<a href="/?author={{urlquery .CreatedBy}}">{{.CreatedBy}}</a></p>{{end}}
                 </article>
@@ -97,6 +254,30 @@
             </section>
           {{else}}
             <p class="micro-copy">当前还没有 TeamTask。后续长期项目任务会在这里沉淀。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">最近产物</p>
+          <div class="story-links">
+            <a href="/teams/{{.Team.TeamID}}/artifacts">查看全部产物</a>
+            <a href="/api/teams/{{.Team.TeamID}}/artifacts">产物 JSON</a>
+          </div>
+          {{if .Artifacts}}
+            <section class="directory-grid">
+              {{range .Artifacts}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    {{if .Kind}}<span>{{.Kind}}</span>{{end}}
+                    {{if .ChannelID}}<span>{{.ChannelID}}</span>{{end}}
+                    {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2><a href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">{{.Title}}</a></h2>
+                  {{if .Summary}}<p class="micro-copy">{{.Summary}}</p>{{end}}
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前还没有 Team Artifact。</p>
           {{end}}
         </section>
         <section class="panel panel-inline">
@@ -116,6 +297,35 @@
             </section>
           {{else}}
             <p class="micro-copy">当前还没有 TeamMessage。后续团队内明文沟通会长期沉淀在这里。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">最近变更</p>
+          <div class="story-links">
+            <a href="/teams/{{.Team.TeamID}}/history">查看完整历史</a>
+            <a href="/api/teams/{{.Team.TeamID}}/history">历史 JSON</a>
+          </div>
+          {{if .History}}
+            <section class="story-list">
+              {{range .History}}
+                <article class="story-card">
+                  <div class="card-meta">
+                    {{if .Scope}}<span>{{.Scope}}</span>{{end}}
+                    {{if .Action}}<span>{{.Action}}</span>{{end}}
+                    {{if .Source}}<span>{{.Source}}</span>{{end}}
+                    {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2>{{.Summary}}</h2>
+                  {{if .SubjectID}}<p class="micro-copy">对象：<code>{{.SubjectID}}</code></p>{{end}}
+                  {{if .ActorAgentID}}<p class="micro-copy">执行者：<a href="/?author={{urlquery .ActorAgentID}}">{{.ActorAgentID}}</a></p>{{end}}
+                  {{$diff := index .Metadata "diff_summary"}}{{if $diff}}<p class="micro-copy">摘要：{{$diff}}</p>{{end}}
+                  {{$before := index .Metadata "status_before"}}{{$after := index .Metadata "status_after"}}
+                  {{if or $before $after}}<p class="micro-copy">状态：{{if $before}}{{$before}}{{else}}-{{end}} → {{if $after}}{{$after}}{{else}}-{{end}}</p>{{end}}
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前还没有 Team 变更历史。</p>
           {{end}}
         </section>
       </main>
