@@ -2,6 +2,7 @@ package live
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,26 +18,27 @@ import (
 )
 
 type LocalStore struct {
-	Root string
+	Root  string
+	redis *haonews.RedisClient
 }
 
 type RoomSummary struct {
-	RoomID             string         `json:"room_id"`
-	Title              string         `json:"title"`
-	Creator            string         `json:"creator"`
-	CreatorPubKey      string         `json:"creator_pubkey,omitempty"`
-	ParentPublicKey    string         `json:"parent_public_key,omitempty"`
-	LiveVisibility     string         `json:"live_visibility,omitempty"`
-	PendingBlockedEvents int          `json:"pending_blocked_events,omitempty"`
-	CreatedAt          time.Time      `json:"created_at"`
-	LastEventAt        time.Time      `json:"last_event_at,omitempty"`
-	EventCount         int            `json:"event_count"`
-	Channel            string         `json:"channel,omitempty"`
-	Active             bool           `json:"active"`
-	ActiveParticipants int            `json:"active_participants"`
-	TotalParticipants  int            `json:"total_participants"`
-	Archive            *ArchiveRecord `json:"archive,omitempty"`
-	Path               string         `json:"path"`
+	RoomID               string         `json:"room_id"`
+	Title                string         `json:"title"`
+	Creator              string         `json:"creator"`
+	CreatorPubKey        string         `json:"creator_pubkey,omitempty"`
+	ParentPublicKey      string         `json:"parent_public_key,omitempty"`
+	LiveVisibility       string         `json:"live_visibility,omitempty"`
+	PendingBlockedEvents int            `json:"pending_blocked_events,omitempty"`
+	CreatedAt            time.Time      `json:"created_at"`
+	LastEventAt          time.Time      `json:"last_event_at,omitempty"`
+	EventCount           int            `json:"event_count"`
+	Channel              string         `json:"channel,omitempty"`
+	Active               bool           `json:"active"`
+	ActiveParticipants   int            `json:"active_participants"`
+	TotalParticipants    int            `json:"total_participants"`
+	Archive              *ArchiveRecord `json:"archive,omitempty"`
+	Path                 string         `json:"path"`
 }
 
 type ArchiveRecord struct {
@@ -59,6 +61,10 @@ type roomRecord struct {
 }
 
 func OpenLocalStore(storeRoot string) (*LocalStore, error) {
+	return OpenLocalStoreWithRedis(storeRoot, haonews.RedisConfig{})
+}
+
+func OpenLocalStoreWithRedis(storeRoot string, redisCfg haonews.RedisConfig) (*LocalStore, error) {
 	store, err := haonews.OpenStore(storeRoot)
 	if err != nil {
 		return nil, err
@@ -67,7 +73,18 @@ func OpenLocalStore(storeRoot string) (*LocalStore, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return &LocalStore{Root: root}, nil
+	redisClient, err := haonews.NewRedisClient(redisCfg)
+	if err != nil {
+		return &LocalStore{Root: root}, nil
+	}
+	return &LocalStore{Root: root, redis: redisClient}, nil
+}
+
+func (s *LocalStore) Close() error {
+	if s == nil || s.redis == nil {
+		return nil
+	}
+	return s.redis.Close()
 }
 
 func (s *LocalStore) RoomDir(roomID string) string {
@@ -103,7 +120,12 @@ func (s *LocalStore) SaveRoom(info RoomInfo) error {
 			return err
 		}
 		data = append(data, '\n')
-		return writeFileAtomic(filepath.Join(dir, "room.json"), data, 0o644)
+		if err := writeFileAtomic(filepath.Join(dir, "room.json"), data, 0o644); err != nil {
+			return err
+		}
+		s.redisSetJSON(s.cacheRoomKey(info.RoomID), record.Info, s.redisTTL())
+		s.redisDelete(s.cacheRoomsKey())
+		return nil
 	})
 }
 
@@ -132,13 +154,22 @@ func (s *LocalStore) SaveRoomAuthoritative(info RoomInfo) error {
 			return err
 		}
 		data = append(data, '\n')
-		return writeFileAtomic(filepath.Join(dir, "room.json"), data, 0o644)
+		if err := writeFileAtomic(filepath.Join(dir, "room.json"), data, 0o644); err != nil {
+			return err
+		}
+		s.redisSetJSON(s.cacheRoomKey(info.RoomID), record.Info, s.redisTTL())
+		s.redisDelete(s.cacheRoomsKey())
+		return nil
 	})
 }
 
 func (s *LocalStore) LoadRoom(roomID string) (RoomInfo, error) {
 	if s == nil {
 		return RoomInfo{}, fmt.Errorf("local store is required")
+	}
+	var cached RoomInfo
+	if ok, err := s.redisGetJSON(s.cacheRoomKey(roomID), &cached); err == nil && ok {
+		return cached, nil
 	}
 	data, err := os.ReadFile(filepath.Join(s.RoomDir(roomID), "room.json"))
 	if err != nil {
@@ -148,6 +179,7 @@ func (s *LocalStore) LoadRoom(roomID string) (RoomInfo, error) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		return RoomInfo{}, err
 	}
+	s.redisSetJSON(s.cacheRoomKey(roomID), record.Info, s.redisTTL())
 	return record.Info, nil
 }
 
@@ -179,7 +211,11 @@ func (s *LocalStore) AppendEvent(roomID string, msg LiveMessage) error {
 		if err := s.pruneRoomEvents(roomID); err != nil {
 			return err
 		}
-		return s.refreshRoomIndex(roomID)
+		if err := s.refreshRoomIndex(roomID); err != nil {
+			return err
+		}
+		s.redisDelete(s.cacheEventsKey(roomID), s.cacheRoomsKey())
+		return nil
 	})
 }
 
@@ -242,6 +278,10 @@ func liveEventKey(msg LiveMessage) string {
 }
 
 func (s *LocalStore) ReadEvents(roomID string) ([]LiveMessage, error) {
+	var cached []LiveMessage
+	if ok, err := s.redisGetJSON(s.cacheEventsKey(roomID), &cached); err == nil && ok {
+		return cached, nil
+	}
 	path := filepath.Join(s.RoomDir(roomID), "events.jsonl")
 	file, err := os.Open(path)
 	if err != nil {
@@ -267,12 +307,17 @@ func (s *LocalStore) ReadEvents(roomID string) ([]LiveMessage, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
+	s.redisSetJSON(s.cacheEventsKey(roomID), out, s.redisTTL())
 	return out, nil
 }
 
 func (s *LocalStore) ListRooms() ([]RoomSummary, error) {
 	if s == nil {
 		return nil, nil
+	}
+	var cached []RoomSummary
+	if ok, err := s.redisGetJSON(s.cacheRoomsKey(), &cached); err == nil && ok {
+		return cached, nil
 	}
 	entries, err := os.ReadDir(s.Root)
 	if err != nil {
@@ -340,6 +385,7 @@ func (s *LocalStore) ListRooms() ([]RoomSummary, error) {
 		}
 		return rooms[i].LastEventAt.After(rooms[j].LastEventAt)
 	})
+	s.redisSetJSON(s.cacheRoomsKey(), rooms, s.redisShortTTL())
 	return rooms, nil
 }
 
@@ -445,14 +491,14 @@ func (s *LocalStore) SaveArchiveResult(roomID string, result ArchiveResult) erro
 		return fmt.Errorf("local store is required")
 	}
 	record := ArchiveRecord{
-		RoomID:      strings.TrimSpace(roomID),
-		Channel:     strings.TrimSpace(result.Channel),
-		InfoHash:    strings.TrimSpace(result.Published.InfoHash),
-		Ref:         firstNonEmpty(strings.TrimSpace(result.Published.Ref), strings.TrimSpace(result.Published.Magnet)),
-		ContentDir:  strings.TrimSpace(result.Published.ContentDir),
-		ViewerURL:   strings.TrimSpace(result.ViewerURL),
-		Events:      result.Events,
-		ArchivedAt:  strings.TrimSpace(result.ArchivedAt),
+		RoomID:     strings.TrimSpace(roomID),
+		Channel:    strings.TrimSpace(result.Channel),
+		InfoHash:   strings.TrimSpace(result.Published.InfoHash),
+		Ref:        firstNonEmpty(strings.TrimSpace(result.Published.Ref), strings.TrimSpace(result.Published.Magnet)),
+		ContentDir: strings.TrimSpace(result.Published.ContentDir),
+		ViewerURL:  strings.TrimSpace(result.ViewerURL),
+		Events:     result.Events,
+		ArchivedAt: strings.TrimSpace(result.ArchivedAt),
 	}
 	if record.ViewerURL == "" && record.InfoHash != "" {
 		record.ViewerURL = "/posts/" + record.InfoHash
@@ -466,13 +512,28 @@ func (s *LocalStore) SaveArchiveResult(roomID string, result ArchiveResult) erro
 			return err
 		}
 		body = append(body, '\n')
-		return writeFileAtomic(s.archivePath(roomID), body, 0o644)
+		if err := writeFileAtomic(s.archivePath(roomID), body, 0o644); err != nil {
+			return err
+		}
+		s.redisSetJSON(s.cacheArchiveKey(roomID), record, 30*24*time.Hour)
+		s.redisDelete(s.cacheRoomsKey())
+		return nil
 	})
 }
 
 func (s *LocalStore) LoadArchiveResult(roomID string) (*ArchiveRecord, error) {
 	if s == nil {
 		return nil, fmt.Errorf("local store is required")
+	}
+	var cached ArchiveRecord
+	if ok, err := s.redisGetJSON(s.cacheArchiveKey(roomID), &cached); err == nil && ok {
+		if strings.TrimSpace(cached.ViewerURL) == "" && strings.TrimSpace(cached.InfoHash) != "" {
+			cached.ViewerURL = "/posts/" + strings.TrimSpace(cached.InfoHash)
+		}
+		if strings.TrimSpace(cached.Ref) == "" {
+			cached.Ref = firstNonEmpty(strings.TrimSpace(cached.Magnet), strings.TrimSpace(cached.InfoHash))
+		}
+		return &cached, nil
 	}
 	body, err := os.ReadFile(s.archivePath(roomID))
 	if err != nil {
@@ -488,7 +549,84 @@ func (s *LocalStore) LoadArchiveResult(roomID string) (*ArchiveRecord, error) {
 	if strings.TrimSpace(record.Ref) == "" {
 		record.Ref = firstNonEmpty(strings.TrimSpace(record.Magnet), strings.TrimSpace(record.InfoHash))
 	}
+	s.redisSetJSON(s.cacheArchiveKey(roomID), record, 30*24*time.Hour)
 	return &record, nil
+}
+
+func (s *LocalStore) redisContext() context.Context {
+	return context.Background()
+}
+
+func (s *LocalStore) redisTTL() time.Duration {
+	if s == nil || s.redis == nil {
+		return 0
+	}
+	return s.redis.DefaultTTL()
+}
+
+func (s *LocalStore) redisShortTTL() time.Duration {
+	if s == nil || s.redis == nil {
+		return 0
+	}
+	return s.redis.Config().ShortTTL()
+}
+
+func (s *LocalStore) cacheRoomKey(roomID string) string {
+	if s == nil || s.redis == nil {
+		return ""
+	}
+	return s.redis.Key("live", "room", strings.TrimSpace(roomID))
+}
+
+func (s *LocalStore) cacheEventsKey(roomID string) string {
+	if s == nil || s.redis == nil {
+		return ""
+	}
+	return s.redis.Key("live", "room", strings.TrimSpace(roomID), "events")
+}
+
+func (s *LocalStore) cacheArchiveKey(roomID string) string {
+	if s == nil || s.redis == nil {
+		return ""
+	}
+	return s.redis.Key("live", "room", strings.TrimSpace(roomID), "archive")
+}
+
+func (s *LocalStore) cacheRoomsKey() string {
+	if s == nil || s.redis == nil {
+		return ""
+	}
+	return s.redis.Key("live", "rooms", "list")
+}
+
+func (s *LocalStore) redisGetJSON(key string, dest any) (bool, error) {
+	if s == nil || s.redis == nil || key == "" {
+		return false, nil
+	}
+	return s.redis.GetJSON(s.redisContext(), key, dest)
+}
+
+func (s *LocalStore) redisSetJSON(key string, value any, ttl time.Duration) {
+	if s == nil || s.redis == nil || key == "" || ttl <= 0 {
+		return
+	}
+	_ = s.redis.SetJSON(s.redisContext(), key, value, ttl)
+}
+
+func (s *LocalStore) redisDelete(keys ...string) {
+	if s == nil || s.redis == nil {
+		return
+	}
+	filtered := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if strings.TrimSpace(key) != "" {
+			filtered = append(filtered, key)
+		}
+	}
+	if len(filtered) == 0 {
+		return
+	}
+	_ = s.redis.Delete(s.redisContext(), filtered...)
 }
 
 func mergeRoomInfo(existing, incoming RoomInfo) RoomInfo {

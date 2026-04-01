@@ -12,6 +12,7 @@ import (
 
 type ArchiveOptions struct {
 	StoreRoot    string
+	NetPath      string
 	IdentityFile string
 	Author       string
 	RoomID       string
@@ -28,10 +29,19 @@ type ArchiveResult struct {
 }
 
 func Archive(opts ArchiveOptions) (ArchiveResult, error) {
-	localStore, err := OpenLocalStore(opts.StoreRoot)
+	var redisCfg haonews.RedisConfig
+	if strings.TrimSpace(opts.NetPath) != "" {
+		netCfg, err := haonews.LoadNetworkBootstrapConfig(opts.NetPath)
+		if err != nil {
+			return ArchiveResult{}, err
+		}
+		redisCfg = netCfg.Redis
+	}
+	localStore, err := OpenLocalStoreWithRedis(opts.StoreRoot, redisCfg)
 	if err != nil {
 		return ArchiveResult{}, err
 	}
+	defer localStore.Close()
 	info, err := localStore.LoadRoom(opts.RoomID)
 	if err != nil {
 		return ArchiveResult{}, err

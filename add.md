@@ -1941,3 +1941,32 @@ HD 父子公钥过滤 Phase 1-5 一次落地
 - `.75` 实测：
   - `POST /live/public/moderation` -> `303`
   - `/api/live/public/moderation` 立即返回新值
+## 2026-04-01 Redis 热缓存补强
+
+- `hao_news_net.inf` 新增 Redis 配置解析
+- 默认 Redis key 前缀统一为：
+  - `haonews-`
+- `Live` 房间、事件、归档、房间列表已支持 Redis 读缓存
+- `sync announcement` 已同步镜像到 Redis，并维护：
+  - `haonews-sync:channel:<channel>`
+  - `haonews-sync:topic:<topic>`
+  热索引
+- `/network` 已显示 Redis `enabled / online / addr / prefix / db`
+- `/api/network/bootstrap` 新增：
+  - `redis.enabled`
+  - `redis.online`
+  - `redis.addr`
+  - `redis.prefix`
+  - `redis.db`
+- `/network` 和 `/api/network/bootstrap` 现在还会显示：
+  - `announcement_count`
+  - `channel_index_count`
+  - `topic_index_count`
+  - `realtime_queue_refs`
+  - `history_queue_refs`
+- `sync status` 现在会同步镜像到：
+  - `haonews-meta:node_status`
+- 运行时 `realtime/history` 队列会同步镜像到：
+  - `haonews-sync:queue:refs:realtime`
+  - `haonews-sync:queue:refs:history`
+- 插件侧 `sync status` 和 `sync supervisor` 已优先读 Redis 镜像，失败回退 `status.json`

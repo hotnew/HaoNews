@@ -39,6 +39,18 @@ func defaultLatestNetINF() (string, error) {
 #   relay_peer=<host-or-domain>
 #   libp2p_bootstrap=/dnsaddr/.../p2p/<peer-id>
 #   libp2p_rendezvous=hao.news/<topic>
+#   redis_enabled=true|false
+#   redis_addr=127.0.0.1:6379
+#   redis_password=
+#   redis_db=0
+#   redis_key_prefix=haonews-
+#   redis_max_retries=3
+#   redis_dial_timeout_ms=3000
+#   redis_read_timeout_ms=2000
+#   redis_write_timeout_ms=2000
+#   redis_pool_size=10
+#   redis_min_idle_conns=2
+#   redis_hot_window_days=7
 #
 # Generated on first start. Reuse these ports on later restarts unless you intentionally change them.
 # Stable 256-bit network namespace now lives in %s beside this file.
@@ -64,6 +76,20 @@ libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKN
 libp2p_bootstrap=/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ
 libp2p_rendezvous=hao.news/global
 libp2p_rendezvous=hao.news/world
+
+# Optional Redis hot cache. File storage remains authoritative.
+# redis_enabled=true
+# redis_addr=127.0.0.1:6379
+# redis_password=
+# redis_db=0
+# redis_key_prefix=haonews-
+# redis_max_retries=3
+# redis_dial_timeout_ms=3000
+# redis_read_timeout_ms=2000
+# redis_write_timeout_ms=2000
+# redis_pool_size=10
+# redis_min_idle_conns=2
+# redis_hot_window_days=7
 `, networkIDFileName, libp2pPort, libp2pPort), nil
 }
 

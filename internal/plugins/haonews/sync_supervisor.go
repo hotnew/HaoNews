@@ -288,7 +288,7 @@ func resolveManagedSyncBinary(cfg ManagedSyncConfig) (string, error) {
 }
 
 func (s *ManagedSyncSupervisor) syncRestartReason(now time.Time) string {
-	status, err := loadSyncRuntimeStatus(s.cfg.StoreRoot)
+	status, err := loadSyncRuntimeStatusWithNet(s.cfg.StoreRoot, s.cfg.NetPath)
 	if err != nil {
 		return ""
 	}
@@ -344,8 +344,8 @@ func progressSnapshotFromStatus(status SyncRuntimeStatus, previous syncProgressS
 	return next
 }
 
-func isSyncStatusStale(storeRoot string, staleAfter time.Duration) bool {
-	status, err := loadSyncRuntimeStatus(storeRoot)
+func isSyncStatusStale(storeRoot, netPath string, staleAfter time.Duration) bool {
+	status, err := loadSyncRuntimeStatusWithNet(storeRoot, netPath)
 	if err != nil {
 		return false
 	}

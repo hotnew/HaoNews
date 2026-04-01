@@ -1,10 +1,15 @@
 package newsplugin
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
+
+	corehaonews "hao.news/internal/haonews"
 )
 
 func TestParseSyncMode(t *testing.T) {
@@ -135,5 +140,60 @@ func TestEvaluateSyncHealthRefreshesObservedAtOnProgress(t *testing.T) {
 	}
 	if !next.ObservedAt.Equal(now) {
 		t.Fatalf("observed_at = %s, want %s", next.ObservedAt, now)
+	}
+}
+
+func TestIsSyncStatusStalePrefersRedisMirror(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	syncDir := filepath.Join(root, "sync")
+	if err := os.MkdirAll(syncDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(sync) error = %v", err)
+	}
+	fileStatus := SyncRuntimeStatus{
+		PID:       42,
+		UpdatedAt: time.Now().Add(-10 * time.Minute).UTC(),
+	}
+	data, err := json.Marshal(fileStatus)
+	if err != nil {
+		t.Fatalf("Marshal(file status) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(syncDir, "status.json"), data, 0o644); err != nil {
+		t.Fatalf("WriteFile(status.json) error = %v", err)
+	}
+
+	mini, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run error = %v", err)
+	}
+	defer mini.Close()
+
+	netPath := filepath.Join(root, "hao_news_net.inf")
+	netContent := "network_mode=lan\nredis_enabled=true\nredis_addr=" + mini.Addr() + "\nredis_key_prefix=haonews-test-\n"
+	if err := os.WriteFile(netPath, []byte(netContent), 0o644); err != nil {
+		t.Fatalf("WriteFile(net) error = %v", err)
+	}
+
+	rc, err := corehaonews.NewRedisClient(corehaonews.RedisConfig{
+		Enabled:   true,
+		Addr:      mini.Addr(),
+		KeyPrefix: "haonews-test-",
+	})
+	if err != nil {
+		t.Fatalf("NewRedisClient error = %v", err)
+	}
+	defer rc.Close()
+
+	redisStatus := SyncRuntimeStatus{
+		PID:       42,
+		UpdatedAt: time.Now().Add(-10 * time.Second).UTC(),
+	}
+	if err := rc.SetJSON(t.Context(), rc.Key("meta", "node_status"), redisStatus, 30*time.Second); err != nil {
+		t.Fatalf("SetJSON error = %v", err)
+	}
+
+	if isSyncStatusStale(root, netPath, 2*time.Minute) {
+		t.Fatalf("expected redis mirror to suppress stale result")
 	}
 }

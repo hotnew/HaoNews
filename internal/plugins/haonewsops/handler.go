@@ -505,12 +505,37 @@ func handleAPINetworkBootstrap(app *newsplugin.App, w http.ResponseWriter, r *ht
 		NetworkMode:   strings.TrimSpace(netCfg.NetworkMode),
 		PrimaryHost:   strings.TrimSpace(advertiseHost),
 		Readiness:     readiness,
+		Redis:         bootstrapRedisStatus(netCfg),
 		PeerID:        syncStatus.LibP2P.PeerID,
 		ListenAddrs:   append([]string(nil), syncStatus.LibP2P.ListenAddrs...),
 		DialAddrs:     dialAddrs,
 		Explain:       explain,
 		ExplainDetail: explainDetail,
 	})
+}
+
+func bootstrapRedisStatus(cfg newsplugin.NetworkBootstrapConfig) *newsplugin.NetworkBootstrapRedisStatus {
+	status := &newsplugin.NetworkBootstrapRedisStatus{
+		Enabled: cfg.Redis.Enabled,
+		Addr:    strings.TrimSpace(cfg.Redis.Addr),
+		Prefix:  strings.TrimSpace(cfg.Redis.KeyPrefix),
+		DB:      cfg.Redis.DB,
+	}
+	if !cfg.Redis.Enabled {
+		return status
+	}
+	probeErr := haonews.ProbeRedis(cfg.Redis, 1200*time.Millisecond)
+	status.Online = probeErr == nil
+	if probeErr == nil {
+		if summary, err := haonews.ReadRedisSyncSummary(cfg.Redis, 1200*time.Millisecond); err == nil {
+			status.AnnouncementCount = summary.AnnouncementCount
+			status.ChannelIndexCount = summary.ChannelIndexCount
+			status.TopicIndexCount = summary.TopicIndexCount
+			status.RealtimeQueueRefs = summary.RealtimeQueueRefs
+			status.HistoryQueueRefs = summary.HistoryQueueRefs
+		}
+	}
+	return status
 }
 
 func handleAPICreditBalance(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {

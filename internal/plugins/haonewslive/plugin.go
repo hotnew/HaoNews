@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"hao.news/internal/apphost"
+	corehaonews "hao.news/internal/haonews"
 	"hao.news/internal/haonews/live"
 	newsplugin "hao.news/internal/plugins/haonews"
 )
@@ -42,7 +43,15 @@ func (Plugin) Build(ctx context.Context, cfg apphost.Config, theme apphost.WebTh
 	if err != nil {
 		return nil, err
 	}
-	store, err := live.OpenLocalStore(cfg.StoreRoot)
+	var redisCfg corehaonews.RedisConfig
+	if strings.TrimSpace(cfg.NetPath) != "" {
+		netCfg, loadErr := corehaonews.LoadNetworkBootstrapConfig(cfg.NetPath)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		redisCfg = netCfg.Redis
+	}
+	store, err := live.OpenLocalStoreWithRedis(cfg.StoreRoot, redisCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -80,10 +89,13 @@ func (Plugin) Build(ctx context.Context, cfg apphost.Config, theme apphost.WebTh
 			startedWatcher := watcher
 			watcher = nil
 			watcherMu.Unlock()
+			storeErr := store.Close()
 			if startedWatcher != nil {
-				return startedWatcher.Close()
+				if err := startedWatcher.Close(); err != nil {
+					return err
+				}
 			}
-			return nil
+			return storeErr
 		},
 	}, nil
 }

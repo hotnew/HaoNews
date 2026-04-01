@@ -11,7 +11,7 @@ func TestLoadNetworkBootstrapConfig(t *testing.T) {
 
 	root := t.TempDir()
 	path := filepath.Join(root, "hao_news_net.inf")
-content := `# default bootstrap nodes
+	content := `# default bootstrap nodes
 network_mode=public
 libp2p_listen=/ip4/0.0.0.0/tcp/4001
 libp2p_listen=/ip4/0.0.0.0/udp/4001/quic-v1
@@ -56,6 +56,9 @@ libp2p_rendezvous=hao.news/global
 	if got := len(cfg.PublicPeers); got != 1 || cfg.PublicPeers[0] != "ai.jie.news" {
 		t.Fatalf("public peers = %#v", cfg.PublicPeers)
 	}
+	if cfg.Redis.Enabled {
+		t.Fatalf("redis should default disabled, got %+v", cfg.Redis)
+	}
 	if got := len(cfg.RelayPeers); got != 1 || cfg.RelayPeers[0] != "relay.jie.news" {
 		t.Fatalf("relay peers = %#v", cfg.RelayPeers)
 	}
@@ -98,5 +101,33 @@ func TestLoadNetworkBootstrapConfigMissingFileReturnsEmpty(t *testing.T) {
 	}
 	if cfg.NetworkMode != networkModeLAN {
 		t.Fatalf("default network mode = %q, want lan", cfg.NetworkMode)
+	}
+}
+
+func TestLoadNetworkBootstrapConfigReadsRedisConfig(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := filepath.Join(root, "hao_news_net.inf")
+	content := "network_mode=lan\nredis_enabled=true\nredis_addr=127.0.0.1:6380\nredis_db=2\nredis_key_prefix=haonews-redis:\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write net config: %v", err)
+	}
+
+	cfg, err := LoadNetworkBootstrapConfig(path)
+	if err != nil {
+		t.Fatalf("load network config: %v", err)
+	}
+	if !cfg.Redis.Enabled {
+		t.Fatalf("redis should be enabled: %+v", cfg.Redis)
+	}
+	if cfg.Redis.Addr != "127.0.0.1:6380" {
+		t.Fatalf("redis addr = %q", cfg.Redis.Addr)
+	}
+	if cfg.Redis.DB != 2 {
+		t.Fatalf("redis db = %d", cfg.Redis.DB)
+	}
+	if cfg.Redis.KeyPrefix != "haonews-redis:" {
+		t.Fatalf("redis key prefix = %q", cfg.Redis.KeyPrefix)
 	}
 }

@@ -165,10 +165,6 @@ func PublishTaskUpdate(ctx context.Context, opts SessionOptions, metadata map[st
 }
 
 func startSession(ctx context.Context, opts SessionOptions) (_ *session, err error) {
-	store, err := OpenLocalStore(opts.StoreRoot)
-	if err != nil {
-		return nil, err
-	}
 	identity, err := haonews.LoadAgentIdentity(strings.TrimSpace(opts.IdentityFile))
 	if err != nil {
 		return nil, err
@@ -193,11 +189,19 @@ func startSession(ctx context.Context, opts SessionOptions) (_ *session, err err
 	if err != nil {
 		return nil, err
 	}
-	h, dhtRuntime, mdnsService, discoveryRuntime, ps, err := startTransport(ctx, netCfg)
+	store, err := OpenLocalStoreWithRedis(opts.StoreRoot, netCfg.Redis)
 	if err != nil {
 		return nil, err
 	}
+	h, dhtRuntime, mdnsService, discoveryRuntime, ps, err := startTransport(ctx, netCfg)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	cleanup := &sessionStartCleanup{}
+	cleanup.add(func() {
+		_ = store.Close()
+	})
 	cleanup.add(func() {
 		if mdnsService != nil {
 			_ = mdnsService.Close()
@@ -545,6 +549,7 @@ func (s *session) archiveOnExit(stdout io.Writer) error {
 	}
 	result, err := Archive(ArchiveOptions{
 		StoreRoot:    firstNonEmpty(strings.TrimSpace(s.storeRoot), filepath.Dir(filepath.Dir(s.store.Root))),
+		NetPath:      strings.TrimSpace(s.netPath),
 		IdentityFile: strings.TrimSpace(s.identityFile),
 		Author:       firstNonEmpty(strings.TrimSpace(s.author), strings.TrimSpace(s.identity.Author)),
 		RoomID:       s.info.RoomID,
@@ -665,6 +670,9 @@ func (s *session) close() {
 	}
 	if s.host != nil {
 		_ = s.host.Close()
+	}
+	if s.store != nil {
+		_ = s.store.Close()
 	}
 }
 

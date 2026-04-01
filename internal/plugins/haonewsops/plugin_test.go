@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
+	redis "github.com/redis/go-redis/v9"
+
 	"hao.news/internal/apphost"
 	corehaonews "hao.news/internal/haonews"
 	newsplugin "hao.news/internal/plugins/haonews"
@@ -359,6 +362,89 @@ func TestPluginBuildServesBootstrapReadinessReadyByDefault(t *testing.T) {
 	}
 	if !payload.Readiness.HTTPReady || !payload.Readiness.IndexReady || payload.Readiness.ColdStarting {
 		t.Fatalf("payload.Readiness = %#v, want http_ready=true index_ready=true cold_starting=false", payload.Readiness)
+	}
+}
+
+func TestPluginBuildServesBootstrapRedisSummary(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	netPath := filepath.Join(root, "config", "haonews_net.inf")
+	if err := os.MkdirAll(filepath.Dir(netPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(netPath) error = %v", err)
+	}
+	mini, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run error = %v", err)
+	}
+	defer mini.Close()
+	netText := "network_mode=lan\nredis_enabled=true\nredis_addr=" + mini.Addr() + "\nredis_db=2\nredis_key_prefix=haonews-test-\n"
+	if err := os.WriteFile(netPath, []byte(netText), 0o644); err != nil {
+		t.Fatalf("WriteFile(netPath) error = %v", err)
+	}
+	rdb := redis.NewClient(&redis.Options{Addr: mini.Addr(), DB: 2})
+	defer rdb.Close()
+	if err := rdb.Set(context.Background(), "haonews-test-sync:ann:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", `{"infohash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","channel":"news","topics":["world"]}`, time.Hour).Err(); err != nil {
+		t.Fatalf("Set(sync ann) error = %v", err)
+	}
+	if err := rdb.ZAdd(context.Background(), "haonews-test-sync:channel:news", redis.Z{Score: 1711933200, Member: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}).Err(); err != nil {
+		t.Fatalf("ZAdd(channel) error = %v", err)
+	}
+	if err := rdb.ZAdd(context.Background(), "haonews-test-sync:topic:world", redis.Z{Score: 1711933200, Member: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}).Err(); err != nil {
+		t.Fatalf("ZAdd(topic) error = %v", err)
+	}
+	if err := rdb.RPush(context.Background(), "haonews-test-sync:queue:refs:realtime", "haonews-sync://bundle/aaa?dn=one").Err(); err != nil {
+		t.Fatalf("RPush(realtime) error = %v", err)
+	}
+	if err := rdb.RPush(context.Background(), "haonews-test-sync:queue:refs:history", "haonews-sync://bundle/bbb?dn=two").Err(); err != nil {
+		t.Fatalf("RPush(history) error = %v", err)
+	}
+	syncDir := filepath.Join(root, "store", "sync")
+	if err := os.MkdirAll(syncDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(syncDir) error = %v", err)
+	}
+	status := newsplugin.SyncRuntimeStatus{
+		UpdatedAt: time.Now().UTC(),
+		NetworkID: "test-network",
+		LibP2P: newsplugin.SyncLibP2PStatus{
+			Enabled:     true,
+			PeerID:      "QmBootstrapPeer",
+			ListenAddrs: []string{"/ip4/0.0.0.0/tcp/50584"},
+		},
+	}
+	data, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("json.Marshal(status) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(syncDir, "status.json"), data, 0o644); err != nil {
+		t.Fatalf("WriteFile(status.json) error = %v", err)
+	}
+
+	site := buildOpsSiteAtRoot(t, root)
+	req := httptest.NewRequest(http.MethodGet, "/api/network/bootstrap", nil)
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var payload newsplugin.NetworkBootstrapResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if payload.Redis == nil {
+		t.Fatal("payload.Redis = nil, want redis summary")
+	}
+	if !payload.Redis.Enabled || !payload.Redis.Online {
+		t.Fatalf("payload.Redis = %#v, want enabled+online", payload.Redis)
+	}
+	if payload.Redis.Addr != mini.Addr() || payload.Redis.Prefix != "haonews-test-" || payload.Redis.DB != 2 {
+		t.Fatalf("payload.Redis = %#v, want addr/prefix/db", payload.Redis)
+	}
+	if payload.Redis.AnnouncementCount != 1 || payload.Redis.ChannelIndexCount != 1 || payload.Redis.TopicIndexCount != 1 {
+		t.Fatalf("payload.Redis = %#v, want redis sync index counts", payload.Redis)
+	}
+	if payload.Redis.RealtimeQueueRefs != 1 || payload.Redis.HistoryQueueRefs != 1 {
+		t.Fatalf("payload.Redis = %#v, want queue mirror counts", payload.Redis)
 	}
 }
 

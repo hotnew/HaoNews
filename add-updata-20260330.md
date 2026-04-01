@@ -445,3 +445,37 @@ regular `/live` 也会显示：
 
 - `main`: `8b0accf`
 - `tag`: `v0.5.45`
+
+---
+
+## 十、2026-04-01 Redis 热缓存补强
+
+新增的主线是 Redis 热缓存，但仍保持：
+
+- 文件是权威存储
+- Redis 只是热缓存
+
+当前已完成：
+
+- `hao_news_net.inf` 支持 Redis 配置
+- 默认 key 前缀统一为：
+  - `haonews-`
+- `Live` 房间、事件、归档、房间列表支持 Redis 读缓存
+- `sync announcement` 已同步镜像到 Redis，并维护：
+  - `haonews-sync:channel:<channel>`
+  - `haonews-sync:topic:<topic>`
+  热索引
+- `sync status` 同步镜像到：
+  - `haonews-meta:node_status`
+- 运行时 `realtime/history` 队列也会同步镜像到：
+  - `haonews-sync:queue:refs:realtime`
+  - `haonews-sync:queue:refs:history`
+- `/network` 已显示 Redis 摘要
+- `/api/network/bootstrap` 已返回 Redis 摘要
+- 摘要现在还包含：
+  - `announcement_count`
+  - `channel_index_count`
+  - `topic_index_count`
+  - `realtime_queue_refs`
+  - `history_queue_refs`
+- 插件侧 `sync status` 与 `sync supervisor` 已优先读 Redis 镜像

@@ -32,16 +32,16 @@ type AnnouncementWatcher struct {
 }
 
 func StartAnnouncementWatcher(parent context.Context, storeRoot, netPath string) (*AnnouncementWatcher, error) {
-	store, err := OpenLocalStore(storeRoot)
-	if err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(netPath) != "" {
 		if err := haonews.EnsureDefaultNetworkBootstrapConfig(netPath); err != nil {
 			return nil, err
 		}
 	}
 	netCfg, err := haonews.LoadNetworkBootstrapConfig(netPath)
+	if err != nil {
+		return nil, err
+	}
+	store, err := OpenLocalStoreWithRedis(storeRoot, netCfg.Redis)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +184,9 @@ func (w *AnnouncementWatcher) shutdown() {
 	}
 	if w.host != nil {
 		_ = w.host.Close()
+	}
+	if w.store != nil {
+		_ = w.store.Close()
 	}
 }
 

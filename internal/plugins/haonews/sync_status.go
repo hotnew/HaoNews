@@ -1,10 +1,13 @@
 package newsplugin
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
+
+	corehaonews "hao.news/internal/haonews"
 )
 
 type SyncRuntimeStatus struct {
@@ -140,4 +143,20 @@ func loadSyncRuntimeStatus(storeRoot string) (SyncRuntimeStatus, error) {
 		return SyncRuntimeStatus{}, err
 	}
 	return status, nil
+}
+
+func loadSyncRuntimeStatusWithNet(storeRoot, netPath string) (SyncRuntimeStatus, error) {
+	cfg, err := corehaonews.LoadNetworkBootstrapConfig(netPath)
+	if err == nil && cfg.Redis.Enabled {
+		rc, redisErr := corehaonews.NewRedisClient(cfg.Redis)
+		if redisErr == nil && rc != nil {
+			defer rc.Close()
+			var status SyncRuntimeStatus
+			ok, cacheErr := rc.GetJSON(context.Background(), rc.Key("meta", "node_status"), &status)
+			if cacheErr == nil && ok {
+				return status, nil
+			}
+		}
+	}
+	return loadSyncRuntimeStatus(storeRoot)
 }

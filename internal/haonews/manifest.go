@@ -1,6 +1,7 @@
 package haonews
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -50,7 +51,7 @@ type historyManifestState struct {
 	TorrentFile string `json:"torrent_file"`
 }
 
-func ensureHistoryManifests(store *Store, netCfg NetworkBootstrapConfig, listenAddrs []net.Addr, localPeerID string) error {
+func ensureHistoryManifests(store *Store, netCfg NetworkBootstrapConfig, listenAddrs []net.Addr, localPeerID string, rc *RedisClient) error {
 	announcements, err := localAnnouncements(store)
 	if err != nil {
 		return err
@@ -78,6 +79,7 @@ func ensureHistoryManifests(store *Store, netCfg NetworkBootstrapConfig, listenA
 			announcement.LibP2PPeerID = strings.TrimSpace(localPeerID)
 		}
 		announcement.Ref = withPeerHints(announcement.Ref, listenAddrs, netCfg.LANPeers)
+		_ = cacheSyncAnnouncement(context.Background(), rc, announcement)
 		grouped[project] = append(grouped[project], announcement)
 	}
 	for project, entries := range grouped {

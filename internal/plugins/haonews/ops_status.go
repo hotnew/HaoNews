@@ -63,6 +63,46 @@ func (a *App) coldStartNodeStatus() NodeStatus {
 	}
 }
 
+func redisNodeStatus(cfg NetworkBootstrapConfig) (NodeStatusEntry, NodeStatusCard) {
+	value := "disabled"
+	tone := "warn"
+	detail := "Redis 读缓存未启用；文件系统仍然是权威存储。"
+	if cfg.Redis.Enabled {
+		value = "offline"
+		tone = "bad"
+		detail = fmt.Sprintf("addr %s · prefix %s · db %d。", cfg.Redis.Addr, cfg.Redis.KeyPrefix, cfg.Redis.DB)
+		if err := corehaonews.ProbeRedis(cfg.Redis, 1200*time.Millisecond); err != nil {
+			detail = fmt.Sprintf("%s 探针失败：%s", detail, strings.TrimSpace(err.Error()))
+		} else {
+			value = "online"
+			tone = "good"
+			detail = fmt.Sprintf("addr %s · prefix %s · db %d。Live 读缓存已就绪。", cfg.Redis.Addr, cfg.Redis.KeyPrefix, cfg.Redis.DB)
+			if summary, err := corehaonews.ReadRedisSyncSummary(cfg.Redis, 1200*time.Millisecond); err == nil {
+				detail = fmt.Sprintf(
+					"%s sync ann=%d · channel=%d · topic=%d · queue realtime=%d/history=%d。",
+					detail,
+					summary.AnnouncementCount,
+					summary.ChannelIndexCount,
+					summary.TopicIndexCount,
+					summary.RealtimeQueueRefs,
+					summary.HistoryQueueRefs,
+				)
+			}
+		}
+	}
+	return NodeStatusEntry{
+			Label:  "Redis cache",
+			Value:  value,
+			Detail: detail,
+			Tone:   tone,
+		}, NodeStatusCard{
+			Label:  "Redis cache",
+			Value:  value,
+			Detail: detail,
+			Tone:   tone,
+		}
+}
+
 func (a *App) buildNodeStatus(index Index) NodeStatus {
 	storeState := "ready"
 	storeTone := "good"
@@ -77,6 +117,7 @@ func (a *App) buildNodeStatus(index Index) NodeStatus {
 	if syncErr == nil && !syncStatus.UpdatedAt.IsZero() {
 		return buildLiveNodeStatus(index, storeState, storeTone, torrentCount, netCfg, syncStatus, a.httpListenAddr())
 	}
+	redisEntry, redisCard := redisNodeStatus(netCfg)
 
 	discoveryValue := "not loaded"
 	discoveryTone := "warn"
@@ -159,6 +200,7 @@ func (a *App) buildNodeStatus(index Index) NodeStatus {
 			{Label: "libp2p pubsub", Value: "not running", Detail: "Pubsub topic joins start when the sync daemon is running.", Tone: "warn"},
 			{Label: "Discovery file", Value: discoveryValue, Detail: discoveryDetail, Tone: discoveryTone},
 			{Label: "Network ID", Value: networkIDValue, Detail: networkIDDetail, Tone: networkIDTone},
+			redisEntry,
 			{Label: "LAN mDNS", Value: "not running", Detail: "Local network discovery starts when the sync daemon is running.", Tone: "warn"},
 			{Label: "libp2p bootstrap", Value: libp2pValue, Detail: libp2pDetail, Tone: libp2pTone},
 			{Label: "libp2p rendezvous", Value: rendezvousValue, Detail: rendezvousDetail, Tone: rendezvousTone},
@@ -172,6 +214,7 @@ func (a *App) buildNodeStatus(index Index) NodeStatus {
 			{Label: "HTTP fallback", Value: httpFallbackValue, Detail: httpFallbackDetail, Tone: httpFallbackTone},
 			{Label: "Discovery profile", Value: discoveryValue, Detail: discoveryDetail, Tone: discoveryTone},
 			{Label: "Network ID", Value: networkIDValue, Detail: networkIDDetail, Tone: networkIDTone},
+			redisCard,
 		},
 	}
 }
@@ -293,6 +336,7 @@ func buildLiveNodeStatus(index Index, storeState, storeTone string, torrentCount
 	} else if netCfg.NetworkID != "" {
 		networkIDValue = netCfg.NetworkID
 	}
+	redisEntry, redisCard := redisNodeStatus(netCfg)
 
 	return NodeStatus{
 		Summary:       summary,
@@ -337,6 +381,7 @@ func buildLiveNodeStatus(index Index, storeState, storeTone string, torrentCount
 			{Label: "libp2p pubsub", Value: pubsubValue, Detail: pubsubDetail, Tone: pubsubTone},
 			{Label: "Discovery file", Value: discoveryValue, Detail: discoveryDetail, Tone: discoveryTone},
 			{Label: "Network ID", Value: networkIDValue, Detail: networkIDDetail, Tone: networkIDTone},
+			redisEntry,
 			{Label: "LAN mDNS", Value: mdnsValue, Detail: mdnsDetail, Tone: mdnsTone},
 			{Label: "libp2p bootstrap", Value: libp2pValue, Detail: libp2pDetail, Tone: libp2pTone},
 			{Label: "libp2p rendezvous", Value: rendezvousValue, Detail: rendezvousDetail, Tone: rendezvousTone},
@@ -350,6 +395,7 @@ func buildLiveNodeStatus(index Index, storeState, storeTone string, torrentCount
 			{Label: "HTTP fallback", Value: httpFallbackValue, Detail: httpFallbackDetail, Tone: httpFallbackTone},
 			{Label: "Sync daemon", Value: syncDaemonValue, Detail: syncDaemonDetail, Tone: "good"},
 			{Label: "Network ID", Value: networkIDValue, Detail: networkIDDetail, Tone: networkIDTone},
+			redisCard,
 		},
 	}
 }
@@ -394,7 +440,7 @@ func (a *App) syncRuntimeStatus() (SyncRuntimeStatus, error) {
 	if a.loadSync == nil {
 		return SyncRuntimeStatus{}, nil
 	}
-	return a.loadSync(a.storeRoot)
+	return a.loadSync(a.storeRoot, a.netPath)
 }
 
 func (a *App) syncSupervisorStatus() (SyncSupervisorState, error) {

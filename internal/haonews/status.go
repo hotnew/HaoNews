@@ -1,11 +1,14 @@
 package haonews
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+const syncStatusRedisTTL = 30 * time.Second
 
 type SyncRuntimeStatus struct {
 	UpdatedAt        time.Time                  `json:"updated_at"`
@@ -139,6 +142,13 @@ func syncStatusPath(store *Store) string {
 	return filepath.Join(store.Root, "sync", "status.json")
 }
 
+func syncStatusRedisKey(rc *RedisClient) string {
+	if rc == nil {
+		return ""
+	}
+	return rc.Key("meta", "node_status")
+}
+
 func writeSyncStatus(store *Store, status SyncRuntimeStatus) error {
 	path := syncStatusPath(store)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -154,4 +164,15 @@ func writeSyncStatus(store *Store, status SyncRuntimeStatus) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func writeSyncStatusCache(ctx context.Context, rc *RedisClient, status SyncRuntimeStatus) error {
+	if rc == nil || !rc.Enabled() {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	status.UpdatedAt = time.Now().UTC()
+	return rc.SetJSON(ctx, syncStatusRedisKey(rc), status, syncStatusRedisTTL)
 }

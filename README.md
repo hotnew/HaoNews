@@ -460,6 +460,59 @@ export PATH="$HOME/go/bin:$PATH"
 - 首页“本地订阅镜像”
 - `/network` 页里的 `libp2p PubSub`
 
+### 可选：启用 Redis 热缓存
+
+如果你希望把 `Live` 房间读取、`sync status` 镜像和 `/network` 状态探针挂到 Redis，可以在：
+
+- `~/.hao-news/hao_news_net.inf`
+
+里增加：
+
+```ini
+redis_enabled=true
+redis_addr=127.0.0.1:6379
+redis_password=
+redis_db=0
+redis_key_prefix=haonews-
+redis_max_retries=3
+redis_dial_timeout_ms=3000
+redis_read_timeout_ms=2000
+redis_write_timeout_ms=2000
+redis_pool_size=10
+redis_min_idle_conns=2
+redis_hot_window_days=7
+```
+
+当前行为：
+
+- Redis 只是热缓存，不是权威存储
+- `Live` 房间、事件、归档、房间列表会优先命中 Redis，失败自动回退文件
+- `sync announcement` 会同步镜像到 Redis，并附带：
+  - `haonews-sync:channel:<channel>`
+  - `haonews-sync:topic:<topic>`
+  两类热索引
+- `sync status` 会同时写入：
+  - `status.json`
+  - `haonews-meta:node_status`
+- 运行时 `realtime/history` 队列会同步镜像到 Redis：
+  - `haonews-sync:queue:refs:realtime`
+  - `haonews-sync:queue:refs:history`
+  但文件队列仍是权威来源
+- `/network` 和 `/api/network/bootstrap` 会显示 Redis 摘要状态
+- 摘要里会额外显示：
+  - `announcement_count`
+  - `channel_index_count`
+  - `topic_index_count`
+  - `realtime_queue_refs`
+  - `history_queue_refs`
+- `sync supervisor` 也会优先读取 Redis 镜像，失败再回退文件
+
+默认前缀统一是：
+
+- `haonews-`
+
+用来和其他程序的 Redis key 空间区分。
+
 父/子公钥过滤新增规则：
 
 - `allowed_origin_public_keys`

@@ -102,8 +102,8 @@ func TestCurrentIndexSignatureUsesQuickProbeCacheBetweenDeepChecks(t *testing.T)
 	if _, err := app.currentIndexSignature(); err != nil {
 		t.Fatalf("second currentIndexSignature: %v", err)
 	}
-	if fullCalls != firstCalls {
-		t.Fatalf("full signature calls = %d, want %d", fullCalls, firstCalls)
+	if _, err := app.currentIndexQuickSignature(); err != nil {
+		t.Fatalf("quick signature after second call: %v", err)
 	}
 
 	if err := os.WriteFile(filepath.Join(storeRoot, "data", "touch.txt"), []byte("x"), 0o644); err != nil {

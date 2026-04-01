@@ -33,7 +33,7 @@ func TestEnsureHistoryManifestsCreatesStableBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("publish post: %v", err)
 	}
-	if err := ensureHistoryManifests(store, NetworkBootstrapConfig{NetworkID: latestOrgNetworkID}, nil, "12D3KooWManifestPeer"); err != nil {
+	if err := ensureHistoryManifests(store, NetworkBootstrapConfig{NetworkID: latestOrgNetworkID}, nil, "12D3KooWManifestPeer", nil); err != nil {
 		t.Fatalf("ensure manifests: %v", err)
 	}
 	manifestDirs := collectManifestDirs(t, store)
@@ -66,7 +66,7 @@ func TestEnsureHistoryManifestsCreatesStableBundle(t *testing.T) {
 	if manifest.Page != 1 || manifest.PageSize != historyManifestPageSize || manifest.TotalPages != 1 || manifest.TotalEntries != 1 {
 		t.Fatalf("manifest paging = page=%d size=%d total_pages=%d total_entries=%d", manifest.Page, manifest.PageSize, manifest.TotalPages, manifest.TotalEntries)
 	}
-	if err := ensureHistoryManifests(store, NetworkBootstrapConfig{NetworkID: latestOrgNetworkID}, nil, "12D3KooWManifestPeer"); err != nil {
+	if err := ensureHistoryManifests(store, NetworkBootstrapConfig{NetworkID: latestOrgNetworkID}, nil, "12D3KooWManifestPeer", nil); err != nil {
 		t.Fatalf("ensure manifests second pass: %v", err)
 	}
 	manifestDirs = collectManifestDirs(t, store)
@@ -147,13 +147,13 @@ func TestSyncRefFromAnnouncementPersistsDirectPeerHint(t *testing.T) {
 	t.Parallel()
 
 	ref, err := syncRefFromAnnouncement(SyncAnnouncement{
-		InfoHash:      "93a71a010a59022c8670e06e2c92fa279f98d974",
-		Ref:           "haonews-sync://bundle/93a71a010a59022c8670e06e2c92fa279f98d974?dn=test-history",
-		Magnet:        "magnet:?xt=urn:btih:93a71a010a59022c8670e06e2c92fa279f98d974&dn=test-history",
-		SourceHost:    "192.168.102.75",
-		LibP2PPeerID:  "12D3KooWManifestPeer",
-		Project:       "latest.org",
-		NetworkID:     latestOrgNetworkID,
+		InfoHash:     "93a71a010a59022c8670e06e2c92fa279f98d974",
+		Ref:          "haonews-sync://bundle/93a71a010a59022c8670e06e2c92fa279f98d974?dn=test-history",
+		Magnet:       "magnet:?xt=urn:btih:93a71a010a59022c8670e06e2c92fa279f98d974&dn=test-history",
+		SourceHost:   "192.168.102.75",
+		LibP2PPeerID: "12D3KooWManifestPeer",
+		Project:      "latest.org",
+		NetworkID:    latestOrgNetworkID,
 	})
 	if err != nil {
 		t.Fatalf("syncRefFromAnnouncement error = %v", err)
@@ -283,7 +283,7 @@ func TestEnsureHistoryManifestsSplitsIntoPages(t *testing.T) {
 			t.Fatalf("publish post %d: %v", i, err)
 		}
 	}
-	if err := ensureHistoryManifests(store, NetworkBootstrapConfig{NetworkID: latestOrgNetworkID}, nil, "12D3KooWManifestPeer"); err != nil {
+	if err := ensureHistoryManifests(store, NetworkBootstrapConfig{NetworkID: latestOrgNetworkID}, nil, "12D3KooWManifestPeer", nil); err != nil {
 		t.Fatalf("ensure manifests: %v", err)
 	}
 	manifestDirs := collectManifestDirs(t, store)

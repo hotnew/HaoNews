@@ -139,6 +139,13 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	if err != nil {
 		return err
 	}
+	runtime.redis, err = NewRedisClient(netCfg.Redis)
+	if err != nil && logf != nil {
+		logf("redis cache unavailable: %v", err)
+	}
+	if runtime.redis != nil {
+		defer runtime.redis.Close()
+	}
 	runtime.creditIdentity, err = loadSyncCreditIdentity(opts.CreditIdentityFile)
 	if err != nil {
 		if logf != nil {
@@ -243,6 +250,7 @@ type syncRuntime struct {
 	libp2p           *libp2pRuntime
 	pubsub           *pubsubRuntime
 	creditStore      *CreditStore
+	redis            *RedisClient
 	creditIdentity   *AgentIdentity
 	netCfg           NetworkBootstrapConfig
 	subscriptions    SyncSubscriptions
@@ -375,6 +383,13 @@ func (r *syncRuntime) clearDirectPeers(infoHash string) {
 	delete(r.directPeers, infoHash)
 }
 
+func ctxOrBackground(ctx context.Context) context.Context {
+	if ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
 func (r *syncRuntime) writeStatus(ctx context.Context) error {
 	status := r.buildStatus(ctx)
 	signature, err := syncStatusSignature(status)
@@ -393,6 +408,9 @@ func (r *syncRuntime) writeStatus(ctx context.Context) error {
 		return nil
 	}
 	if err := writeSyncStatus(r.store, status); err != nil {
+		return err
+	}
+	if err := writeSyncStatusCache(ctx, r.redis, status); err != nil {
 		return err
 	}
 	r.mu.Lock()
@@ -475,15 +493,15 @@ func (r *syncRuntime) processQueue(ctx context.Context, direct []string, timeout
 		r.recordResult(result)
 		if result.Status == "imported" || result.Status == "skipped" {
 			r.clearDirectPeers(ref.InfoHash)
-			if err := removeSyncRef(ref.Queue, ref); err != nil && logf != nil {
+			if err := removeSyncRefWithRedis(ref.Queue, ref, r.redis); err != nil && logf != nil {
 				logf("remove sync ref: %v", err)
 			}
 		} else if result.Status == "failed" {
 			if isTerminalSyncFailure(ref, result) {
-				if err := removeSyncRef(ref.Queue, ref); err != nil && logf != nil {
+				if err := removeSyncRefWithRedis(ref.Queue, ref, r.redis); err != nil && logf != nil {
 					logf("drop terminal sync ref: %v", err)
 				}
-			} else if err := rotateSyncRef(ref.Queue, ref); err != nil && logf != nil {
+			} else if err := rotateSyncRefWithRedis(ref.Queue, ref, r.redis); err != nil && logf != nil {
 				logf("rotate failed sync ref: %v", err)
 			}
 		}
@@ -550,7 +568,7 @@ func (r *syncRuntime) announceLocalBundles(ctx context.Context, logf func(string
 	if r.libp2p != nil && r.libp2p.host != nil {
 		localPeerID = r.libp2p.host.ID().String()
 	}
-	if err := ensureHistoryManifests(r.store, r.netCfg, nil, localPeerID); err != nil {
+	if err := ensureHistoryManifests(r.store, r.netCfg, nil, localPeerID, r.redis); err != nil {
 		return err
 	}
 	announcements, err := localAnnouncements(r.store)
@@ -584,6 +602,7 @@ func (r *syncRuntime) announceLocalBundles(ctx context.Context, logf func(string
 			}
 			return err
 		}
+		_ = cacheSyncAnnouncement(ctx, r.redis, announcement)
 		if logf != nil {
 			logf("announced: %s (%s)", announcement.InfoHash, announcement.Title)
 		}
@@ -598,6 +617,7 @@ func (r *syncRuntime) handleAnnouncement(announcement SyncAnnouncement) (bool, e
 	if r.netCfg.NetworkID != "" && !strings.EqualFold(strings.TrimSpace(announcement.NetworkID), r.netCfg.NetworkID) {
 		return false, nil
 	}
+	_ = cacheSyncAnnouncement(ctxOrBackground(nil), r.redis, announcement)
 	if !matchesAnnouncement(announcement, r.subscriptions) {
 		return false, nil
 	}
@@ -617,7 +637,7 @@ func (r *syncRuntime) handleAnnouncement(announcement SyncAnnouncement) (bool, e
 	if strings.EqualFold(strings.TrimSpace(announcement.Kind), historyManifestKind) {
 		targetQueue = r.historyQueuePath
 	}
-	return enqueueSyncRef(targetQueue, ref)
+	return enqueueSyncRefWithRedis(targetQueue, ref, r.redis)
 }
 
 func (r *syncRuntime) handleCreditProof(proof OnlineProof) (bool, error) {
@@ -896,6 +916,7 @@ func (r *syncRuntime) enqueueHistoryFromLANPeers(ctx context.Context, logf func(
 				if !matchesHistoryAnnouncement(announcement, r.subscriptions) {
 					continue
 				}
+				_ = cacheSyncAnnouncement(ctxOrBackground(ctx), r.redis, announcement)
 				ref, err := syncRefFromAnnouncement(announcement)
 				if err != nil || ref.InfoHash == "" {
 					continue
@@ -909,9 +930,9 @@ func (r *syncRuntime) enqueueHistoryFromLANPeers(ctx context.Context, logf func(
 				}
 				enqueued := false
 				if shouldPromoteHistoryAnnouncementToRealtime(page, announcement) {
-					enqueued, err = promoteSyncRefToRealtime(r.queuePath, r.historyQueuePath, ref)
+					enqueued, err = promoteSyncRefToRealtimeWithRedis(r.queuePath, r.historyQueuePath, ref, r.redis)
 				} else {
-					enqueued, err = enqueueSyncRef(r.historyQueuePath, ref)
+					enqueued, err = enqueueSyncRefWithRedis(r.historyQueuePath, ref, r.redis)
 				}
 				if err != nil {
 					return added, err
@@ -1024,6 +1045,10 @@ func (r *syncRuntime) probeLANAnchors(ctx context.Context, logf func(string, ...
 }
 
 func enqueueSyncRef(queuePath string, ref SyncRef) (bool, error) {
+	return enqueueSyncRefWithRedis(queuePath, ref, nil)
+}
+
+func enqueueSyncRefWithRedis(queuePath string, ref SyncRef, rc *RedisClient) (bool, error) {
 	if strings.TrimSpace(queuePath) == "" {
 		return false, errors.New("queue path is required")
 	}
@@ -1055,17 +1080,26 @@ func enqueueSyncRef(queuePath string, ref SyncRef) (bool, error) {
 	if _, err := file.WriteString(ref.Magnet + "\n"); err != nil {
 		return false, err
 	}
+	_ = cacheSyncQueueRef(context.Background(), rc, queuePath, ref)
 	return true, nil
 }
 
 func promoteSyncRefToRealtime(realtimePath, historyPath string, ref SyncRef) (bool, error) {
-	if err := removeSyncRef(historyPath, ref); err != nil {
+	return promoteSyncRefToRealtimeWithRedis(realtimePath, historyPath, ref, nil)
+}
+
+func promoteSyncRefToRealtimeWithRedis(realtimePath, historyPath string, ref SyncRef, rc *RedisClient) (bool, error) {
+	if err := removeSyncRefWithRedis(historyPath, ref, rc); err != nil {
 		return false, err
 	}
-	return enqueueSyncRef(realtimePath, ref)
+	return enqueueSyncRefWithRedis(realtimePath, ref, rc)
 }
 
 func removeSyncRef(queuePath string, ref SyncRef) error {
+	return removeSyncRefWithRedis(queuePath, ref, nil)
+}
+
+func removeSyncRefWithRedis(queuePath string, ref SyncRef, rc *RedisClient) error {
 	if strings.TrimSpace(queuePath) == "" {
 		return nil
 	}
@@ -1098,17 +1132,25 @@ func removeSyncRef(queuePath string, ref SyncRef) error {
 		out = append(out, rawLine)
 	}
 	content := strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
-	return os.WriteFile(queuePath, []byte(content), 0o644)
+	if err := os.WriteFile(queuePath, []byte(content), 0o644); err != nil {
+		return err
+	}
+	_ = removeCachedSyncQueueRef(context.Background(), rc, queuePath, ref)
+	return nil
 }
 
 func rotateSyncRef(queuePath string, ref SyncRef) error {
+	return rotateSyncRefWithRedis(queuePath, ref, nil)
+}
+
+func rotateSyncRefWithRedis(queuePath string, ref SyncRef, rc *RedisClient) error {
 	if strings.TrimSpace(queuePath) == "" {
 		return nil
 	}
-	if err := removeSyncRef(queuePath, ref); err != nil {
+	if err := removeSyncRefWithRedis(queuePath, ref, rc); err != nil {
 		return err
 	}
-	_, err := enqueueSyncRef(queuePath, ref)
+	_, err := enqueueSyncRefWithRedis(queuePath, ref, rc)
 	return err
 }
 

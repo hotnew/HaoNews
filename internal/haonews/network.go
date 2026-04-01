@@ -36,6 +36,18 @@ func defaultNetworkBootstrapConfig(path string) (string, error) {
 #   libp2p_bootstrap=/dnsaddr/.../p2p/<peer-id>
 #   libp2p_rendezvous=latest.org/<topic>
 #   libp2p_transfer_max_size=<bytes>
+#   redis_enabled=true|false
+#   redis_addr=127.0.0.1:6379
+#   redis_password=
+#   redis_db=0
+#   redis_key_prefix=haonews-
+#   redis_max_retries=3
+#   redis_dial_timeout_ms=3000
+#   redis_read_timeout_ms=2000
+#   redis_write_timeout_ms=2000
+#   redis_pool_size=10
+#   redis_min_idle_conns=2
+#   redis_hot_window_days=7
 #
 # Generated on first start. Reuse these ports on later restarts unless you intentionally change them.
 # Stable 256-bit network namespace now lives in %s beside this file.
@@ -56,6 +68,20 @@ libp2p_bootstrap=/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKN
 libp2p_bootstrap=/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ
 libp2p_rendezvous=latest.org/global
 libp2p_rendezvous=latest.org/world
+
+# Optional Redis hot cache. File storage remains authoritative.
+# redis_enabled=true
+# redis_addr=127.0.0.1:6379
+# redis_password=
+# redis_db=0
+# redis_key_prefix=haonews-
+# redis_max_retries=3
+# redis_dial_timeout_ms=3000
+# redis_read_timeout_ms=2000
+# redis_write_timeout_ms=2000
+# redis_pool_size=10
+# redis_min_idle_conns=2
+# redis_hot_window_days=7
 `, path, networkIDFileName, libp2pPort, libp2pPort, defaultLibP2PTransferMaxSize), nil
 }
 
@@ -66,6 +92,7 @@ type NetworkBootstrapConfig struct {
 	NetworkID             string
 	LibP2PListen          []string
 	LibP2PTransferMaxSize int64
+	Redis                 RedisConfig
 	LANPeers              []string
 	PublicPeers           []string
 	RelayPeers            []string
@@ -81,13 +108,14 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return NetworkBootstrapConfig{Path: path, NetworkMode: networkModeLAN}, nil
+			return NetworkBootstrapConfig{Path: path, NetworkMode: networkModeLAN, Redis: DefaultRedisConfig()}, nil
 		}
 		return NetworkBootstrapConfig{}, err
 	}
 	cfg := NetworkBootstrapConfig{
 		Path:   path,
 		Exists: true,
+		Redis:  DefaultRedisConfig(),
 	}
 	seenListen := make(map[string]struct{})
 	seenLAN := make(map[string]struct{})
@@ -160,11 +188,16 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 			}
 			seenRendezvous[value] = struct{}{}
 			cfg.LibP2PRendezvous = append(cfg.LibP2PRendezvous, value)
+		case "redis_enabled", "redis_addr", "redis_password", "redis_db", "redis_key_prefix",
+			"redis_max_retries", "redis_dial_timeout_ms", "redis_read_timeout_ms", "redis_write_timeout_ms",
+			"redis_pool_size", "redis_min_idle_conns", "redis_hot_window_days":
+			applyRedisConfigValue(&cfg.Redis, key, value)
 		}
 	}
 	if cfg.NetworkMode == "" {
 		cfg.NetworkMode = networkModeLAN
 	}
+	cfg.Redis = normalizeRedisConfig(cfg.Redis)
 	fileNetworkID, err := loadNetworkIDFile(networkIDFilePath(path))
 	if err != nil {
 		return NetworkBootstrapConfig{}, err
@@ -173,6 +206,56 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 		cfg.NetworkID = fileNetworkID
 	}
 	return cfg, nil
+}
+
+func applyRedisConfigValue(cfg *RedisConfig, key, value string) {
+	if cfg == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "redis_enabled":
+		cfg.Enabled = strings.EqualFold(strings.TrimSpace(value), "true") ||
+			strings.EqualFold(strings.TrimSpace(value), "1") ||
+			strings.EqualFold(strings.TrimSpace(value), "yes")
+	case "redis_addr":
+		cfg.Addr = strings.TrimSpace(value)
+	case "redis_password":
+		cfg.Password = value
+	case "redis_db":
+		if db, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && db >= 0 {
+			cfg.DB = db
+		}
+	case "redis_key_prefix":
+		cfg.KeyPrefix = strings.TrimSpace(value)
+	case "redis_max_retries":
+		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v > 0 {
+			cfg.MaxRetries = v
+		}
+	case "redis_dial_timeout_ms":
+		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v > 0 {
+			cfg.DialTimeoutMs = v
+		}
+	case "redis_read_timeout_ms":
+		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v > 0 {
+			cfg.ReadTimeoutMs = v
+		}
+	case "redis_write_timeout_ms":
+		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v > 0 {
+			cfg.WriteTimeoutMs = v
+		}
+	case "redis_pool_size":
+		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v > 0 {
+			cfg.PoolSize = v
+		}
+	case "redis_min_idle_conns":
+		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v >= 0 {
+			cfg.MinIdleConns = v
+		}
+	case "redis_hot_window_days":
+		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v > 0 {
+			cfg.HotWindowDays = v
+		}
+	}
 }
 
 func (c NetworkBootstrapConfig) AllowsLANDiscovery() bool {

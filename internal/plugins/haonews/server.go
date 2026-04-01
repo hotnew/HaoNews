@@ -34,7 +34,7 @@ type App struct {
 	loadRules       func(path string) (SubscriptionRules, error)
 	loadWriter      func(path string) (WriterPolicy, error)
 	loadNet         func(path string) (NetworkBootstrapConfig, error)
-	loadSync        func(storeRoot string) (SyncRuntimeStatus, error)
+	loadSync        func(storeRoot, netPath string) (SyncRuntimeStatus, error)
 	loadSuper       func(path string) (SyncSupervisorState, error)
 	options         AppOptions
 	indexMu         sync.Mutex
@@ -421,11 +421,25 @@ type NetworkBootstrapResponse struct {
 	NetworkMode   string                         `json:"network_mode,omitempty"`
 	PrimaryHost   string                         `json:"primary_host,omitempty"`
 	Readiness     *ReadinessStatus               `json:"readiness,omitempty"`
+	Redis         *NetworkBootstrapRedisStatus   `json:"redis,omitempty"`
 	PeerID        string                         `json:"peer_id"`
 	ListenAddrs   []string                       `json:"listen_addrs"`
 	DialAddrs     []string                       `json:"dial_addrs"`
 	Explain       []string                       `json:"explain,omitempty"`
 	ExplainDetail *NetworkBootstrapExplainDetail `json:"explain_detail,omitempty"`
+}
+
+type NetworkBootstrapRedisStatus struct {
+	Enabled           bool   `json:"enabled"`
+	Online            bool   `json:"online"`
+	Addr              string `json:"addr,omitempty"`
+	Prefix            string `json:"prefix,omitempty"`
+	DB                int    `json:"db,omitempty"`
+	AnnouncementCount int    `json:"announcement_count,omitempty"`
+	ChannelIndexCount int    `json:"channel_index_count,omitempty"`
+	TopicIndexCount   int    `json:"topic_index_count,omitempty"`
+	RealtimeQueueRefs int    `json:"realtime_queue_refs,omitempty"`
+	HistoryQueueRefs  int    `json:"history_queue_refs,omitempty"`
 }
 
 type ReadinessStatus struct {
@@ -544,7 +558,7 @@ func newApp(storeRoot, project, version, archiveRoot, rulesPath, writerPath, net
 		loadRules:  LoadSubscriptionRules,
 		loadWriter: LoadWriterPolicy,
 		loadNet:    LoadNetworkBootstrapConfig,
-		loadSync:   loadSyncRuntimeStatus,
+		loadSync:   loadSyncRuntimeStatusWithNet,
 		loadSuper:  loadSyncSupervisorState,
 		options:    options,
 	}, nil

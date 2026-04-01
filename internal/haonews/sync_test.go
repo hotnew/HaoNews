@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -1129,6 +1130,63 @@ func TestHandleAnnouncementRemembersDirectPeer(t *testing.T) {
 	peers := runtime.directPeerIDs("93a71a010a59022c8670e06e2c92fa279f98d974")
 	if len(peers) != 1 || peers[0] != host.ID() {
 		t.Fatalf("direct peers = %#v, want %s", peers, host.ID())
+	}
+}
+
+func TestHandleAnnouncementMirrorsRealtimeQueueToRedis(t *testing.T) {
+	t.Parallel()
+
+	queueRoot := t.TempDir()
+	queue := filepath.Join(queueRoot, "realtime.txt")
+	historyQueue := filepath.Join(queueRoot, "history.txt")
+	store, err := OpenStore(filepath.Join(t.TempDir(), "store"))
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	mini, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run error = %v", err)
+	}
+	defer mini.Close()
+	rc, err := NewRedisClient(RedisConfig{
+		Enabled:   true,
+		Addr:      mini.Addr(),
+		KeyPrefix: "haonews-test-",
+	})
+	if err != nil {
+		t.Fatalf("NewRedisClient error = %v", err)
+	}
+	defer rc.Close()
+
+	runtime := &syncRuntime{
+		store:            store,
+		queuePath:        queue,
+		historyQueuePath: historyQueue,
+		netCfg:           NetworkBootstrapConfig{NetworkID: latestOrgNetworkID},
+		directPeers:      make(map[string][]peer.ID),
+		subscriptions:    SyncSubscriptions{},
+		redis:            rc,
+	}
+	enqueued, err := runtime.handleAnnouncement(SyncAnnouncement{
+		InfoHash:  "93a71a010a59022c8670e06e2c92fa279f98d974",
+		Magnet:    "magnet:?xt=urn:btih:93a71a010a59022c8670e06e2c92fa279f98d974&dn=test",
+		Channel:   "news",
+		Topics:    []string{"world"},
+		NetworkID: latestOrgNetworkID,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("handleAnnouncement error = %v", err)
+	}
+	if !enqueued {
+		t.Fatal("expected announcement to enqueue")
+	}
+	items, err := rc.client.LRange(context.Background(), syncQueueRedisKey(rc, queue), 0, -1).Result()
+	if err != nil {
+		t.Fatalf("LRange error = %v", err)
+	}
+	if len(items) != 1 || !strings.Contains(items[0], "93a71a010a59022c8670e06e2c92fa279f98d974") {
+		t.Fatalf("redis queue items = %#v", items)
 	}
 }
 
