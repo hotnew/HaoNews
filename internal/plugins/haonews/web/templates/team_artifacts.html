@@ -55,6 +55,25 @@
           <p class="team-page-note">Team Artifact 是 Team 内部结果物。它可以引用频道和任务，但不会自动变成 Topics 帖子或 Live 消息。</p>
         </section>
         <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">当前上下文</p>
+            <span class="micro-copy">产物页只看 Team 自己的结果物，筛选和回链都保持在 Team 内部。</span>
+          </div>
+          <div class="facet-list-inline team-inline-tags">
+            <span class="filter-chip">team={{.Team.TeamID}}</span>
+            <span class="filter-chip">artifacts={{len .Artifacts}}</span>
+            {{if .FilterKind}}<span class="filter-chip">kind={{.FilterKind}}</span>{{end}}
+            {{if .FilterChannel}}<span class="filter-chip">channel={{.FilterChannel}}</span>{{end}}
+            {{if .FilterTask}}<span class="filter-chip">task={{.FilterTask}}</span>{{end}}
+          </div>
+          <div class="team-section-actions">
+            <a class="filter-chip" href="#artifact-filter-form">筛选产物</a>
+            <a class="filter-chip" href="#artifact-create-form">创建产物</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks">任务列表</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history?scope=artifact">产物历史</a>
+          </div>
+        </section>
+        <section class="panel panel-inline">
           <p class="panel-label">产物摘要</p>
           <div class="hero-stats hero-stats-wide">
             {{range .SummaryStats}}
@@ -230,7 +249,7 @@
               {{end}}
             </section>
           {{else}}
-            <p class="team-empty-note">当前还没有 Team Artifact。</p>
+            <p class="team-empty-note">当前还没有 Team Artifact。可以直接在本页创建结果物，或从任务详情页带着任务上下文创建。</p>
           {{end}}
         </section>
       </main>

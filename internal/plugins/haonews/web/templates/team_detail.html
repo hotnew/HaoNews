@@ -59,6 +59,27 @@
         </section>
         <section class="panel panel-inline">
           <div class="panel-head">
+            <p class="panel-label">当前上下文</p>
+            <span class="micro-copy">从这里直接进入成员、频道、任务、产物和历史，不需要绕回别的模块。</span>
+          </div>
+          <div class="facet-list-inline team-inline-tags">
+            <span class="filter-chip">team={{.Team.TeamID}}</span>
+            <span class="filter-chip">visibility={{.Team.Visibility}}</span>
+            <span class="filter-chip">channels={{len .Channels}}</span>
+            <span class="filter-chip">tasks={{len .Tasks}}</span>
+            <span class="filter-chip">artifacts={{len .Artifacts}}</span>
+            <span class="filter-chip">history={{len .History}}</span>
+          </div>
+          <div class="team-section-actions">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members">成员治理</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks">任务列表</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/artifacts">产物列表</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history">全部历史</a>
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
             <p class="panel-label">Team 摘要</p>
             <div class="story-links team-interface-links">
               <a href="/api/teams/{{.Team.TeamID}}/members">成员 JSON</a>
@@ -226,7 +247,7 @@
               {{end}}
             </section>
           {{else}}
-            <p class="micro-copy">当前还没有频道配置，后续会在 Team JSON 和模板层中逐步补齐独立频道视图。</p>
+            <p class="micro-copy">当前还没有频道配置。可以先创建 Team Channel，再围绕这个 Team 自己的子空间长期沟通。</p>
           {{end}}
         </section>
         <section class="panel panel-inline" id="team-pending-members">
@@ -492,7 +513,7 @@
               {{end}}
             </section>
           {{else}}
-            <p class="team-empty-note">当前还没有 TeamMessage。后续团队内明文沟通会长期沉淀在这里。</p>
+            <p class="team-empty-note">当前还没有 TeamMessage。现在就可以去主频道或其他 Team Channel 发第一条明文消息。</p>
           {{end}}
         </section>
         <section class="panel panel-inline">
@@ -541,7 +562,7 @@
               {{end}}
             </section>
           {{else}}
-            <p class="team-empty-note">当前还没有 Team 变更历史。后续治理、任务、频道和产物动作都会继续沉淀到这里。</p>
+            <p class="team-empty-note">当前还没有 Team 变更历史。成员治理、任务、频道、产物和消息动作都会继续沉淀到这里。</p>
           {{end}}
         </section>
       </main>

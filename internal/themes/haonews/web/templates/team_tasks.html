@@ -55,6 +55,26 @@
           <p class="team-page-note">Team Task 只属于 Team。任务讨论和状态流转都回落到 Team 自己的频道和历史，不进入 Live 或 Topics。</p>
         </section>
         <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">当前上下文</p>
+            <span class="micro-copy">任务页只看 Team 自己的任务对象，筛选和跳转都保持在 Team 内部。</span>
+          </div>
+          <div class="facet-list-inline team-inline-tags">
+            <span class="filter-chip">team={{.Team.TeamID}}</span>
+            <span class="filter-chip">tasks={{len .Tasks}}</span>
+            {{if .FilterStatus}}<span class="filter-chip">status={{.FilterStatus}}</span>{{end}}
+            {{if .FilterAssignee}}<span class="filter-chip">assignee={{.FilterAssignee}}</span>{{end}}
+            {{if .FilterLabel}}<span class="filter-chip">label={{.FilterLabel}}</span>{{end}}
+            {{if .FilterChannel}}<span class="filter-chip">channel={{.FilterChannel}}</span>{{end}}
+          </div>
+          <div class="team-section-actions">
+            <a class="filter-chip" href="#task-filter-form">筛选任务</a>
+            <a class="filter-chip" href="#task-create-form">创建任务</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history?scope=task">任务历史</a>
+          </div>
+        </section>
+        <section class="panel panel-inline">
           <p class="panel-label">任务摘要</p>
           <div class="hero-stats hero-stats-wide">
             {{range .SummaryStats}}
@@ -252,7 +272,7 @@
               {{end}}
             </section>
           {{else}}
-            <p class="team-empty-note">当前还没有 Team Task。</p>
+            <p class="team-empty-note">当前还没有 Team Task。可以直接在本页创建任务，或先到频道里整理上下文后再落任务。</p>
           {{end}}
         </section>
       </main>

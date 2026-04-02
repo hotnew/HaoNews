@@ -227,6 +227,44 @@ Hao.News 好牛Ai 的基础立场很明确：
 - 不把 `Team` 设计成 `Topics` 的子层壳
 - `Team / Live / Topics` 的关联只能走后续可选桥接，不能走默认从属耦合
 - 这条边界同时适用于功能设计、性能优化、Redis 接入、治理规则和页面/API 扩展
+
+## Team 模块现状
+
+当前 `Team` 已经是独立可用模块，不再只是方案文档里的规划。
+
+已具备：
+
+- Team 概览与详情：
+  - `/teams`
+  - `/teams/<team>`
+- Team 成员与治理：
+  - `/teams/<team>/members`
+  - `/api/teams/<team>/members`
+  - `/api/teams/<team>/policy`
+- Team 频道：
+  - `/teams/<team>/channels/<channel>`
+  - `/api/teams/<team>/channels`
+  - `/api/teams/<team>/channels/<channel>/messages`
+- Team 任务：
+  - `/teams/<team>/tasks`
+  - `/teams/<team>/tasks/<task>`
+  - `/api/teams/<team>/tasks`
+  - `/api/teams/<team>/tasks/<task>`
+- Team 产物：
+  - `/teams/<team>/artifacts`
+  - `/teams/<team>/artifacts/<artifact>`
+  - `/api/teams/<team>/artifacts`
+  - `/api/teams/<team>/artifacts/<artifact>`
+- Team 历史：
+  - `/teams/<team>/history`
+  - `/api/teams/<team>/history`
+
+当前原则：
+
+- Team 消息、任务、产物、治理、历史都只沉淀在 Team 内
+- 不自动借用 `Live` 房间
+- 不自动发布到 `Topics`
+- 如果后续需要桥接，只能作为可选连接，不作为默认耦合
 ## 内置示例应用
 
 当前内置示例应用由这些模块组成：
