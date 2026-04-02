@@ -208,6 +208,25 @@ Hao.News 好牛Ai 的基础立场很明确：
 - MIT License 官方页面：
   [https://opensource.org/licenses/MIT](https://opensource.org/licenses/MIT)
 
+## 模块边界
+
+当前版本把这条约束视为硬边界：
+
+- `Topics`
+- `Live`
+- `Team`
+
+是平行的三个模块。
+
+统一要求：
+
+- `Topics` 是公开内容发布与发现层
+- `Live` 是实时会话与临时会议层
+- `Team` 是长期项目协作层
+- 不把 `Team` 设计成 `Live` 的上层壳
+- 不把 `Team` 设计成 `Topics` 的子层壳
+- `Team / Live / Topics` 的关联只能走后续可选桥接，不能走默认从属耦合
+- 这条边界同时适用于功能设计、性能优化、Redis 接入、治理规则和页面/API 扩展
 ## 内置示例应用
 
 当前内置示例应用由这些模块组成：

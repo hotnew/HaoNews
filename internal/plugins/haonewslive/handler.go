@@ -350,6 +350,7 @@ func handleLiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, 
 		return
 	}
 	showHeartbeats := queryBool(r, "show_heartbeats", false)
+	showAll := queryBool(r, "show_all", false)
 	autoRefresh := queryBool(r, "refresh", true)
 	filteredEvents := filterLiveEvents(events, showHeartbeats, rules)
 	publicMutedEvents := 0
@@ -357,8 +358,12 @@ func handleLiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, 
 	if isPublicLiveRoomID(room.RoomID) {
 		filteredEvents, publicMutedEvents, publicRateLimitedEvents = applyPublicLiveGuards(filteredEvents, rules)
 	}
+	displayEvents := filteredEvents
+	if !showAll {
+		displayEvents = limitVisibleLiveEvents(filteredEvents, live.LiveRoomDisplayNonHeartbeatEvents, live.LiveRoomRetainHeartbeatEvents)
+	}
 	blockedEvents := blockedLiveEvents(events, true, rules)
-	taskSummaries := buildTaskSummaries(filteredEvents)
+	taskSummaries := buildTaskSummaries(displayEvents)
 	roomVisibility := "public"
 	if !isPublicLiveRoomID(room.RoomID) {
 		roomVisibility, _ = classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
@@ -384,14 +389,17 @@ func handleLiveRoom(app *newsplugin.App, store *live.LocalStore, roomID string, 
 		PublicRateLimitWindowSeconds: rules.LivePublicRateLimitWindowSeconds,
 		PublicDefaultRooms:           defaultPublicLiveRooms(),
 		PendingBlockedEvents:         len(blockedEvents),
-		Events:                       filteredEvents,
-		EventViews:                   buildEventViews(filteredEvents, rules),
+		Events:                       displayEvents,
+		EventViews:                   buildEventViews(displayEvents, rules),
 		TaskSummaries:                taskSummaries,
 		TaskByStatus:                 groupTasksByStatus(taskSummaries),
 		TaskByAssignee:               groupTasksByAssignee(taskSummaries),
 		Roster:                       live.BuildRoster(filteredEvents, time.Now().UTC(), 30*time.Second),
 		Archive:                      archive,
 		HistoryArchives:              formatHistoryArchives(historyArchives),
+		ShowAll:                      showAll,
+		VisibleEventCount:            len(displayEvents),
+		TotalEventCount:              len(filteredEvents),
 		ShowHeartbeats:               showHeartbeats,
 		AutoRefresh:                  autoRefresh,
 	}
@@ -599,14 +607,19 @@ func handleAPILiveRoom(app *newsplugin.App, store *live.LocalStore, roomID strin
 		return
 	}
 	showHeartbeats := queryBool(r, "show_heartbeats", false)
+	showAll := queryBool(r, "show_all", false)
 	filteredEvents := filterLiveEvents(events, showHeartbeats, rules)
 	publicMutedEvents := 0
 	publicRateLimitedEvents := 0
 	if isPublicLiveRoomID(room.RoomID) {
 		filteredEvents, publicMutedEvents, publicRateLimitedEvents = applyPublicLiveGuards(filteredEvents, rules)
 	}
+	displayEvents := filteredEvents
+	if !showAll {
+		displayEvents = limitVisibleLiveEvents(filteredEvents, live.LiveRoomDisplayNonHeartbeatEvents, live.LiveRoomRetainHeartbeatEvents)
+	}
 	blockedEvents := blockedLiveEvents(events, true, rules)
-	taskSummaries := buildTaskSummaries(filteredEvents)
+	taskSummaries := buildTaskSummaries(displayEvents)
 	roomVisibility := "public"
 	if !isPublicLiveRoomID(room.RoomID) {
 		roomVisibility, _ = classifyLivePublicKeyVisibility(strings.TrimSpace(room.CreatorPubKey), strings.TrimSpace(room.ParentPublicKey), rules)
@@ -619,14 +632,17 @@ func handleAPILiveRoom(app *newsplugin.App, store *live.LocalStore, roomID strin
 		"public_rate_limit_messages":       rules.LivePublicRateLimitMessages,
 		"public_rate_limit_window_seconds": rules.LivePublicRateLimitWindowSeconds,
 		"pending_blocked_events":           len(blockedEvents),
-		"events":                           filteredEvents,
-		"event_views":                      buildEventViews(filteredEvents, rules),
+		"events":                           displayEvents,
+		"event_views":                      buildEventViews(displayEvents, rules),
 		"task_summaries":                   taskSummaries,
 		"task_by_status":                   groupTasksByStatus(taskSummaries),
 		"task_by_assignee":                 groupTasksByAssignee(taskSummaries),
 		"roster":                           live.BuildRoster(filteredEvents, time.Now().UTC(), 30*time.Second),
 		"archive":                          archive,
 		"history_archives":                 formatHistoryArchives(historyArchives),
+		"show_all":                         showAll,
+		"visible_event_count":              len(displayEvents),
+		"total_event_count":                len(filteredEvents),
 		"show_heartbeats":                  showHeartbeats,
 	})
 }
@@ -741,6 +757,36 @@ func blockedLiveEvents(events []live.LiveMessage, showHeartbeats bool, rules new
 		filtered = append(filtered, event)
 	}
 	return filtered
+}
+
+func limitVisibleLiveEvents(events []live.LiveMessage, keepNonHeartbeat, keepHeartbeat int) []live.LiveMessage {
+	if len(events) == 0 {
+		return nil
+	}
+	keep := make([]bool, len(events))
+	nonHeartbeatCount := 0
+	heartbeatCount := 0
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if strings.TrimSpace(event.Type) == live.TypeHeartbeat {
+			if keepHeartbeat > 0 && heartbeatCount < keepHeartbeat {
+				keep[index] = true
+				heartbeatCount++
+			}
+			continue
+		}
+		if keepNonHeartbeat <= 0 || nonHeartbeatCount < keepNonHeartbeat {
+			keep[index] = true
+			nonHeartbeatCount++
+		}
+	}
+	out := make([]live.LiveMessage, 0, nonHeartbeatCount+heartbeatCount)
+	for index, event := range events {
+		if keep[index] {
+			out = append(out, event)
+		}
+	}
+	return out
 }
 
 func applyPublicLiveGuards(events []live.LiveMessage, rules newsplugin.SubscriptionRules) ([]live.LiveMessage, int, int) {

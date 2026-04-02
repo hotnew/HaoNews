@@ -65,6 +65,15 @@
       - `actor_origin_public_key`
       - `actor_parent_public_key`
       - `source`
+  - 成员治理已补：
+    - 批量成员动作
+    - page:
+      - `/teams/<team>/members/bulk-action`
+    - api:
+      - `POST /api/teams/<team>/members/bulk-action`
+  - 治理摘要已深化：
+    - active / pending / muted / removed 计数
+    - owner / maintainer / observer 分组
 - `T6` 已完成
   - 独立任务列表：
     - `/teams/<team>/tasks`
@@ -81,6 +90,32 @@
     - `DELETE /api/teams/<team>/tasks/<task>`
   - Task 评论继续沉淀到 `TeamMessage`
   - 不借 `Live / Topics`
+  - 任务上下文已深化：
+    - `channel_id` 已进入 Task 模型
+    - Task 列表支持按频道筛选
+    - Task 详情页会回链到关联频道
+    - Task 评论默认写入“任务自己的频道”优先
+    - Task 详情页可直接创建关联 Artifact
+    - Task 详情页可显示相关 Artifact
+    - Task 列表直接显示：
+      - 关联产物数
+      - 相关历史数
+    - Task 详情页已补：
+      - 工作台入口
+      - 同状态任务
+      - 同负责者
+      - 同标签
+      - 最近相关变更
+    - Task 列表支持：
+      - status 筛选
+      - assignee 筛选
+      - label 筛选
+    - Task 详情页支持：
+      - 直接追加 Task 评论
+      - page:
+        - `/teams/<team>/tasks/<task>/comment`
+      - api:
+        - `POST /api/teams/<team>/tasks/<task>/comment`
 - `T7` 已完成第二阶段
   - 独立产物列表：
     - `/teams/<team>/artifacts`
@@ -101,6 +136,44 @@
     - artifact
     - channel
     - message
+  - 任务/产物上下文已继续深化：
+    - Task 详情页可直接创建关联 Artifact
+    - Task 详情页可显示相关 Artifact
+    - Artifact 详情页可显示关联 Task 摘要
+    - Channel 页面可直接创建绑定当前频道的 Task / Artifact
+    - Artifact 列表支持筛选：
+      - kind
+      - channel
+      - task
+    - Artifact 详情页已补：
+      - 工作台入口
+      - 结果预览
+      - 关联频道摘要
+      - 最近相关变更
+  - 历史 diff 已继续深化：
+    - assignees_before/after
+    - labels_before/after
+    - Team 历史页已支持：
+      - scope/source/actor 筛选
+      - 工作台入口
+      - 执行者筛选回链
+      - source 筛选回链
+      - member/policy 直接回到 Team 治理页
+
+- `P8/P9/P10` 已推进
+  - Team 首页与详情页已补：
+    - 工作入口
+    - 任务状态快筛
+    - 产物类型快筛
+    - 治理工作台
+  - Team History 已补：
+    - scope/source/actor 筛选
+    - 任务/产物/频道回看入口
+    - 成员/Policy 回看入口
+  - Team 治理已补：
+    - 批量成员动作
+    - active / pending / muted / removed 摘要
+    - owner / maintainer / observer 分组
 
 ## 下一阶段执行顺序
 
@@ -149,6 +222,11 @@
     - `/api/teams/<team>/policy`
   - Team 详情页已显示 policy 摘要
   - Team 详情页已显示待审批成员和快捷审批动作
+  - Team 详情页已补：
+    - 治理工作台
+    - 待审批成员入口
+    - Team Policy 历史入口
+    - 治理汇总入口
 
 目标：
 
@@ -245,6 +323,40 @@
 
 目标：
 
+- 只在 `Team` 已经稳定后，再考虑可选桥接
+- 不改变 `Team / Live / Topics` 三者平行关系
+
+范围：
+
+- 可选把 Team 产物发布到 Topics
+- 可选把 Team 某些频道映射到 Live 临时会议
+
+原则：
+
+- 默认关闭
+- 桥接永远是桥接，不是模块合并
+
+## 当前剩余重点
+
+1. `P8` 页面交互继续收口
+   - 统一 Team 页面按钮密度、导航关系、空状态
+2. `P9` Team 治理收尾
+   - 批量治理摘要更清楚
+   - 历史里的治理动作更易读
+3. `P10` Task / Artifact 再深化
+   - Task 评论和筛选已接入
+   - Artifact 列表筛选已接入：
+     - `kind`
+     - `channel`
+     - `task`
+   - Artifact 详情已补：
+     - 结果预览
+     - 关联任务摘要
+     - 关联频道摘要
+     - 最近相关变更
+   - 后续重点是页面细节和结果物展示继续收顺
+4. `P11` 文档与发布收尾
+
 - 保持 `Team / Live / Topics` 平行的前提下，增加可选连接
 
 范围：
@@ -274,11 +386,15 @@
 
 3. Team Task / Artifact 继续深化
 - 例如任务快速状态流转
-- artifact 与 task/channel 的关系展示
-  - actor
-  - source
+- artifact 与 task/channel/history 的关系展示
+- 当前已补：
+  - artifact 过滤
+  - 结果预览
+  - 关联任务/频道摘要
+  - 最近相关变更
 - 后续可继续补：
-  - 变更前后 diff
+  - 结果物展示细节
+  - 更强的任务上下文摘要
 
 3. `T8` 可选桥接
 - 只有在 Team 自己足够完整后，才考虑桥接到 `Live / Topics`
@@ -961,3 +1077,92 @@
   这组思路来组织 Team
 
 这样既不会推翻当前 `Topics` 和 `Live`，也能把长期项目协作、点对点沟通、小组协作、明文沉淀这几件事同时做好。
+
+## 16. 当前实现进度
+
+截至当前本地代码，已经完成：
+
+- `Team / Live / Topics` 完全分离
+- 独立 Team 存储、频道、消息、任务、产物、历史
+- `TeamMessage` 可写
+- `TeamTask` 可写、可评论、可按频道过滤
+- `TeamArtifact` 可写、可按类型/频道/任务过滤
+- `Team History` 可按 `scope / source / actor` 过滤
+- `Team Member / Policy` 可写治理
+- `Team Member` 独立治理页：
+  - `/teams/<team>/members`
+  - `/api/teams/<team>/members?status=&role=&agent=`
+- 批量成员治理：
+  - approve / mute / remove / pending
+- 频道页可直接创建绑定当前频道的：
+  - `Task`
+  - `Artifact`
+- `Task` 详情页已补：
+  - 工作台入口
+  - 快速状态流转
+  - 关联频道回链
+  - 关联产物
+  - 最近相关变更
+  - 默认评论优先写入任务自己的频道
+- `Artifact` 详情页已补：
+  - 工作台入口
+  - 结果预览
+  - 关联任务摘要
+  - 关联频道摘要
+  - 最近相关变更
+- `Team` 概览页已补：
+  - 工作入口
+  - 治理工作台
+  - 最近任务 / 产物 / 消息 / 变更
+- `Team` 首页已补：
+  - 工作台入口
+  - Team 目录回链
+  - 边界说明与入口统一
+- `Team Channel` 页已补：
+  - 当前上下文
+  - 工作台入口
+  - 关联任务
+  - 关联产物
+  - 最近相关变更
+- `Team Members` 页已补：
+  - 当前上下文
+  - 批量治理入口
+  - 成员历史 / Policy 历史回链
+- `Team History` 页已补：
+  - 当前上下文
+  - 筛选锚点
+  - 治理工作台锚点
+  - 更完整的概览 / 成员 / 主频道 / 任务 / 产物回链
+- `Team History` 页面已补：
+  - 治理工作台
+  - 执行者 / 来源 / scope 筛选
+  - before / after 细项展示
+- 最近变更现在会直接显示：
+  - 状态
+  - 角色
+  - 标题
+  - 优先级
+  - 频道
+  - 类型
+  - 标签
+  - 隐藏状态
+
+## 17. 剩余收尾
+
+当前剩余已经不多，主要是最后一轮收口：
+
+- 页面统一性最后一轮
+  - 再压一轮：
+    - chip 密度
+    - 工作台入口层级
+    - 空状态文案
+    - 回链路径
+- 治理可读性最后收口
+  - 成员批量动作
+  - policy 变更
+  - 历史回链
+  - 治理摘要
+- 文档与发布收尾
+  - 计划文档持续同步
+  - 整体验证
+  - `main / tag / release`

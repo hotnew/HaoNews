@@ -73,6 +73,68 @@ func TestPluginBuildServesLiveAPI(t *testing.T) {
 	}
 }
 
+func TestPluginBuildLimitsVisibleLiveEventsButCanShowAll(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildLiveSite(t)
+	store, err := live.OpenLocalStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	room := live.RoomInfo{
+		RoomID:    "room-window",
+		Title:     "Window Test",
+		Creator:   "agent://pc75/openclaw01",
+		CreatedAt: "2026-03-19T00:00:00Z",
+		Channel:   "hao.news/live",
+	}
+	if err := store.SaveRoom(room); err != nil {
+		t.Fatalf("SaveRoom error = %v", err)
+	}
+	for idx := 0; idx < live.LiveRoomDisplayNonHeartbeatEvents+5; idx++ {
+		if err := store.AppendEvent(room.RoomID, live.LiveMessage{
+			Protocol:     live.ProtocolVersion,
+			Type:         live.TypeMessage,
+			RoomID:       room.RoomID,
+			Sender:       room.Creator,
+			SenderPubKey: strings.Repeat("a", 64),
+			Seq:          uint64(idx + 1),
+			Timestamp:    fmt.Sprintf("2026-03-19T00:%02d:00Z", idx%60),
+			Payload:      live.LivePayload{Content: fmt.Sprintf("window-event-%03d", idx)},
+			Signature:    fmt.Sprintf("%0128d", idx+1),
+		}); err != nil {
+			t.Fatalf("AppendEvent %d error = %v", idx, err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/live/room-window", nil)
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "查看全部") {
+		t.Fatalf("expected visible window hint in body, got %q", body)
+	}
+	if strings.Contains(body, "window-event-000") {
+		t.Fatalf("expected oldest event hidden by default, got %q", body)
+	}
+	if !strings.Contains(body, "window-event-104") {
+		t.Fatalf("expected newest event visible, got %q", body)
+	}
+
+	allReq := httptest.NewRequest(http.MethodGet, "/api/live/rooms/room-window?show_all=1", nil)
+	allRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(allRec, allReq)
+	if allRec.Code != http.StatusOK {
+		t.Fatalf("show all api status = %d, body = %s", allRec.Code, allRec.Body.String())
+	}
+	if !strings.Contains(allRec.Body.String(), "\"show_all\": true") || !strings.Contains(allRec.Body.String(), "\"total_event_count\": 105") || !strings.Contains(allRec.Body.String(), "window-event-000") {
+		t.Fatalf("expected full event stream in show_all api, got %q", allRec.Body.String())
+	}
+}
+
 func TestPluginBuildServesPublicLiveRoomDespiteBlockedOrigin(t *testing.T) {
 	t.Parallel()
 
@@ -571,8 +633,8 @@ func TestPluginBuildServesLiveRoomHistoryAfterPrune(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListHistoryArchives error = %v", err)
 	}
-	if len(historyArchives) == 0 {
-		t.Fatal("expected local history archive after prune")
+	if len(historyArchives) != 0 {
+		t.Fatalf("len(historyArchives) = %d, want 0 without daily archive", len(historyArchives))
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/live/"+room.RoomID, nil)
@@ -581,27 +643,27 @@ func TestPluginBuildServesLiveRoomHistoryAfterPrune(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "本地历史归档") {
+	if !strings.Contains(rec.Body.String(), "本地历史归档") || !strings.Contains(rec.Body.String(), "当前还没有本地历史归档") {
 		t.Fatalf("expected local history section, got %q", rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/live/history/"+room.RoomID+"/"+historyArchives[0].ArchiveID, nil)
+	req = httptest.NewRequest(http.MethodGet, "/live/history/"+room.RoomID, nil)
 	rec = httptest.NewRecorder()
 	site.Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("history status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "历史聊天记录") {
+	if !strings.Contains(rec.Body.String(), "当前还没有本地历史归档") {
 		t.Fatalf("expected history page body, got %q", rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/live/history/"+room.RoomID+"/"+historyArchives[0].ArchiveID, nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/live/history/"+room.RoomID, nil)
 	rec = httptest.NewRecorder()
 	site.Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("history API status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "\"api_scope\": \"live-room-history-detail\"") {
+	if !strings.Contains(rec.Body.String(), "\"api_scope\": \"live-room-history\"") {
 		t.Fatalf("expected history API body, got %q", rec.Body.String())
 	}
 }

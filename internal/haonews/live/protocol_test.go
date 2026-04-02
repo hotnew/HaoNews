@@ -468,7 +468,7 @@ func TestReadEventsIgnoresPartialTrailingJSONLine(t *testing.T) {
 	}
 }
 
-func TestAppendEventPrunesRoomToRecentHundredNonHeartbeatEvents(t *testing.T) {
+func TestAppendEventRetainsAllNonHeartbeatEventsButPrunesHeartbeats(t *testing.T) {
 	store, err := OpenLocalStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("OpenLocalStore error = %v", err)
@@ -483,10 +483,13 @@ func TestAppendEventPrunesRoomToRecentHundredNonHeartbeatEvents(t *testing.T) {
 		t.Fatalf("SaveRoom error = %v", err)
 	}
 	base := time.Date(2026, 3, 30, 0, 0, 0, 0, time.UTC)
+	expectedNonHeartbeat := 0
 	for idx := 0; idx < 125; idx++ {
 		eventType := TypeMessage
-		if idx%10 == 0 {
+		if idx%3 == 0 {
 			eventType = TypeHeartbeat
+		} else {
+			expectedNonHeartbeat++
 		}
 		if err := store.AppendEvent(room.RoomID, LiveMessage{
 			Protocol:     ProtocolVersion,
@@ -515,8 +518,8 @@ func TestAppendEventPrunesRoomToRecentHundredNonHeartbeatEvents(t *testing.T) {
 		}
 		nonHeartbeat++
 	}
-	if nonHeartbeat != LiveRoomRetainNonHeartbeatEvents {
-		t.Fatalf("nonHeartbeat = %d, want %d", nonHeartbeat, LiveRoomRetainNonHeartbeatEvents)
+	if nonHeartbeat != expectedNonHeartbeat {
+		t.Fatalf("nonHeartbeat = %d, want %d", nonHeartbeat, expectedNonHeartbeat)
 	}
 	if heartbeat > LiveRoomRetainHeartbeatEvents {
 		t.Fatalf("heartbeat = %d, want <= %d", heartbeat, LiveRoomRetainHeartbeatEvents)
@@ -528,27 +531,15 @@ func TestAppendEventPrunesRoomToRecentHundredNonHeartbeatEvents(t *testing.T) {
 	if len(rooms) != 1 {
 		t.Fatalf("len(rooms) = %d, want 1", len(rooms))
 	}
-	if rooms[0].EventCount != LiveRoomRetainNonHeartbeatEvents {
-		t.Fatalf("rooms[0].EventCount = %d, want %d", rooms[0].EventCount, LiveRoomRetainNonHeartbeatEvents)
+	if rooms[0].EventCount != expectedNonHeartbeat {
+		t.Fatalf("rooms[0].EventCount = %d, want %d", rooms[0].EventCount, expectedNonHeartbeat)
 	}
 	historyArchives, err := store.ListHistoryArchives(room.RoomID)
 	if err != nil {
 		t.Fatalf("ListHistoryArchives error = %v", err)
 	}
-	if len(historyArchives) == 0 {
-		t.Fatal("expected local history archive after pruning")
-	}
-	history, err := store.LoadHistoryArchive(room.RoomID, historyArchives[0].ArchiveID)
-	if err != nil {
-		t.Fatalf("LoadHistoryArchive error = %v", err)
-	}
-	if history.EventCount == 0 || len(history.Events) == 0 {
-		t.Fatalf("history archive = %#v, want visible retained events", history)
-	}
-	for _, event := range history.Events {
-		if event.Type == TypeHeartbeat || event.Type == TypeArchiveNotice {
-			t.Fatalf("history archive should hide heartbeat/archive notice, got %q", event.Type)
-		}
+	if len(historyArchives) != 0 {
+		t.Fatalf("len(historyArchives) = %d, want 0 when only heartbeats are pruned", len(historyArchives))
 	}
 }
 

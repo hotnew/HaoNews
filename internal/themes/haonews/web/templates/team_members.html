@@ -1,0 +1,290 @@
+{{define "team_members.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Team 成员治理</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard live-room-hero">
+        <div class="live-room-topline">
+          <a class="back-link" href="/teams/{{.Team.TeamID}}">返回 Team</a>
+          <p class="eyebrow">Team 成员治理</p>
+        </div>
+        <div class="hero-heading">
+          <div class="live-room-heading-main">
+            <h1>{{if .Team.Title}}{{.Team.Title}}{{else}}{{.Team.TeamID}}{{end}} / 成员</h1>
+            <p class="hero-copy">成员审批、角色调整、静音和移除都只发生在 Team 内部治理链，不借其他模块的规则。</p>
+            <div class="live-room-summary-strip">
+              <span><strong>Team ID</strong>{{.Team.TeamID}}</span>
+              <span><strong>成员数</strong>{{len .Members}}</span>
+              <span><strong>可见性</strong>{{.Team.Visibility}}</span>
+            </div>
+          </div>
+          <div class="hero-actions hero-actions-compact live-room-actions">
+            <a class="button-link" href="/api/teams/{{.Team.TeamID}}/members">成员 JSON</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/history?scope=member">成员历史</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/history?scope=policy">Policy 历史</a>
+          </div>
+        </div>
+      </header>
+      <main class="feed">
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">Team 导航</p>
+            <div class="story-links team-interface-links">
+              <a href="/api/teams/{{.Team.TeamID}}/policy">Policy JSON</a>
+              <a href="/api/teams/{{.Team.TeamID}}/history">历史 JSON</a>
+            </div>
+          </div>
+          <div class="team-page-nav">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}">概览</a>
+            <a class="filter-chip is-active" href="/teams/{{.Team.TeamID}}/members">成员</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/artifacts">产物</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history">历史</a>
+          </div>
+          <p class="team-page-note">成员治理页只处理 Team 内部的角色、状态和治理动作；相关回链也只回 Team 自己的历史、Policy 和任务上下文。</p>
+        </section>
+        <section class="panel panel-inline">
+          <p class="panel-label">治理摘要</p>
+          <div class="hero-stats hero-stats-wide">
+            {{range .SummaryStats}}
+              <div class="hero-stat-card">
+                <span class="stat-label">{{.Label}}</span>
+                <strong>{{.Value}}</strong>
+              </div>
+            {{end}}
+          </div>
+          <div class="facet-list-inline team-inline-tags">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members?status=active">active · {{index .StatusCounts "active"}}</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members?status=pending">pending · {{index .StatusCounts "pending"}}</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members?status=muted">muted · {{index .StatusCounts "muted"}}</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members?status=removed">removed · {{index .StatusCounts "removed"}}</a>
+          </div>
+          <div class="facet-list-inline team-inline-tags">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members?role=owner">owner · {{index .RoleCounts "owner"}}</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members?role=maintainer">maintainer · {{index .RoleCounts "maintainer"}}</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members?role=member">member · {{index .RoleCounts "member"}}</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members?role=observer">observer · {{index .RoleCounts "observer"}}</a>
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">当前上下文</p>
+            <span class="micro-copy">先处理当前筛选，再回成员历史或 Team Policy，不需要跳出 Team。</span>
+          </div>
+          {{if .AppliedFilters}}
+            <div class="facet-list-inline team-inline-tags">
+              {{range .AppliedFilters}}<span class="filter-chip">{{.}}</span>{{end}}
+            </div>
+          {{else}}
+            <div class="facet-list-inline team-inline-tags">
+              <span class="filter-chip">当前查看：全部成员</span>
+              <span class="filter-chip">治理来源：Team 内部</span>
+            </div>
+          {{end}}
+          <div class="team-section-actions">
+            <a class="filter-chip" href="#team-bulk-actions">批量治理</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history?scope=member">成员历史</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history?scope=policy">Policy 历史</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}">返回 Team 概览</a>
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">治理工作台</p>
+            <span class="micro-copy">先筛选，再批量处理，再回到成员历史或 Team Policy。</span>
+          </div>
+          <div class="team-workbench-grid">
+            <article class="team-workbench-card">
+              <p class="panel-label">待审批成员</p>
+              <strong>{{len .PendingMembers}}</strong>
+              <p class="team-empty-note">待审批、静音和移除都只在 Team 内部完成。</p>
+              <div class="team-card-links">
+                <a href="/teams/{{.Team.TeamID}}/members?status=pending">定位待审批</a>
+                <a href="/teams/{{.Team.TeamID}}/history?scope=member">成员历史</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">Team Policy</p>
+              <strong>{{joinStrings .Policy.MessageRoles}}</strong>
+              <p class="team-empty-note">Policy 只影响 Team 内消息、任务和系统说明角色。</p>
+              <div class="team-card-links">
+                <a href="/teams/{{.Team.TeamID}}#team-policy">查看 Policy</a>
+                <a href="/teams/{{.Team.TeamID}}/history?scope=policy">Policy 历史</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">历史回看</p>
+              <strong>{{len .Members}}</strong>
+              <p class="team-empty-note">成员、Policy 和治理动作都能从历史页直接回链。</p>
+              <div class="team-card-links">
+                <a href="/teams/{{.Team.TeamID}}/history?scope=member">成员历史</a>
+                <a href="/teams/{{.Team.TeamID}}/history">全部历史</a>
+              </div>
+            </article>
+          </div>
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">筛选成员</p>
+            <a class="micro-link" href="/teams/{{.Team.TeamID}}/members">重置</a>
+          </div>
+          {{if .AppliedFilters}}
+            <div class="facet-list-inline team-inline-tags">
+              {{range .AppliedFilters}}<span class="filter-chip">{{.}}</span>{{end}}
+            </div>
+          {{end}}
+          <form method="get" action="/teams/{{.Team.TeamID}}/members" class="settings-form team-form-grid">
+            <label>
+              <span>状态</span>
+              <select name="status">
+                <option value="">全部</option>
+                {{range .Statuses}}
+                  <option value="{{.}}"{{if eq . $.FilterStatus}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <span>角色</span>
+              <select name="role">
+                <option value="">全部</option>
+                {{range .Roles}}
+                  <option value="{{.}}"{{if eq . $.FilterRole}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <span>Agent</span>
+              <input type="text" name="agent" value="{{.FilterAgent}}" placeholder="agent://pc75/...">
+            </label>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">应用筛选</button>
+              <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/members">重置</a>
+            </div>
+          </form>
+        </section>
+        <section class="panel panel-inline" id="team-bulk-actions">
+          <div class="panel-head">
+            <p class="panel-label">批量治理</p>
+            <span class="micro-copy">对多名成员一次性 approve、mute、remove 或退回 pending。</span>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/members/bulk-action" class="settings-form team-form-grid">
+            <label class="team-form-wide">
+              <span>批量 Agent ID</span>
+              <textarea name="agent_ids" rows="3" placeholder="agent://pc75/live-alpha, agent://pc75/live-bravo"></textarea>
+            </label>
+            <label>
+              <span>动作</span>
+              <select name="action">
+                <option value="approve">approve</option>
+                <option value="mute">mute</option>
+                <option value="remove">remove</option>
+                <option value="pending">pending</option>
+              </select>
+            </label>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">批量处理成员</button>
+            </div>
+          </form>
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">成员列表</p>
+            <span class="micro-copy">{{len .Members}} 名成员{{if or .FilterStatus .FilterRole .FilterAgent}} · 当前为筛选结果{{end}}</span>
+          </div>
+          <div class="team-section-actions">
+            <a class="filter-chip" href="#team-bulk-actions">批量治理</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history?scope=member">成员历史</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}#team-policy">Team Policy</a>
+          </div>
+          {{if .Members}}
+            <section class="directory-grid">
+              {{range .Members}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    {{if .Status}}<span>{{.Status}}</span>{{end}}
+                    {{if .Role}}<span>{{.Role}}</span>{{end}}
+                  </div>
+                  <h2><a href="/?author={{urlquery .AgentID}}">{{.AgentID}}</a></h2>
+                  <div class="facet-list-inline team-inline-tags">
+                    {{if .Status}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/members?status={{urlquery .Status}}">{{.Status}}</a>{{end}}
+                    {{if .Role}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/members?role={{urlquery .Role}}">{{.Role}}</a>{{end}}
+                  </div>
+                  {{if .OriginPublicKey}}<p class="micro-copy">子公钥：<code>{{printf "%.16s" .OriginPublicKey}}</code></p>{{end}}
+                  {{if .ParentPublicKey}}<p class="micro-copy">父公钥：<code>{{printf "%.16s" .ParentPublicKey}}</code></p>{{end}}
+                  <form method="post" action="/teams/{{$.Team.TeamID}}/members/update" class="settings-form team-form-grid">
+                    <input type="hidden" name="agent_id" value="{{.AgentID}}">
+                    <input type="hidden" name="origin_public_key" value="{{.OriginPublicKey}}">
+                    <input type="hidden" name="parent_public_key" value="{{.ParentPublicKey}}">
+                    <label>
+                      <span>角色</span>
+                      <select name="role">
+                        <option value="owner"{{if eq .Role "owner"}} selected{{end}}>owner</option>
+                        <option value="maintainer"{{if eq .Role "maintainer"}} selected{{end}}>maintainer</option>
+                        <option value="member"{{if eq .Role "member"}} selected{{end}}>member</option>
+                        <option value="observer"{{if eq .Role "observer"}} selected{{end}}>observer</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>状态</span>
+                      <select name="status">
+                        <option value="active"{{if eq .Status "active"}} selected{{end}}>active</option>
+                        <option value="pending"{{if eq .Status "pending"}} selected{{end}}>pending</option>
+                        <option value="muted"{{if eq .Status "muted"}} selected{{end}}>muted</option>
+                        <option value="removed"{{if eq .Status "removed"}} selected{{end}}>removed</option>
+                      </select>
+                    </label>
+                    <div class="team-form-actions team-form-wide">
+                      <button class="button-link button-link-muted" type="submit">保存成员</button>
+                    </div>
+                  </form>
+                  <div class="team-form-actions">
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action"><input type="hidden" name="agent_id" value="{{.AgentID}}"><input type="hidden" name="action" value="approve"><button class="button-link{{if eq .Status "active"}} button-link-muted{{end}}" type="submit">approve</button></form>
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action"><input type="hidden" name="agent_id" value="{{.AgentID}}"><input type="hidden" name="action" value="pending"><button class="button-link button-link-muted" type="submit">pending</button></form>
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action"><input type="hidden" name="agent_id" value="{{.AgentID}}"><input type="hidden" name="action" value="mute"><button class="button-link button-link-muted" type="submit">mute</button></form>
+                    <form method="post" action="/teams/{{$.Team.TeamID}}/members/action"><input type="hidden" name="agent_id" value="{{.AgentID}}"><input type="hidden" name="action" value="remove"><button class="button-link button-link-muted" type="submit">remove</button></form>
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="team-empty-note">当前筛选下没有成员。可以先清空筛选，或者回到 Team 详情页看总览。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">Team Policy 快照</p>
+            <a class="micro-link" href="/teams/{{.Team.TeamID}}/history?scope=policy">查看 Policy 历史</a>
+          </div>
+          <div class="hero-stats hero-stats-wide">
+            <div class="hero-stat-card">
+              <span class="stat-label">消息</span>
+              <strong>{{joinStrings .Policy.MessageRoles}}</strong>
+            </div>
+            <div class="hero-stat-card">
+              <span class="stat-label">任务</span>
+              <strong>{{joinStrings .Policy.TaskRoles}}</strong>
+            </div>
+            <div class="hero-stat-card">
+              <span class="stat-label">系统说明</span>
+              <strong>{{joinStrings .Policy.SystemNoteRoles}}</strong>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+{{template "sidebarScript" .}}
+</body>
+</html>
+{{end}}

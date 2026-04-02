@@ -27,14 +27,33 @@
               <span><strong>可见性</strong>{{.Team.Visibility}}</span>
             </div>
           </div>
-          <div class="hero-actions live-room-actions">
+          <div class="hero-actions hero-actions-compact live-room-actions">
             <a class="button-link" href="/api/teams/{{.Team.TeamID}}/artifacts">产物 JSON</a>
             <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
             <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/history">历史</a>
           </div>
         </div>
       </header>
       <main class="feed">
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">Team 导航</p>
+            <div class="story-links team-interface-links">
+              <a href="/api/teams/{{.Team.TeamID}}">Team JSON</a>
+              <a href="/api/teams/{{.Team.TeamID}}/history">历史 JSON</a>
+            </div>
+          </div>
+          <div class="team-page-nav">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}">概览</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members">成员</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="filter-chip is-active" href="/teams/{{.Team.TeamID}}/artifacts">产物</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history">历史</a>
+          </div>
+          <p class="team-page-note">Team Artifact 是 Team 内部结果物。它可以引用频道和任务，但不会自动变成 Topics 帖子或 Live 消息。</p>
+        </section>
         <section class="panel panel-inline">
           <p class="panel-label">产物摘要</p>
           <div class="hero-stats hero-stats-wide">
@@ -47,8 +66,90 @@
           </div>
         </section>
         <section class="panel panel-inline">
-          <p class="panel-label">新建产物</p>
-          <form method="post" action="/teams/{{.Team.TeamID}}/artifacts/create" class="settings-form">
+          <div class="panel-head">
+            <p class="panel-label">工作台入口</p>
+            <span class="micro-copy">先筛选、再创建、再回到任务和历史继续沉淀。</span>
+          </div>
+          <div class="team-workbench-grid">
+            <article class="team-workbench-card">
+              <p class="panel-label">新建产物</p>
+              <strong>create</strong>
+              <p class="team-empty-note">把频道或任务里的结果沉淀成 Team Artifact。</p>
+              <div class="team-card-links">
+                <a href="#artifact-create-form">去创建</a>
+                <a href="#artifact-filter-form">先筛选</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">产物筛选</p>
+              <strong>{{len .Artifacts}}</strong>
+              <p class="team-empty-note">按类型、频道、任务快速收拢结果物。</p>
+              <div class="team-card-links">
+                <a href="#artifact-filter-form">筛选产物</a>
+                <a href="/teams/{{.Team.TeamID}}/history?scope=artifact">产物历史</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">关联入口</p>
+              <strong>team</strong>
+              <p class="team-empty-note">回任务、回频道，继续补上下文。</p>
+              <div class="team-card-links">
+                <a href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+                <a href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+              </div>
+            </article>
+          </div>
+        </section>
+        <section class="panel panel-inline" id="artifact-filter-form">
+          <div class="panel-head">
+            <p class="panel-label">筛选产物</p>
+            <span class="micro-copy">{{if or .FilterKind .FilterChannel .FilterTask}}已筛选{{else}}全部产物{{end}}</span>
+          </div>
+          {{if .AppliedFilters}}
+            <div class="facet-list-inline team-inline-tags">
+              {{range .AppliedFilters}}<span class="filter-chip">{{.}}</span>{{end}}
+            </div>
+          {{end}}
+          <form method="get" action="/teams/{{.Team.TeamID}}/artifacts" class="settings-form team-filter-grid">
+            <label>
+              <span>类型</span>
+              <select name="kind">
+                <option value="">全部类型</option>
+                {{range .Kinds}}
+                  <option value="{{.}}"{{if eq $.FilterKind .}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <span>频道</span>
+              <select name="channel">
+                <option value="">全部频道</option>
+                {{range .Channels}}
+                  <option value="{{.ChannelID}}"{{if eq $.FilterChannel .ChannelID}} selected{{end}}>{{if .Title}}{{.Title}}{{else}}{{.ChannelID}}{{end}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <span>关联任务</span>
+              <select name="task">
+                <option value="">全部任务</option>
+                {{range .Tasks}}
+                  <option value="{{.TaskID}}"{{if eq $.FilterTask .TaskID}} selected{{end}}>{{if .Title}}{{.Title}}{{else}}{{.TaskID}}{{end}}</option>
+                {{end}}
+              </select>
+            </label>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">应用筛选</button>
+              <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/artifacts">清除筛选</a>
+            </div>
+          </form>
+        </section>
+        <section class="panel panel-inline" id="artifact-create-form">
+          <div class="panel-head">
+            <p class="panel-label">新建产物</p>
+            <span class="micro-copy">推荐先选频道，再用标签和任务引用补上下文</span>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/artifacts/create" class="settings-form team-form-grid">
             <label>
               <span>标题</span>
               <input type="text" name="title" placeholder="例如：Weekly summary">
@@ -60,6 +161,10 @@
             <label>
               <span>频道</span>
               <input type="text" name="channel_id" value="main" placeholder="main / research">
+            </label>
+            <label>
+              <span>关联任务</span>
+              <input type="text" name="task_id" placeholder="可选 task_id">
             </label>
             <label>
               <span>摘要</span>
@@ -77,15 +182,25 @@
               <span>创建者</span>
               <input type="text" name="created_by" placeholder="agent://pc75/live-bravo">
             </label>
-            <label>
+            <label class="team-form-wide">
               <span>正文</span>
               <textarea name="content" rows="8" placeholder="Team Artifact 明文内容"></textarea>
             </label>
-            <button class="button-link" type="submit">创建 Team Artifact</button>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">创建 Team Artifact</button>
+            </div>
           </form>
         </section>
-        <section class="panel panel-inline">
-          <p class="panel-label">产物列表</p>
+        <section class="panel panel-inline" id="artifact-list">
+          <div class="panel-head">
+            <p class="panel-label">产物列表</p>
+            <span class="micro-copy">{{len .Artifacts}} 条产物{{if or .FilterKind .FilterChannel .FilterTask}} · 当前为筛选结果{{end}}</span>
+          </div>
+          <div class="team-section-actions">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history">历史</a>
+          </div>
           {{if .Artifacts}}
             <section class="directory-grid">
               {{range .Artifacts}}
@@ -96,12 +211,26 @@
                     {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
                   </div>
                   <h2><a href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">{{.Title}}</a></h2>
-                  {{if .Summary}}<p class="micro-copy">{{.Summary}}</p>{{end}}
+                {{if .Summary}}<p class="micro-copy">{{.Summary}}</p>{{end}}
+                {{if .Content}}<p class="micro-copy team-inline-preview">{{printf "%.96s" .Content}}{{if gt (len .Content) 96}}...{{end}}</p>{{end}}
+                  <div class="facet-list-inline team-inline-tags">
+                    {{if .Kind}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/artifacts?kind={{urlquery .Kind}}">{{.Kind}}</a>{{end}}
+                    {{if .ChannelID}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/artifacts?channel={{urlquery .ChannelID}}">{{.ChannelID}}</a>{{end}}
+                    {{if .TaskID}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/artifacts?task={{urlquery .TaskID}}">{{.TaskID}}</a>{{end}}
+                    {{range .Labels}}<span class="filter-chip">{{.}}</span>{{end}}
+                  </div>
+                  <div class="story-links">
+                    <a href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">打开产物</a>
+                    {{if .TaskID}}<a href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .TaskID}}">关联任务</a>{{end}}
+                    {{if .ChannelID}}<a href="/teams/{{$.Team.TeamID}}/channels/{{urlquery .ChannelID}}">关联频道</a>{{end}}
+                    {{if .LinkURL}}<a href="{{.LinkURL}}">外部链接</a>{{end}}
+                    <a href="/api/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">查看 JSON</a>
+                  </div>
                 </article>
               {{end}}
             </section>
           {{else}}
-            <p class="micro-copy">当前还没有 Team Artifact。</p>
+            <p class="team-empty-note">当前还没有 Team Artifact。</p>
           {{end}}
         </section>
       </main>

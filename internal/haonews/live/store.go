@@ -437,7 +437,7 @@ func (s *LocalStore) pruneRoomEvents(roomID string) error {
 	if err != nil {
 		return err
 	}
-	pruned, dropped := retainRecentLiveEvents(events, LiveRoomRetainNonHeartbeatEvents, LiveRoomRetainHeartbeatEvents)
+	pruned, dropped := retainRecentLiveEvents(events, 0, LiveRoomRetainHeartbeatEvents)
 	if len(pruned) == len(events) {
 		return nil
 	}

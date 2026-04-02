@@ -60,6 +60,13 @@
           </section>
         {{end}}
 
+        {{if and (not .Archive) (not .ArchiveNotFound) (eq (len .Archives) 0)}}
+          <section class="panel panel-inline">
+            <p class="panel-label">当前还没有本地历史归档</p>
+            <p class="micro-copy">这个房间暂时还没有生成本地历史归档。当前版本默认只限制页面显示窗口，不会因为超过 100 条正文消息而自动删正文。</p>
+          </section>
+        {{end}}
+
         {{if .Archive}}
           <section class="panel panel-inline">
             <p class="panel-label">当前批次</p>

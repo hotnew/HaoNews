@@ -567,6 +567,12 @@ body.post-page-body.sidebar-collapsed .page-shell {
   gap: 10px;
 }
 
+.hero-actions-compact .button-link {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
 .hero-actions-row {
   flex-wrap: nowrap;
 }
@@ -1408,6 +1414,243 @@ dd {
   gap: 16px;
 }
 
+.team-page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.team-page-nav .filter-chip {
+  background: var(--surface-alt);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.team-page-nav .filter-chip.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.team-page-note {
+  margin: 0;
+  color: #475569;
+  line-height: 1.65;
+}
+
+.team-section-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.team-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+}
+
+.team-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+.team-empty-note {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.65;
+}
+
+.team-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.team-card-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.team-card-links a:hover {
+  text-decoration: underline;
+}
+
+.team-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+.team-form-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.team-form-grid label > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.team-form-grid input,
+.team-form-grid textarea,
+.team-form-grid select {
+  width: 100%;
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.team-form-grid input,
+.team-form-grid select {
+  min-height: 42px;
+  padding: 0 14px;
+}
+
+.team-form-grid textarea {
+  min-height: 112px;
+  padding: 12px 14px;
+  resize: vertical;
+}
+
+.team-form-wide {
+  grid-column: 1 / -1;
+}
+
+.team-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.team-form-actions .button-link {
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+.team-interface-links {
+  justify-content: flex-start;
+}
+
+.team-inline-tags {
+  margin-top: 8px;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.team-inline-tags .filter-chip {
+  min-height: 28px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.team-summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.team-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.team-summary-row strong {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.team-card-copy {
+  margin: 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.team-artifact-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.team-workbench-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.team-workbench-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(239,244,255,0.82));
+}
+
+.team-workbench-card strong {
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.team-workbench-card .team-empty-note {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.team-inline-preview {
+  margin: 8px 0 0;
+  color: #64748b;
+  line-height: 1.55;
+}
+
+.team-history-quick-links {
+  margin-bottom: 10px;
+}
+
+.team-card-copy code {
+  font-size: 12px;
+}
+
+.team-story-title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.team-story-body {
+  margin: 0;
+  color: #334155;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.team-story-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+}
+
+.team-story-footer .micro-copy {
+  margin: 0;
+}
+
+.team-history-item .json-output {
+  margin-top: 10px;
+}
+
 .network-page {
   gap: 22px;
 }
@@ -1922,6 +2165,14 @@ dd {
   .facet-list-inline {
     justify-items: start;
     justify-content: flex-start;
+  }
+
+  .team-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .team-filter-grid {
+    grid-template-columns: 1fr;
   }
 }
 

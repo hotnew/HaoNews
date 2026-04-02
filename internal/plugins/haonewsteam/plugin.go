@@ -81,6 +81,10 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 			handleTeamTasks(app, store, teamID, w, r)
 			return
 		}
+		if len(parts) == 2 && parts[1] == "members" {
+			handleTeamMembers(app, store, teamID, w, r)
+			return
+		}
 		if len(parts) == 2 && parts[1] == "history" {
 			handleTeamHistory(app, store, teamID, w, r)
 			return
@@ -95,6 +99,14 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 		}
 		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "update" && r.Method == http.MethodPost {
 			handleTeamTaskUpdate(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "comment" && r.Method == http.MethodPost {
+			handleTeamTaskCommentCreate(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "status" && r.Method == http.MethodPost {
+			handleTeamTaskStatus(store, teamID, parts[2], w, r)
 			return
 		}
 		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "delete" && r.Method == http.MethodPost {
@@ -127,6 +139,10 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 		}
 		if len(parts) == 3 && parts[1] == "members" && parts[2] == "action" && r.Method == http.MethodPost {
 			handleTeamMemberAction(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "members" && parts[2] == "bulk-action" && r.Method == http.MethodPost {
+			handleTeamMemberBulkAction(store, teamID, w, r)
 			return
 		}
 		if len(parts) == 3 && parts[1] == "members" && parts[2] == "update" && r.Method == http.MethodPost {
@@ -231,6 +247,10 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 			handleAPITeamMemberAction(store, teamID, w, r)
 			return
 		}
+		if len(parts) == 3 && parts[1] == "members" && parts[2] == "bulk-action" {
+			handleAPITeamMemberBulkAction(store, teamID, w, r)
+			return
+		}
 		if len(parts) == 2 && parts[1] == "messages" {
 			handleAPITeamMessages(store, teamID, w, r)
 			return
@@ -239,8 +259,16 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 			handleAPITeamTasks(store, teamID, w, r)
 			return
 		}
+		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "comment" {
+			handleAPITeamTaskCommentCreate(store, teamID, parts[2], w, r)
+			return
+		}
 		if len(parts) == 3 && parts[1] == "tasks" {
 			handleAPITeamTask(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "status" {
+			handleAPITeamTaskStatus(store, teamID, parts[2], w, r)
 			return
 		}
 		if len(parts) == 2 && parts[1] == "artifacts" {

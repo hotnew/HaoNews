@@ -463,6 +463,7 @@ func TestStoreSaveAndDeleteTask(t *testing.T) {
 		TaskID:      "task-write-1",
 		CreatedBy:   "agent://pc75/live-alpha",
 		Title:       "Original task",
+		ChannelID:   " research ",
 		Status:      "open",
 		Priority:    "low",
 		Assignees:   []string{"agent://pc75/live-bravo"},
@@ -476,6 +477,7 @@ func TestStoreSaveAndDeleteTask(t *testing.T) {
 	if err := store.SaveTask("project-task-write", Task{
 		TaskID:      "task-write-1",
 		Title:       "Updated task",
+		ChannelID:   " planning ",
 		Status:      "doing",
 		Priority:    "high",
 		Assignees:   []string{"agent://pc75/live-charlie", "agent://pc75/live-charlie"},
@@ -494,6 +496,9 @@ func TestStoreSaveAndDeleteTask(t *testing.T) {
 	}
 	if task.Title != "Updated task" || task.Status != "doing" || task.Priority != "high" {
 		t.Fatalf("unexpected saved task core fields: %#v", task)
+	}
+	if task.ChannelID != "planning" {
+		t.Fatalf("unexpected saved channel: %#v", task.ChannelID)
 	}
 	if strings.Join(task.Assignees, ",") != "agent://pc75/live-charlie" {
 		t.Fatalf("unexpected saved assignees: %#v", task.Assignees)
@@ -772,5 +777,62 @@ func TestStoreSaveMembersNormalizesStatusesForApprovalFlow(t *testing.T) {
 	}
 	if statuses["agent://pc75/live-pending"] != "pending" || statuses["agent://pc75/live-muted"] != "muted" || statuses["agent://pc75/live-removed"] != "removed" {
 		t.Fatalf("unexpected statuses after save/load: %#v", statuses)
+	}
+}
+
+func TestStoreNormalizesTaskStatusPriorityAndArtifactTaskID(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-normalize")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-normalize","title":"Project Normalize"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	if err := store.AppendTask("project-normalize", Task{
+		TaskID:    "normalize-task-1",
+		Title:     "Normalize task values",
+		ChannelID: " research ",
+		Status:    "Completed",
+		Priority:  "urgent",
+		Assignees: []string{" agent://pc75/live-alpha "},
+		Labels:    []string{" qa "},
+	}); err != nil {
+		t.Fatalf("AppendTask error = %v", err)
+	}
+	task, err := store.LoadTask("project-normalize", "normalize-task-1")
+	if err != nil {
+		t.Fatalf("LoadTask error = %v", err)
+	}
+	if task.Status != "done" || task.Priority != "high" {
+		t.Fatalf("unexpected normalized task: %#v", task)
+	}
+	if task.ChannelID != "research" {
+		t.Fatalf("unexpected task channel: %#v", task.ChannelID)
+	}
+	if len(task.Assignees) != 1 || task.Assignees[0] != "agent://pc75/live-alpha" {
+		t.Fatalf("unexpected assignees: %#v", task.Assignees)
+	}
+	if err := store.AppendArtifact("project-normalize", Artifact{
+		ArtifactID: "normalize-artifact-1",
+		Title:      "Normalize artifact relations",
+		ChannelID:  " main ",
+		TaskID:     " normalize-task-1 ",
+	}); err != nil {
+		t.Fatalf("AppendArtifact error = %v", err)
+	}
+	artifact, err := store.LoadArtifact("project-normalize", "normalize-artifact-1")
+	if err != nil {
+		t.Fatalf("LoadArtifact error = %v", err)
+	}
+	if artifact.ChannelID != "main" || artifact.TaskID != "normalize-task-1" {
+		t.Fatalf("unexpected normalized artifact: %#v", artifact)
 	}
 }

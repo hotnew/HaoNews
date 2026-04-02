@@ -71,6 +71,9 @@ type liveRoomPageData struct {
 	Roster                       []live.RosterEntry
 	Archive                      *live.ArchiveRecord
 	HistoryArchives              []live.RoomHistoryArchive
+	ShowAll                      bool
+	VisibleEventCount            int
+	TotalEventCount              int
 	ShowHeartbeats               bool
 	AutoRefresh                  bool
 }

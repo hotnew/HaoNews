@@ -3,6 +3,7 @@ package haonewsteam
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -96,20 +97,28 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 		return
 	}
 	data := teamPageData{
-		Project:        app.ProjectName(),
-		Version:        app.VersionString(),
-		PageNav:        app.PageNav("/teams"),
-		NodeStatus:     app.NodeStatus(index),
-		Now:            time.Now(),
-		Team:           info,
-		Policy:         policy,
-		Members:        members,
-		PendingMembers: filterMembersByStatus(members, "pending"),
-		Messages:       messages,
-		Tasks:          tasks,
-		Channels:       channels,
-		Artifacts:      artifacts,
-		History:        history,
+		Project:            app.ProjectName(),
+		Version:            app.VersionString(),
+		PageNav:            app.PageNav("/teams"),
+		NodeStatus:         app.NodeStatus(index),
+		Now:                time.Now(),
+		Team:               info,
+		Policy:             policy,
+		Members:            members,
+		ActiveMembers:      filterMembersByStatus(members, "active"),
+		PendingMembers:     filterMembersByStatus(members, "pending"),
+		MutedMembers:       filterMembersByStatus(members, "muted"),
+		RemovedMembers:     filterMembersByStatus(members, "removed"),
+		Owners:             filterMembersByRole(members, "owner"),
+		Maintainers:        filterMembersByRole(members, "maintainer"),
+		Observers:          filterMembersByRole(members, "observer"),
+		Messages:           messages,
+		Tasks:              tasks,
+		Channels:           channels,
+		Artifacts:          artifacts,
+		History:            history,
+		TaskStatusCounts:   taskStatusCounts(tasks),
+		ArtifactKindCounts: artifactKindCounts(artifacts),
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "成员", Value: formatTeamCount(countMembersByStatus(members, "active"))},
 			{Label: "频道", Value: formatTeamCount(len(channels))},
@@ -119,6 +128,68 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 		},
 	}
 	if err := app.Templates().ExecuteTemplate(w, "team_detail.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func handleTeamMembers(app *newsplugin.App, store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+	info, err := store.LoadTeam(teamID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	policy, err := store.LoadPolicy(teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	members, err := store.LoadMembers(teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	index, err := app.Index()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	filterStatus := strings.TrimSpace(r.URL.Query().Get("status"))
+	filterRole := strings.TrimSpace(r.URL.Query().Get("role"))
+	filterAgent := strings.TrimSpace(r.URL.Query().Get("agent"))
+	statusCounts := memberStatusCounts(members)
+	roleCounts := memberRoleCounts(members)
+	filtered := filterMembers(members, filterStatus, filterRole, filterAgent)
+	data := teamMembersPageData{
+		Project:        app.ProjectName(),
+		Version:        app.VersionString(),
+		PageNav:        app.PageNav("/teams"),
+		NodeStatus:     app.NodeStatus(index),
+		Now:            time.Now(),
+		Team:           info,
+		Policy:         policy,
+		Members:        filtered,
+		PendingMembers: filterMembersByStatus(members, "pending"),
+		FilterStatus:   filterStatus,
+		FilterRole:     filterRole,
+		FilterAgent:    filterAgent,
+		AppliedFilters: appliedTeamFilters(
+			labeledTeamFilter("状态", filterStatus),
+			labeledTeamFilter("角色", filterRole),
+			labeledTeamFilter("Agent", filterAgent),
+		),
+		Statuses:       memberStatuses(members),
+		Roles:          memberRoles(members),
+		StatusCounts:   statusCounts,
+		RoleCounts:     roleCounts,
+		SummaryStats: []newsplugin.SummaryStat{
+			{Label: "成员", Value: formatTeamCount(len(filtered))},
+			{Label: "active", Value: formatTeamCount(statusCounts["active"])},
+			{Label: "pending", Value: formatTeamCount(statusCounts["pending"])},
+			{Label: "muted", Value: formatTeamCount(statusCounts["muted"])},
+			{Label: "owner", Value: formatTeamCount(roleCounts["owner"])},
+		},
+	}
+	if err := app.Templates().ExecuteTemplate(w, "team_members.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -142,6 +213,8 @@ func handleTeamHistory(app *newsplugin.App, store *teamcore.Store, teamID string
 	filterScope := strings.TrimSpace(r.URL.Query().Get("scope"))
 	filterSource := strings.TrimSpace(r.URL.Query().Get("source"))
 	filterActor := strings.TrimSpace(r.URL.Query().Get("actor"))
+	scopeCounts := historyScopeCounts(history)
+	sourceCounts := historySourceCounts(history)
 	scopes := historyScopes(history)
 	sources := historySources(history)
 	history = filterHistory(history, filterScope, filterSource, filterActor)
@@ -156,8 +229,15 @@ func handleTeamHistory(app *newsplugin.App, store *teamcore.Store, teamID string
 		FilterScope:  filterScope,
 		FilterSource: filterSource,
 		FilterActor:  filterActor,
+		AppliedFilters: appliedTeamFilters(
+			labeledTeamFilter("Scope", filterScope),
+			labeledTeamFilter("Source", filterSource),
+			labeledTeamFilter("Actor", filterActor),
+		),
 		Scopes:       scopes,
 		Sources:      sources,
+		ScopeCounts:  scopeCounts,
+		SourceCounts: sourceCounts,
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "变更", Value: formatTeamCount(len(history))},
 			{Label: "最近来源", Value: latestHistorySource(history)},
@@ -199,6 +279,21 @@ func handleTeamChannel(app *newsplugin.App, store *teamcore.Store, teamID, chann
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	tasks, err := store.LoadTasks(teamID, 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	artifacts, err := store.LoadArtifacts(teamID, 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	history, err := store.LoadHistory(teamID, 80)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	index, err := app.Index()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -215,9 +310,14 @@ func handleTeamChannel(app *newsplugin.App, store *teamcore.Store, teamID, chann
 		ChannelID:  channelID,
 		Channels:   channels,
 		Messages:   messages,
+		Tasks:      relatedTasksByChannel(tasks, channelID, 12),
+		Artifacts:  relatedArtifactsByChannel(artifacts, channelID, 12),
+		RelatedHistory: channelHistory(history, channelID, 12),
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "频道", Value: current.Title},
 			{Label: "消息", Value: formatTeamCount(len(messages))},
+			{Label: "任务", Value: formatTeamCount(countTasksByChannel(tasks, channelID))},
+			{Label: "产物", Value: formatTeamCount(countArtifactsByChannel(artifacts, channelID))},
 			{Label: "可见性", Value: info.Visibility},
 			{Label: "状态", Value: channelStateLabel(current.Hidden)},
 		},
@@ -311,19 +411,58 @@ func handleTeamTasks(app *newsplugin.App, store *teamcore.Store, teamID string, 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	artifacts, err := store.LoadArtifacts(teamID, 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	channels, err := store.ListChannels(teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	history, err := store.LoadHistory(teamID, 200)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	index, err := app.Index()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	filterStatus := strings.TrimSpace(r.URL.Query().Get("status"))
+	filterAssignee := strings.TrimSpace(r.URL.Query().Get("assignee"))
+	filterLabel := strings.TrimSpace(r.URL.Query().Get("label"))
+	filterChannel := normalizeTeamChannel(r.URL.Query().Get("channel"))
+	statuses := taskStatuses(tasks)
+	assignees := taskAssignees(tasks)
+	labels := taskLabels(tasks)
+	tasks = filterTasks(tasks, filterStatus, filterAssignee, filterLabel, filterChannel)
 	data := teamTasksPageData{
-		Project:    app.ProjectName(),
-		Version:    app.VersionString(),
-		PageNav:    app.PageNav("/teams"),
-		NodeStatus: app.NodeStatus(index),
-		Now:        time.Now(),
-		Team:       info,
-		Tasks:      tasks,
+		Project:        app.ProjectName(),
+		Version:        app.VersionString(),
+		PageNav:        app.PageNav("/teams"),
+		NodeStatus:     app.NodeStatus(index),
+		Now:            time.Now(),
+		Team:           info,
+		Tasks:          tasks,
+		ArtifactCounts: artifactCountsByTask(artifacts),
+		HistoryCounts:  historyCountsByTask(history),
+		FilterStatus:   filterStatus,
+		FilterAssignee: filterAssignee,
+		FilterLabel:    filterLabel,
+		FilterChannel:  filterChannel,
+		AppliedFilters: appliedTeamFilters(
+			labeledTeamFilter("状态", filterStatus),
+			labeledTeamFilter("负责者", filterAssignee),
+			labeledTeamFilter("标签", filterLabel),
+			labeledTeamFilter("频道", filterChannel),
+		),
+		Statuses:       statuses,
+		Assignees:      assignees,
+		Labels:         labels,
+		Channels:       channels,
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "任务", Value: formatTeamCount(len(tasks))},
 			{Label: "进行中", Value: formatTeamCount(countTasksByStatus(tasks, "doing"))},
@@ -356,25 +495,57 @@ func handleTeamTask(app *newsplugin.App, store *teamcore.Store, teamID, taskID s
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	artifacts, err := store.LoadArtifacts(teamID, 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	channels, err := store.ListChannels(teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	history, err := store.LoadHistory(teamID, 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var relatedChannel *teamcore.ChannelSummary
+	if strings.TrimSpace(task.ChannelID) != "" {
+		for _, channel := range channels {
+			if normalizeTeamChannel(channel.ChannelID) == normalizeTeamChannel(task.ChannelID) {
+				channelCopy := channel
+				relatedChannel = &channelCopy
+				break
+			}
+		}
+	}
 	index, err := app.Index()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	data := teamTaskPageData{
-		Project:    app.ProjectName(),
-		Version:    app.VersionString(),
-		PageNav:    app.PageNav("/teams"),
-		NodeStatus: app.NodeStatus(index),
-		Now:        time.Now(),
-		Team:       info,
-		Task:       task,
-		Tasks:      tasks,
-		Messages:   messages,
+		Project:            app.ProjectName(),
+		Version:            app.VersionString(),
+		PageNav:            app.PageNav("/teams"),
+		NodeStatus:         app.NodeStatus(index),
+		Now:                time.Now(),
+		Team:               info,
+		Task:               task,
+		Tasks:              tasks,
+		Channels:           channels,
+		Messages:           messages,
+		Artifacts:          relatedArtifacts(artifacts, taskID, 20),
+		RelatedChannel:     relatedChannel,
+		RelatedHistory:     taskHistory(history, taskID, 10),
+		DefaultCommentType: "comment",
+		DefaultChannelID:   preferredTaskCommentChannel(task, channels),
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "状态", Value: task.Status},
 			{Label: "优先级", Value: blankDash(task.Priority)},
 			{Label: "评论", Value: formatTeamCount(len(messages))},
+			{Label: "产物", Value: formatTeamCount(countArtifactsByTask(artifacts, taskID))},
 		},
 	}
 	if err := app.Templates().ExecuteTemplate(w, "team_task.html", data); err != nil {
@@ -393,6 +564,7 @@ func handleTeamTaskCreate(store *teamcore.Store, teamID string, w http.ResponseW
 	}
 	payload := teamcore.Task{
 		TaskID:          strings.TrimSpace(r.FormValue("task_id")),
+		ChannelID:       normalizeTeamChannel(r.FormValue("channel_id")),
 		Title:           strings.TrimSpace(r.FormValue("title")),
 		Description:     strings.TrimSpace(r.FormValue("description")),
 		CreatedBy:       strings.TrimSpace(r.FormValue("created_by")),
@@ -425,6 +597,40 @@ func handleTeamTaskCreate(store *teamcore.Store, teamID string, w http.ResponseW
 	http.Redirect(w, r, "/teams/"+teamID+"/tasks/"+targetID, http.StatusSeeOther)
 }
 
+func handleTeamTaskStatus(store *teamcore.Store, teamID, taskID string, w http.ResponseWriter, r *http.Request) {
+	if !teamRequestTrusted(r) {
+		http.Error(w, "team task update is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	existing, err := store.LoadTask(teamID, taskID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	updated := existing
+	updated.Status = strings.TrimSpace(r.FormValue("status"))
+	updated.UpdatedAt = time.Now().UTC()
+	if err := store.SaveTask(teamID, updated); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	after, err := store.LoadTask(teamID, taskID)
+	if err != nil {
+		after = updated
+	}
+	_ = appendTeamHistory(store, historyActor{
+		AgentID:         after.CreatedBy,
+		OriginPublicKey: after.OriginPublicKey,
+		ParentPublicKey: after.ParentPublicKey,
+		Source:          "page",
+	}, teamID, "task", "status", taskID, "更新 Team Task 状态", taskHistoryMetadata(existing, after))
+	http.Redirect(w, r, "/teams/"+teamID+"/tasks/"+taskID, http.StatusSeeOther)
+}
+
 func handleTeamTaskUpdate(store *teamcore.Store, teamID, taskID string, w http.ResponseWriter, r *http.Request) {
 	if !teamRequestTrusted(r) {
 		http.Error(w, "team task update is limited to local or LAN requests", http.StatusForbidden)
@@ -441,6 +647,7 @@ func handleTeamTaskUpdate(store *teamcore.Store, teamID, taskID string, w http.R
 	}
 	updated := existing
 	updated.Title = strings.TrimSpace(r.FormValue("title"))
+	updated.ChannelID = normalizeTeamChannel(r.FormValue("channel_id"))
 	updated.Description = strings.TrimSpace(r.FormValue("description"))
 	updated.Assignees = parseCSVStrings(r.FormValue("assignees"))
 	updated.Status = strings.TrimSpace(r.FormValue("status"))
@@ -485,6 +692,63 @@ func handleTeamTaskDelete(store *teamcore.Store, teamID, taskID string, w http.R
 	http.Redirect(w, r, "/teams/"+teamID+"/tasks", http.StatusSeeOther)
 }
 
+func handleTeamTaskCommentCreate(store *teamcore.Store, teamID, taskID string, w http.ResponseWriter, r *http.Request) {
+	if !teamRequestTrusted(r) {
+		http.Error(w, "team task comment is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if _, err := store.LoadTask(teamID, taskID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	channelID := normalizeTeamChannel(r.FormValue("channel_id"))
+	if channelID == "" {
+		channelID = "main"
+	}
+	structuredData, err := parseOptionalStructuredData(r.FormValue("structured_data"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if structuredData == nil {
+		structuredData = make(map[string]any, 1)
+	}
+	structuredData["task_id"] = taskID
+	msg := teamcore.Message{
+		TeamID:          teamID,
+		ChannelID:       channelID,
+		AuthorAgentID:   strings.TrimSpace(r.FormValue("author_agent_id")),
+		OriginPublicKey: strings.TrimSpace(r.FormValue("origin_public_key")),
+		ParentPublicKey: strings.TrimSpace(r.FormValue("parent_public_key")),
+		MessageType:     strings.TrimSpace(r.FormValue("message_type")),
+		Content:         strings.TrimSpace(r.FormValue("content")),
+		StructuredData:  structuredData,
+		CreatedAt:       time.Now().UTC(),
+	}
+	if err := store.AppendMessage(teamID, msg); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	_ = appendTeamHistory(store, historyActor{
+		AgentID:         msg.AuthorAgentID,
+		OriginPublicKey: msg.OriginPublicKey,
+		ParentPublicKey: msg.ParentPublicKey,
+		Source:          "page",
+	}, teamID, "task", "comment", taskID, "追加 Team Task 评论", map[string]any{
+		"task_id":       taskID,
+		"channel_id":    channelID,
+		"message_type":  blankDash(msg.MessageType),
+		"author_agent":  msg.AuthorAgentID,
+		"diff_summary":  "任务评论已追加到 Team Channel",
+		"message_scope": "team-message",
+	})
+	http.Redirect(w, r, "/teams/"+teamID+"/tasks/"+taskID, http.StatusSeeOther)
+}
+
 func handleTeamArtifacts(app *newsplugin.App, store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
 	info, err := store.LoadTeam(teamID)
 	if err != nil {
@@ -496,23 +760,49 @@ func handleTeamArtifacts(app *newsplugin.App, store *teamcore.Store, teamID stri
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	tasks, err := store.LoadTasks(teamID, 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	channels, err := store.ListChannels(teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	index, err := app.Index()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	filterKind := strings.TrimSpace(r.URL.Query().Get("kind"))
+	filterChannel := normalizeTeamChannel(r.URL.Query().Get("channel"))
+	filterTask := strings.TrimSpace(r.URL.Query().Get("task"))
+	kinds := artifactKinds(artifacts)
+	filtered := filterArtifacts(artifacts, filterKind, filterChannel, filterTask)
 	data := teamArtifactsPageData{
-		Project:    app.ProjectName(),
-		Version:    app.VersionString(),
-		PageNav:    app.PageNav("/teams"),
-		NodeStatus: app.NodeStatus(index),
-		Now:        time.Now(),
-		Team:       info,
-		Artifacts:  artifacts,
+		Project:       app.ProjectName(),
+		Version:       app.VersionString(),
+		PageNav:       app.PageNav("/teams"),
+		NodeStatus:    app.NodeStatus(index),
+		Now:           time.Now(),
+		Team:          info,
+		Artifacts:     filtered,
+		FilterKind:    filterKind,
+		FilterChannel: filterChannel,
+		FilterTask:    filterTask,
+		AppliedFilters: appliedTeamFilters(
+			labeledTeamFilter("类型", filterKind),
+			labeledTeamFilter("频道", filterChannel),
+			labeledTeamFilter("任务", filterTask),
+		),
+		Kinds:         kinds,
+		Channels:      channels,
+		Tasks:         artifactFilterTasks(tasks, artifacts),
 		SummaryStats: []newsplugin.SummaryStat{
-			{Label: "产物", Value: formatTeamCount(len(artifacts))},
-			{Label: "Markdown", Value: formatTeamCount(countArtifactsByKind(artifacts, "markdown"))},
-			{Label: "链接", Value: formatTeamCount(countArtifactsByKind(artifacts, "link"))},
+			{Label: "产物", Value: formatTeamCount(len(filtered))},
+			{Label: "Markdown", Value: formatTeamCount(countArtifactsByKind(filtered, "markdown"))},
+			{Label: "链接", Value: formatTeamCount(countArtifactsByKind(filtered, "link"))},
 		},
 	}
 	if err := app.Templates().ExecuteTemplate(w, "team_artifacts.html", data); err != nil {
@@ -536,20 +826,50 @@ func handleTeamArtifact(app *newsplugin.App, store *teamcore.Store, teamID, arti
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	channels, err := store.ListChannels(teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	history, err := store.LoadHistory(teamID, 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var relatedTask *teamcore.Task
+	if strings.TrimSpace(artifact.TaskID) != "" {
+		task, err := store.LoadTask(teamID, artifact.TaskID)
+		if err == nil {
+			relatedTask = &task
+		}
+	}
+	var relatedChannel *teamcore.ChannelSummary
+	if strings.TrimSpace(artifact.ChannelID) != "" {
+		for _, channel := range channels {
+			if normalizeTeamChannel(channel.ChannelID) == normalizeTeamChannel(artifact.ChannelID) {
+				channelCopy := channel
+				relatedChannel = &channelCopy
+				break
+			}
+		}
+	}
 	index, err := app.Index()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	data := teamArtifactPageData{
-		Project:    app.ProjectName(),
-		Version:    app.VersionString(),
-		PageNav:    app.PageNav("/teams"),
-		NodeStatus: app.NodeStatus(index),
-		Now:        time.Now(),
-		Team:       info,
-		Artifact:   artifact,
-		Artifacts:  artifacts,
+		Project:        app.ProjectName(),
+		Version:        app.VersionString(),
+		PageNav:        app.PageNav("/teams"),
+		NodeStatus:     app.NodeStatus(index),
+		Now:            time.Now(),
+		Team:           info,
+		Artifact:       artifact,
+		Artifacts:      artifacts,
+		RelatedTask:    relatedTask,
+		RelatedChannel: relatedChannel,
+		RelatedHistory: artifactHistory(history, artifactID, 8),
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "类型", Value: artifact.Kind},
 			{Label: "频道", Value: artifact.ChannelID},
@@ -559,6 +879,301 @@ func handleTeamArtifact(app *newsplugin.App, store *teamcore.Store, teamID, arti
 	if err := app.Templates().ExecuteTemplate(w, "team_artifact.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func relatedArtifacts(artifacts []teamcore.Artifact, taskID string, limit int) []teamcore.Artifact {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" || len(artifacts) == 0 {
+		return nil
+	}
+	capHint := len(artifacts)
+	if limit > 0 && limit < capHint {
+		capHint = limit
+	}
+	out := make([]teamcore.Artifact, 0, capHint)
+	for _, artifact := range artifacts {
+		if strings.TrimSpace(artifact.TaskID) != taskID {
+			continue
+		}
+		out = append(out, artifact)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func relatedTasksByChannel(tasks []teamcore.Task, channelID string, limit int) []teamcore.Task {
+	channelID = normalizeTeamChannel(channelID)
+	if channelID == "" || len(tasks) == 0 {
+		return nil
+	}
+	capHint := len(tasks)
+	if limit > 0 && limit < capHint {
+		capHint = limit
+	}
+	out := make([]teamcore.Task, 0, capHint)
+	for _, task := range tasks {
+		if normalizeTeamChannel(task.ChannelID) != channelID {
+			continue
+		}
+		out = append(out, task)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func relatedArtifactsByChannel(artifacts []teamcore.Artifact, channelID string, limit int) []teamcore.Artifact {
+	channelID = normalizeTeamChannel(channelID)
+	if channelID == "" || len(artifacts) == 0 {
+		return nil
+	}
+	capHint := len(artifacts)
+	if limit > 0 && limit < capHint {
+		capHint = limit
+	}
+	out := make([]teamcore.Artifact, 0, capHint)
+	for _, artifact := range artifacts {
+		if normalizeTeamChannel(artifact.ChannelID) != channelID {
+			continue
+		}
+		out = append(out, artifact)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func channelHistory(history []teamcore.ChangeEvent, channelID string, limit int) []teamcore.ChangeEvent {
+	channelID = normalizeTeamChannel(channelID)
+	if channelID == "" || len(history) == 0 {
+		return nil
+	}
+	out := make([]teamcore.ChangeEvent, 0, min(limit, len(history)))
+	for _, event := range history {
+		switch event.Scope {
+		case "channel":
+			if normalizeTeamChannel(strings.TrimSpace(event.SubjectID)) == channelID {
+				out = append(out, event)
+			}
+		case "task":
+			if taskChannelFromHistory(event) == channelID {
+				out = append(out, event)
+			}
+		case "artifact":
+			if artifactChannelFromHistory(event) == channelID {
+				out = append(out, event)
+			}
+		}
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func taskChannelFromHistory(event teamcore.ChangeEvent) string {
+	if event.Scope != "task" {
+		return ""
+	}
+	if channel := historyMetadataText(event.Metadata, "channel_after"); channel != "" {
+		return normalizeTeamChannel(channel)
+	}
+	return normalizeTeamChannel(historyMetadataText(event.Metadata, "channel_before"))
+}
+
+func artifactChannelFromHistory(event teamcore.ChangeEvent) string {
+	if event.Scope != "artifact" {
+		return ""
+	}
+	if channel := historyMetadataText(event.Metadata, "channel_after"); channel != "" {
+		return normalizeTeamChannel(channel)
+	}
+	return normalizeTeamChannel(historyMetadataText(event.Metadata, "channel_before"))
+}
+
+func historyMetadataText(metadata map[string]any, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	raw, ok := metadata[key]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(raw))
+}
+
+func artifactKinds(artifacts []teamcore.Artifact) []string {
+	seen := make(map[string]struct{}, len(artifacts))
+	out := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		kind := strings.TrimSpace(artifact.Kind)
+		if kind == "" {
+			continue
+		}
+		if _, ok := seen[kind]; ok {
+			continue
+		}
+		seen[kind] = struct{}{}
+		out = append(out, kind)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func artifactFilterTasks(tasks []teamcore.Task, artifacts []teamcore.Artifact) []teamcore.Task {
+	if len(tasks) == 0 || len(artifacts) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(artifacts))
+	for _, artifact := range artifacts {
+		taskID := strings.TrimSpace(artifact.TaskID)
+		if taskID != "" {
+			seen[taskID] = struct{}{}
+		}
+	}
+	out := make([]teamcore.Task, 0, len(seen))
+	for _, task := range tasks {
+		if _, ok := seen[strings.TrimSpace(task.TaskID)]; ok {
+			out = append(out, task)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Title != out[j].Title {
+			return out[i].Title < out[j].Title
+		}
+		return out[i].TaskID < out[j].TaskID
+	})
+	return out
+}
+
+func filterArtifacts(artifacts []teamcore.Artifact, kind, channelID, taskID string) []teamcore.Artifact {
+	if kind == "" && channelID == "" && taskID == "" {
+		return artifacts
+	}
+	out := make([]teamcore.Artifact, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		if kind != "" && !strings.EqualFold(strings.TrimSpace(artifact.Kind), kind) {
+			continue
+		}
+		if channelID != "" && normalizeTeamChannel(artifact.ChannelID) != channelID {
+			continue
+		}
+		if taskID != "" && strings.TrimSpace(artifact.TaskID) != taskID {
+			continue
+		}
+		out = append(out, artifact)
+	}
+	return out
+}
+
+func artifactHistory(history []teamcore.ChangeEvent, artifactID string, limit int) []teamcore.ChangeEvent {
+	artifactID = strings.TrimSpace(artifactID)
+	if artifactID == "" || len(history) == 0 {
+		return nil
+	}
+	out := make([]teamcore.ChangeEvent, 0, min(limit, len(history)))
+	for _, event := range history {
+		if event.Scope != "artifact" {
+			continue
+		}
+		if strings.TrimSpace(event.SubjectID) != artifactID {
+			continue
+		}
+		out = append(out, event)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func countArtifactsByTask(artifacts []teamcore.Artifact, taskID string) int {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return 0
+	}
+	count := 0
+	for _, artifact := range artifacts {
+		if strings.TrimSpace(artifact.TaskID) == taskID {
+			count++
+		}
+	}
+	return count
+}
+
+func artifactKindCounts(artifacts []teamcore.Artifact) map[string]int {
+	out := map[string]int{
+		"markdown": 0,
+		"link":     0,
+		"json":     0,
+		"post":     0,
+	}
+	for _, artifact := range artifacts {
+		kind := strings.TrimSpace(artifact.Kind)
+		if kind == "" {
+			continue
+		}
+		out[kind]++
+	}
+	return out
+}
+
+func artifactCountsByTask(artifacts []teamcore.Artifact) map[string]int {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(artifacts))
+	for _, artifact := range artifacts {
+		taskID := strings.TrimSpace(artifact.TaskID)
+		if taskID == "" {
+			continue
+		}
+		out[taskID]++
+	}
+	return out
+}
+
+func historyCountsByTask(history []teamcore.ChangeEvent) map[string]int {
+	if len(history) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(history))
+	for _, event := range history {
+		if event.Scope != "task" {
+			continue
+		}
+		taskID := strings.TrimSpace(event.SubjectID)
+		if taskID == "" {
+			continue
+		}
+		out[taskID]++
+	}
+	return out
+}
+
+func taskHistory(history []teamcore.ChangeEvent, taskID string, limit int) []teamcore.ChangeEvent {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" || len(history) == 0 {
+		return nil
+	}
+	out := make([]teamcore.ChangeEvent, 0, min(limit, len(history)))
+	for _, event := range history {
+		if event.Scope != "task" {
+			continue
+		}
+		if strings.TrimSpace(event.SubjectID) != taskID {
+			continue
+		}
+		out = append(out, event)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 func handleTeamArtifactCreate(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
@@ -573,6 +1188,7 @@ func handleTeamArtifactCreate(store *teamcore.Store, teamID string, w http.Respo
 	payload := teamcore.Artifact{
 		ArtifactID:      strings.TrimSpace(r.FormValue("artifact_id")),
 		ChannelID:       strings.TrimSpace(r.FormValue("channel_id")),
+		TaskID:          strings.TrimSpace(r.FormValue("task_id")),
 		Title:           strings.TrimSpace(r.FormValue("title")),
 		Kind:            strings.TrimSpace(r.FormValue("kind")),
 		Summary:         strings.TrimSpace(r.FormValue("summary")),
@@ -621,6 +1237,7 @@ func handleTeamArtifactUpdate(store *teamcore.Store, teamID, artifactID string, 
 	}
 	updated := existing
 	updated.ChannelID = strings.TrimSpace(r.FormValue("channel_id"))
+	updated.TaskID = strings.TrimSpace(r.FormValue("task_id"))
 	updated.Title = strings.TrimSpace(r.FormValue("title"))
 	updated.Kind = strings.TrimSpace(r.FormValue("kind"))
 	updated.Summary = strings.TrimSpace(r.FormValue("summary"))
@@ -714,11 +1331,20 @@ func handleAPITeamMembers(store *teamcore.Store, teamID string, w http.ResponseW
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	filterStatus := strings.TrimSpace(r.URL.Query().Get("status"))
+	filterRole := strings.TrimSpace(r.URL.Query().Get("role"))
+	filterAgent := strings.TrimSpace(r.URL.Query().Get("agent"))
+	filtered := filterMembers(members, filterStatus, filterRole, filterAgent)
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":        "team-members",
 		"team_id":      info.TeamID,
-		"member_count": len(members),
-		"members":      members,
+		"member_count": len(filtered),
+		"members":      filtered,
+		"applied_filters": map[string]string{
+			"status": filterStatus,
+			"role":   filterRole,
+			"agent":  filterAgent,
+		},
 		"counts": map[string]int{
 			"active":     countMembersByStatus(members, "active"),
 			"pending":    countMembersByStatus(members, "pending"),
@@ -1079,15 +1705,30 @@ func handleAPITeamTasks(store *teamcore.Store, teamID string, w http.ResponseWri
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	filterStatus := strings.TrimSpace(r.URL.Query().Get("status"))
+	filterAssignee := strings.TrimSpace(r.URL.Query().Get("assignee"))
+	filterLabel := strings.TrimSpace(r.URL.Query().Get("label"))
+	filterChannel := normalizeTeamChannel(r.URL.Query().Get("channel"))
+	tasks = filterTasks(tasks, filterStatus, filterAssignee, filterLabel, filterChannel)
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":      "team-tasks",
 		"team_id":    info.TeamID,
 		"task_count": len(tasks),
 		"tasks":      tasks,
+		"applied_filters": map[string]string{
+			"status":   filterStatus,
+			"assignee": filterAssignee,
+			"label":    filterLabel,
+			"channel":  filterChannel,
+		},
 	})
 }
 
 func handleAPITeamTask(store *teamcore.Store, teamID, taskID string, w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost && strings.TrimSpace(r.URL.Query().Get("action")) == "comment" {
+		handleAPITeamTaskCommentCreate(store, teamID, taskID, w, r)
+		return
+	}
 	if r.Method == http.MethodPut {
 		handleAPITeamTaskUpdate(store, teamID, taskID, w, r)
 		return
@@ -1121,6 +1762,55 @@ func handleAPITeamTask(store *teamcore.Store, teamID, taskID string, w http.Resp
 	})
 }
 
+func handleAPITeamTaskCommentCreate(store *teamcore.Store, teamID, taskID string, w http.ResponseWriter, r *http.Request) {
+	if !teamRequestTrusted(r) {
+		http.Error(w, "team task comment is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	if _, err := store.LoadTask(teamID, taskID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var payload teamcore.Message
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	payload.TeamID = teamID
+	payload.ChannelID = normalizeTeamChannel(payload.ChannelID)
+	if payload.ChannelID == "" {
+		payload.ChannelID = "main"
+	}
+	if payload.StructuredData == nil {
+		payload.StructuredData = make(map[string]any, 1)
+	}
+	payload.StructuredData["task_id"] = taskID
+	payload.CreatedAt = time.Now().UTC()
+	if err := store.AppendMessage(teamID, payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	_ = appendTeamHistory(store, historyActor{
+		AgentID:         payload.AuthorAgentID,
+		OriginPublicKey: payload.OriginPublicKey,
+		ParentPublicKey: payload.ParentPublicKey,
+		Source:          "api",
+	}, teamID, "task", "comment", taskID, "追加 Team Task 评论", map[string]any{
+		"task_id":       taskID,
+		"channel_id":    payload.ChannelID,
+		"message_type":  blankDash(payload.MessageType),
+		"author_agent":  payload.AuthorAgentID,
+		"diff_summary":  "任务评论已追加到 Team Channel",
+		"message_scope": "team-message",
+	})
+	newsplugin.WriteJSON(w, http.StatusCreated, map[string]any{
+		"scope":   "team-task-comment",
+		"team_id": teamID,
+		"task_id": taskID,
+		"message": payload,
+	})
+}
+
 func handleAPITeamTaskCreate(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
 	if !teamRequestTrusted(r) {
 		http.Error(w, "team task update is limited to local or LAN requests", http.StatusForbidden)
@@ -1131,6 +1821,7 @@ func handleAPITeamTaskCreate(store *teamcore.Store, teamID string, w http.Respon
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	payload.ChannelID = normalizeTeamChannel(payload.ChannelID)
 	payload.CreatedAt = time.Now().UTC()
 	payload.UpdatedAt = payload.CreatedAt
 	if err := store.AppendTask(teamID, payload); err != nil {
@@ -1171,6 +1862,9 @@ func handleAPITeamTaskUpdate(store *teamcore.Store, teamID, taskID string, w htt
 	}
 	payload.TeamID = teamID
 	payload.TaskID = taskID
+	if strings.TrimSpace(payload.ChannelID) == "" {
+		payload.ChannelID = existing.ChannelID
+	}
 	if payload.Title == "" {
 		payload.Title = existing.Title
 	}
@@ -1207,6 +1901,51 @@ func handleAPITeamTaskUpdate(store *teamcore.Store, teamID, taskID string, w htt
 		ParentPublicKey: task.ParentPublicKey,
 		Source:          "api",
 	}, teamID, "task", "update", taskID, "更新 Team Task", taskHistoryMetadata(existing, task))
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"scope":   "team-task",
+		"team_id": teamID,
+		"task":    task,
+	})
+}
+
+func handleAPITeamTaskStatus(store *teamcore.Store, teamID, taskID string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !teamRequestTrusted(r) {
+		http.Error(w, "team task update is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	existing, err := store.LoadTask(teamID, taskID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var payload struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	updated := existing
+	updated.Status = payload.Status
+	updated.UpdatedAt = time.Now().UTC()
+	if err := store.SaveTask(teamID, updated); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	task, err := store.LoadTask(teamID, taskID)
+	if err != nil {
+		task = updated
+	}
+	_ = appendTeamHistory(store, historyActor{
+		AgentID:         task.CreatedBy,
+		OriginPublicKey: task.OriginPublicKey,
+		ParentPublicKey: task.ParentPublicKey,
+		Source:          "api",
+	}, teamID, "task", "status", taskID, "更新 Team Task 状态", taskHistoryMetadata(existing, task))
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":   "team-task",
 		"team_id": teamID,
@@ -1253,11 +1992,20 @@ func handleAPITeamArtifacts(store *teamcore.Store, teamID string, w http.Respons
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	filterKind := strings.TrimSpace(r.URL.Query().Get("kind"))
+	filterChannel := normalizeTeamChannel(r.URL.Query().Get("channel"))
+	filterTask := strings.TrimSpace(r.URL.Query().Get("task"))
+	artifacts = filterArtifacts(artifacts, filterKind, filterChannel, filterTask)
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":          "team-artifacts",
 		"team_id":        info.TeamID,
 		"artifact_count": len(artifacts),
 		"artifacts":      artifacts,
+		"applied_filters": map[string]string{
+			"kind":    filterKind,
+			"channel": filterChannel,
+			"task":    filterTask,
+		},
 	})
 }
 
@@ -1373,6 +2121,42 @@ func handleTeamMemberAction(store *teamcore.Store, teamID string, w http.Respons
 	http.Redirect(w, r, "/teams/"+teamID, http.StatusSeeOther)
 }
 
+func handleTeamMemberBulkAction(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+	if !teamRequestTrusted(r) {
+		http.Error(w, "team member action is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	action := strings.TrimSpace(r.FormValue("action"))
+	agentIDs := parseCSVStrings(r.FormValue("agent_ids"))
+	if len(agentIDs) == 0 {
+		http.Error(w, "empty agent_ids", http.StatusBadRequest)
+		return
+	}
+	for _, agentID := range agentIDs {
+		member, summary, metadata, err := applyTeamMemberAction(store, teamID, agentID, action)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		metadata["batch"] = true
+		metadata["batch_size"] = len(agentIDs)
+		_ = appendTeamHistory(store, historyActor{
+			AgentID:         member.AgentID,
+			OriginPublicKey: member.OriginPublicKey,
+			ParentPublicKey: member.ParentPublicKey,
+			Source:          "page",
+		}, teamID, "member", "bulk-transition", member.AgentID, summary, metadata)
+	}
+	http.Redirect(w, r, "/teams/"+teamID, http.StatusSeeOther)
+}
+
 func handleAPITeamPolicyUpdate(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
 	if !teamRequestTrusted(r) {
 		http.Error(w, "team policy update is limited to local or LAN requests", http.StatusForbidden)
@@ -1481,6 +2265,74 @@ func handleAPITeamMemberAction(store *teamcore.Store, teamID string, w http.Resp
 	})
 }
 
+func handleAPITeamMemberBulkAction(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !teamRequestTrusted(r) {
+		http.Error(w, "team member action is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	var payload struct {
+		AgentIDs []string `json:"agent_ids"`
+		Action   string   `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	agentIDs := make([]string, 0, len(payload.AgentIDs))
+	seen := make(map[string]struct{}, len(payload.AgentIDs))
+	for _, agentID := range payload.AgentIDs {
+		agentID = strings.TrimSpace(agentID)
+		if agentID == "" {
+			continue
+		}
+		if _, ok := seen[agentID]; ok {
+			continue
+		}
+		seen[agentID] = struct{}{}
+		agentIDs = append(agentIDs, agentID)
+	}
+	if len(agentIDs) == 0 {
+		http.Error(w, "empty agent_ids", http.StatusBadRequest)
+		return
+	}
+	applied := make([]teamcore.Member, 0, len(agentIDs))
+	for _, agentID := range agentIDs {
+		member, summary, metadata, err := applyTeamMemberAction(store, teamID, agentID, payload.Action)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		metadata["batch"] = true
+		metadata["batch_size"] = len(agentIDs)
+		_ = appendTeamHistory(store, historyActor{
+			AgentID:         member.AgentID,
+			OriginPublicKey: member.OriginPublicKey,
+			ParentPublicKey: member.ParentPublicKey,
+			Source:          "api",
+		}, teamID, "member", "bulk-transition", member.AgentID, summary, metadata)
+		applied = append(applied, member)
+	}
+	members, err := store.LoadMembers(teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"scope":         "team-member-bulk-action",
+		"team_id":       teamID,
+		"applied":       applied,
+		"applied_count": len(applied),
+		"members":       members,
+	})
+}
+
 func handleAPITeamArtifactCreate(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
 	if !teamRequestTrusted(r) {
 		http.Error(w, "team artifact update is limited to local or LAN requests", http.StatusForbidden)
@@ -1533,6 +2385,12 @@ func handleAPITeamArtifactUpdate(store *teamcore.Store, teamID, artifactID strin
 	payload.ArtifactID = artifactID
 	if payload.Title == "" {
 		payload.Title = existing.Title
+	}
+	if payload.ChannelID == "" {
+		payload.ChannelID = existing.ChannelID
+	}
+	if payload.TaskID == "" {
+		payload.TaskID = existing.TaskID
 	}
 	if payload.CreatedBy == "" {
 		payload.CreatedBy = existing.CreatedBy
@@ -1662,6 +2520,30 @@ func historySources(history []teamcore.ChangeEvent) []string {
 	return out
 }
 
+func historyScopeCounts(history []teamcore.ChangeEvent) map[string]int {
+	out := make(map[string]int, len(history))
+	for _, entry := range history {
+		scope := strings.TrimSpace(entry.Scope)
+		if scope == "" {
+			scope = "unknown"
+		}
+		out[scope]++
+	}
+	return out
+}
+
+func historySourceCounts(history []teamcore.ChangeEvent) map[string]int {
+	out := make(map[string]int, len(history))
+	for _, entry := range history {
+		source := strings.TrimSpace(entry.Source)
+		if source == "" {
+			source = "unknown"
+		}
+		out[source]++
+	}
+	return out
+}
+
 func filterHistory(history []teamcore.ChangeEvent, scope, source, actor string) []teamcore.ChangeEvent {
 	scope = strings.TrimSpace(scope)
 	source = strings.TrimSpace(source)
@@ -1720,10 +2602,98 @@ func countMembersByRole(members []teamcore.Member, role string) int {
 	return count
 }
 
+func memberStatusCounts(members []teamcore.Member) map[string]int {
+	return map[string]int{
+		"active":  countMembersByStatus(members, "active"),
+		"pending": countMembersByStatus(members, "pending"),
+		"muted":   countMembersByStatus(members, "muted"),
+		"removed": countMembersByStatus(members, "removed"),
+	}
+}
+
+func memberRoleCounts(members []teamcore.Member) map[string]int {
+	return map[string]int{
+		"owner":      countMembersByRole(members, "owner"),
+		"maintainer": countMembersByRole(members, "maintainer"),
+		"member":     countMembersByRole(members, "member"),
+		"observer":   countMembersByRole(members, "observer"),
+	}
+}
+
+func memberStatuses(members []teamcore.Member) []string {
+	seen := make(map[string]struct{}, len(members))
+	out := make([]string, 0, len(members))
+	for _, member := range members {
+		status := strings.TrimSpace(member.Status)
+		if status == "" {
+			continue
+		}
+		if _, ok := seen[status]; ok {
+			continue
+		}
+		seen[status] = struct{}{}
+		out = append(out, status)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func memberRoles(members []teamcore.Member) []string {
+	seen := make(map[string]struct{}, len(members))
+	out := make([]string, 0, len(members))
+	for _, member := range members {
+		role := strings.TrimSpace(member.Role)
+		if role == "" {
+			continue
+		}
+		if _, ok := seen[role]; ok {
+			continue
+		}
+		seen[role] = struct{}{}
+		out = append(out, role)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func filterMembersByStatus(members []teamcore.Member, status string) []teamcore.Member {
 	out := make([]teamcore.Member, 0, len(members))
 	for _, member := range members {
 		if member.Status == status {
+			out = append(out, member)
+		}
+	}
+	return out
+}
+
+func filterMembers(members []teamcore.Member, status, role, agent string) []teamcore.Member {
+	status = strings.TrimSpace(status)
+	role = strings.TrimSpace(role)
+	agent = strings.TrimSpace(agent)
+	if status == "" && role == "" && agent == "" {
+		return members
+	}
+	out := make([]teamcore.Member, 0, len(members))
+	agent = strings.ToLower(agent)
+	for _, member := range members {
+		if status != "" && !strings.EqualFold(strings.TrimSpace(member.Status), status) {
+			continue
+		}
+		if role != "" && !strings.EqualFold(strings.TrimSpace(member.Role), role) {
+			continue
+		}
+		if agent != "" && !strings.Contains(strings.ToLower(strings.TrimSpace(member.AgentID)), agent) {
+			continue
+		}
+		out = append(out, member)
+	}
+	return out
+}
+
+func filterMembersByRole(members []teamcore.Member, role string) []teamcore.Member {
+	out := make([]teamcore.Member, 0, len(members))
+	for _, member := range members {
+		if member.Role == role {
 			out = append(out, member)
 		}
 	}
@@ -1738,6 +2708,170 @@ func countTasksByStatus(tasks []teamcore.Task, status string) int {
 		}
 	}
 	return count
+}
+
+func taskStatusCounts(tasks []teamcore.Task) map[string]int {
+	out := map[string]int{
+		"open":    0,
+		"doing":   0,
+		"review":  0,
+		"blocked": 0,
+		"done":    0,
+	}
+	for _, task := range tasks {
+		status := strings.TrimSpace(task.Status)
+		if status == "" {
+			status = "open"
+		}
+		out[status]++
+	}
+	return out
+}
+
+func taskStatuses(tasks []teamcore.Task) []string {
+	seen := make(map[string]struct{}, len(tasks))
+	out := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		status := strings.TrimSpace(task.Status)
+		if status == "" {
+			continue
+		}
+		if _, ok := seen[status]; ok {
+			continue
+		}
+		seen[status] = struct{}{}
+		out = append(out, status)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func taskAssignees(tasks []teamcore.Task) []string {
+	seen := make(map[string]struct{}, len(tasks))
+	out := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		for _, assignee := range task.Assignees {
+			assignee = strings.TrimSpace(assignee)
+			if assignee == "" {
+				continue
+			}
+			if _, ok := seen[assignee]; ok {
+				continue
+			}
+			seen[assignee] = struct{}{}
+			out = append(out, assignee)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func taskLabels(tasks []teamcore.Task) []string {
+	seen := make(map[string]struct{}, len(tasks))
+	out := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		for _, label := range task.Labels {
+			label = strings.TrimSpace(label)
+			if label == "" {
+				continue
+			}
+			if _, ok := seen[label]; ok {
+				continue
+			}
+			seen[label] = struct{}{}
+			out = append(out, label)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func countTasksByChannel(tasks []teamcore.Task, channelID string) int {
+	channelID = normalizeTeamChannel(channelID)
+	if channelID == "" {
+		return 0
+	}
+	count := 0
+	for _, task := range tasks {
+		if normalizeTeamChannel(task.ChannelID) == channelID {
+			count++
+		}
+	}
+	return count
+}
+
+func filterTasks(tasks []teamcore.Task, status, assignee, label, channelID string) []teamcore.Task {
+	status = strings.TrimSpace(status)
+	assignee = strings.TrimSpace(assignee)
+	label = strings.TrimSpace(label)
+	channelID = normalizeTeamChannel(channelID)
+	if status == "" && assignee == "" && label == "" && channelID == "" {
+		return tasks
+	}
+	out := make([]teamcore.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if status != "" && !strings.EqualFold(strings.TrimSpace(task.Status), status) {
+			continue
+		}
+		if channelID != "" && normalizeTeamChannel(task.ChannelID) != channelID {
+			continue
+		}
+		if assignee != "" && !containsFolded(task.Assignees, assignee) {
+			continue
+		}
+		if label != "" && !containsFolded(task.Labels, label) {
+			continue
+		}
+		out = append(out, task)
+	}
+	return out
+}
+
+func countArtifactsByChannel(artifacts []teamcore.Artifact, channelID string) int {
+	channelID = normalizeTeamChannel(channelID)
+	if channelID == "" {
+		return 0
+	}
+	count := 0
+	for _, artifact := range artifacts {
+		if normalizeTeamChannel(artifact.ChannelID) == channelID {
+			count++
+		}
+	}
+	return count
+}
+
+func containsFolded(values []string, needle string) bool {
+	needle = strings.TrimSpace(needle)
+	if needle == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func preferredTaskCommentChannel(task teamcore.Task, channels []teamcore.ChannelSummary) string {
+	taskChannel := normalizeTeamChannel(task.ChannelID)
+	if taskChannel != "" {
+		for _, channel := range channels {
+			if normalizeTeamChannel(channel.ChannelID) == taskChannel {
+				return channel.ChannelID
+			}
+		}
+	}
+	for _, channel := range channels {
+		if channel.ChannelID == "main" {
+			return "main"
+		}
+	}
+	if len(channels) > 0 {
+		return channels[0].ChannelID
+	}
+	return "main"
 }
 
 func blankDash(value string) string {
@@ -1826,6 +2960,8 @@ func memberHistoryMetadata(before, after teamcore.Member) map[string]any {
 
 func taskHistoryMetadata(before, after teamcore.Task) map[string]any {
 	return map[string]any{
+		"channel_before":   strings.TrimSpace(before.ChannelID),
+		"channel_after":    strings.TrimSpace(after.ChannelID),
 		"title_before":     strings.TrimSpace(before.Title),
 		"title_after":      strings.TrimSpace(after.Title),
 		"status_before":    strings.TrimSpace(before.Status),
@@ -1836,7 +2972,7 @@ func taskHistoryMetadata(before, after teamcore.Task) map[string]any {
 		"assignees_after":  after.Assignees,
 		"labels_before":    before.Labels,
 		"labels_after":     after.Labels,
-		"diff_summary":     "任务标题/状态/优先级/指派已更新",
+		"diff_summary":     "任务频道/标题/状态/优先级/指派/标签已更新",
 	}
 }
 
@@ -1848,9 +2984,11 @@ func artifactHistoryMetadata(before, after teamcore.Artifact) map[string]any {
 		"kind_after":     strings.TrimSpace(after.Kind),
 		"channel_before": strings.TrimSpace(before.ChannelID),
 		"channel_after":  strings.TrimSpace(after.ChannelID),
+		"task_before":    strings.TrimSpace(before.TaskID),
+		"task_after":     strings.TrimSpace(after.TaskID),
 		"labels_before":  before.Labels,
 		"labels_after":   after.Labels,
-		"diff_summary":   "产物标题/类型/频道/标签已更新",
+		"diff_summary":   "产物标题/类型/频道/任务/标签已更新",
 	}
 }
 
@@ -1864,6 +3002,26 @@ func channelHistoryMetadata(before, after teamcore.Channel) map[string]any {
 		"hidden_after":       after.Hidden,
 		"diff_summary":       "频道标题/说明/隐藏状态已更新",
 	}
+}
+
+func labeledTeamFilter(label, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return label + "：" + value
+}
+
+func appliedTeamFilters(values ...string) []string {
+	filters := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		filters = append(filters, value)
+	}
+	return filters
 }
 
 func countArtifactsByKind(artifacts []teamcore.Artifact, kind string) int {

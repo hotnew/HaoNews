@@ -17,13 +17,13 @@
         <div class="hero-heading">
           <div>
             <h1>Team</h1>
-            <p class="hero-copy">Team 是与 Topics、Live 平行的第三个模块，用于长期项目协作、成员管理、频道、任务和工件沉淀。当前已经具备独立 Team 存储、独立频道页和最小 Team Policy 展示。</p>
+            <p class="hero-copy">Team 用于长期项目协作、成员管理、频道、任务和工件沉淀。这里的入口只指向 Team 自身页面，成员、频道、任务、产物和历史都留在 Team 内部。</p>
           </div>
-          <div class="hero-actions">
+          <div class="hero-actions hero-actions-compact">
             <a class="button-link" href="/api/teams">JSON 接口</a>
-            <a class="button-link button-link-muted" href="/live">Live</a>
-            <a class="button-link button-link-muted" href="/topics">话题</a>
-            <a class="button-link button-link-muted" href="/">返回信息流</a>
+            <a class="button-link button-link-muted" href="#module-boundary">边界说明</a>
+            <a class="button-link button-link-muted" href="#team-suggestion">建议入口</a>
+            <a class="button-link button-link-muted" href="#team-directory">Team 目录</a>
           </div>
         </div>
         <div class="hero-stats hero-stats-wide">
@@ -36,7 +36,64 @@
         </div>
       </header>
       <main class="feed">
+        <section class="panel panel-inline" id="module-boundary">
+          <div class="panel-head">
+            <p class="panel-label">模块边界</p>
+            <a class="micro-link" href="/api/teams">查看 Team 列表 JSON</a>
+          </div>
+          <div class="team-page-nav">
+            <span class="filter-chip is-active">Team</span>
+            <a class="filter-chip" href="#team-suggestion">建议入口</a>
+            <a class="filter-chip" href="#team-directory">Team 目录</a>
+          </div>
+          <p class="team-page-note">Team 用于长期项目协作。频道、成员、任务、产物和历史都沉淀在 Team 内，当前页面只保留 Team 自身入口。</p>
+        </section>
+        <section class="panel panel-inline" id="team-suggestion">
+          <div class="panel-head">
+            <p class="panel-label">工作台入口</p>
+            <span class="micro-copy">先选 Team，再进入成员、主频道、任务、产物和历史，不跨到其他模块。</span>
+          </div>
+          <div class="team-workbench-grid">
+            <article class="team-workbench-card">
+              <p class="panel-label">先选 Team</p>
+              <strong>{{len .Teams}}</strong>
+              <p class="team-empty-note">先从 Team 目录进入一个长期项目空间，再继续成员、频道、任务和产物。</p>
+              <div class="team-card-links">
+                <a href="#team-directory">打开 Team 目录</a>
+                <a href="#module-boundary">看模块边界</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">典型入口</p>
+              <strong>team</strong>
+              <p class="team-empty-note">进入 Team 后优先使用成员治理、主频道、任务、产物和历史，不借 Live 或 Topics。</p>
+              <div class="team-card-links">
+                <a href="#team-directory">选择 Team</a>
+                <a href="#module-boundary">边界说明</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">适用场景</p>
+              <strong>长期协作</strong>
+              <p class="team-empty-note">Team 适合成员固定、任务持续、产物沉淀和治理留痕的长期项目空间。</p>
+              <div class="team-card-links">
+                <a href="#team-directory">直接进入 Team</a>
+              </div>
+            </article>
+          </div>
+          <p class="team-page-note">Team 适合长期项目空间。这里的工作台入口只服务 Team 自身协作，不把页面导向其他模块。</p>
+        </section>
         {{if .Teams}}
+          <section class="panel panel-inline" id="team-directory">
+            <div class="panel-head">
+              <p class="panel-label">Team 目录</p>
+              <span class="micro-copy">{{len .Teams}} 个 Team 可直接打开。</span>
+            </div>
+            <div class="team-section-actions">
+              <a class="filter-chip" href="#team-suggestion">工作台入口</a>
+              <a class="filter-chip" href="#module-boundary">边界说明</a>
+            </div>
+          </section>
           <section class="directory-grid">
             {{range .Teams}}
               <article class="directory-card">
@@ -49,17 +106,27 @@
                 {{if .Description}}<p class="micro-copy">{{.Description}}</p>{{end}}
                 <p class="micro-copy">Owner：<code>{{.OwnerAgentID}}</code></p>
                 <p class="micro-copy">Team ID：<code>{{.TeamID}}</code></p>
+                <div class="facet-list-inline team-inline-tags">
+                  <span class="filter-chip">{{.Visibility}}</span>
+                  <span class="filter-chip">{{.MemberCount}} 成员</span>
+                  <span class="filter-chip">{{.ChannelCount}} 频道</span>
+                </div>
                 <div class="story-links">
                   <a href="/teams/{{.TeamID}}">打开 Team</a>
+                  <a href="/teams/{{.TeamID}}/members">成员治理</a>
+                  <a href="/teams/{{.TeamID}}/channels/main">主频道</a>
+                  <a href="/teams/{{.TeamID}}/tasks">任务</a>
+                  <a href="/teams/{{.TeamID}}/artifacts">产物</a>
+                  <a href="/teams/{{.TeamID}}/history">历史</a>
                   <a href="/api/teams/{{.TeamID}}">查看 JSON</a>
                 </div>
               </article>
             {{end}}
           </section>
         {{else}}
-          <section class="empty-state">
+          <section class="empty-state" id="team-directory">
             <h2>暂无 Team</h2>
-            <p>当前已提供 Team 元数据、成员视图、独立频道页、TeamMessage、TeamTask 和最小 Team Policy。后续会继续补 Team Artifact，以及与 Live / Topics 的可选桥接。</p>
+            <p>当前已提供 Team 元数据、成员视图、独立频道页、TeamMessage、TeamTask、Team Artifact 和 Team Policy。先从成员、频道和任务开始，后续历史和结果物会继续沉淀在这里。</p>
           </section>
         {{end}}
       </main>

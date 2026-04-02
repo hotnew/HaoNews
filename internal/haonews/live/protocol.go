@@ -15,9 +15,10 @@ const (
 	GlobalNamespace = "haonews/live"
 	RoomsTopic      = "haonews/live/rooms"
 	EventsTopic     = "haonews/live/events"
-	// Local room stores retain a bounded event window per protocol defaults.
-	LiveRoomRetainNonHeartbeatEvents = 100
-	LiveRoomRetainHeartbeatEvents    = 20
+	// Live room pages/APIs default to a bounded visible non-heartbeat window.
+	LiveRoomDisplayNonHeartbeatEvents = 100
+	// Local room stores retain only a small heartbeat window for presence.
+	LiveRoomRetainHeartbeatEvents = 20
 )
 
 const (
@@ -50,16 +51,16 @@ type LiveMessage struct {
 }
 
 type RoomInfo struct {
-	RoomID      string   `json:"room_id"`
-	Title       string   `json:"title"`
-	Creator     string   `json:"creator"`
-	CreatorPubKey string `json:"creator_pubkey,omitempty"`
-	ParentPublicKey string `json:"parent_public_key,omitempty"`
-	CreatedAt   string   `json:"created_at"`
-	NetworkID   string   `json:"network_id,omitempty"`
-	Channel     string   `json:"channel,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Description string   `json:"description,omitempty"`
+	RoomID          string   `json:"room_id"`
+	Title           string   `json:"title"`
+	Creator         string   `json:"creator"`
+	CreatorPubKey   string   `json:"creator_pubkey,omitempty"`
+	ParentPublicKey string   `json:"parent_public_key,omitempty"`
+	CreatedAt       string   `json:"created_at"`
+	NetworkID       string   `json:"network_id,omitempty"`
+	Channel         string   `json:"channel,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	Description     string   `json:"description,omitempty"`
 }
 
 func RoomTopic(roomID string) string {

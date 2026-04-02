@@ -83,6 +83,7 @@ type Message struct {
 type Task struct {
 	TaskID          string    `json:"task_id"`
 	TeamID          string    `json:"team_id"`
+	ChannelID       string    `json:"channel_id,omitempty"`
 	Title           string    `json:"title"`
 	Description     string    `json:"description,omitempty"`
 	CreatedBy       string    `json:"created_by,omitempty"`
@@ -101,6 +102,7 @@ type Artifact struct {
 	ArtifactID      string    `json:"artifact_id"`
 	TeamID          string    `json:"team_id"`
 	ChannelID       string    `json:"channel_id,omitempty"`
+	TaskID          string    `json:"task_id,omitempty"`
 	Title           string    `json:"title"`
 	Kind            string    `json:"kind,omitempty"`
 	Summary         string    `json:"summary,omitempty"`
@@ -616,9 +618,16 @@ func (s *Store) AppendTask(teamID string, task Task) error {
 	if task.Title == "" {
 		return errors.New("empty team task title")
 	}
+	task.Status = normalizeTaskStatus(task.Status)
 	if task.Status == "" {
 		task.Status = "open"
 	}
+	task.Priority = normalizeTaskPriority(task.Priority)
+	task.ChannelID = normalizeChannelID(task.ChannelID)
+	task.Description = strings.TrimSpace(task.Description)
+	task.CreatedBy = strings.TrimSpace(task.CreatedBy)
+	task.Assignees = normalizeNonEmptyStrings(task.Assignees)
+	task.Labels = normalizeNonEmptyStrings(task.Labels)
 	if task.CreatedAt.IsZero() {
 		task.CreatedAt = time.Now().UTC()
 	}
@@ -732,14 +741,15 @@ func (s *Store) SaveTask(teamID string, task Task) error {
 		if task.Title == "" {
 			return errors.New("empty team task title")
 		}
-		task.Status = strings.TrimSpace(task.Status)
+		task.Status = normalizeTaskStatus(task.Status)
 		if task.Status == "" {
 			task.Status = tasks[i].Status
 			if task.Status == "" {
 				task.Status = "open"
 			}
 		}
-		task.Priority = strings.TrimSpace(task.Priority)
+		task.Priority = normalizeTaskPriority(task.Priority)
+		task.ChannelID = normalizeChannelID(task.ChannelID)
 		task.Description = strings.TrimSpace(task.Description)
 		task.CreatedBy = strings.TrimSpace(task.CreatedBy)
 		task.Assignees = normalizeNonEmptyStrings(task.Assignees)
@@ -812,6 +822,7 @@ func (s *Store) AppendArtifact(teamID string, artifact Artifact) error {
 	}
 	artifact.Kind = normalizeArtifactKind(artifact.Kind)
 	artifact.ChannelID = normalizeChannelID(artifact.ChannelID)
+	artifact.TaskID = strings.TrimSpace(artifact.TaskID)
 	artifact.Summary = strings.TrimSpace(artifact.Summary)
 	artifact.Content = strings.TrimSpace(artifact.Content)
 	artifact.LinkURL = strings.TrimSpace(artifact.LinkURL)
@@ -1021,6 +1032,7 @@ func (s *Store) SaveArtifact(teamID string, artifact Artifact) error {
 		}
 		artifact.Kind = normalizeArtifactKind(artifact.Kind)
 		artifact.ChannelID = normalizeChannelID(artifact.ChannelID)
+		artifact.TaskID = strings.TrimSpace(artifact.TaskID)
 		artifact.Summary = strings.TrimSpace(artifact.Summary)
 		artifact.Content = strings.TrimSpace(artifact.Content)
 		artifact.LinkURL = strings.TrimSpace(artifact.LinkURL)
@@ -1265,6 +1277,38 @@ func normalizeArtifactKind(value string) string {
 		return "post"
 	default:
 		return "markdown"
+	}
+}
+
+func normalizeTaskStatus(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "open":
+		return strings.TrimSpace(strings.ToLower(value))
+	case "todo":
+		return "open"
+	case "doing", "in-progress", "in_progress", "progress":
+		return "doing"
+	case "blocked", "hold":
+		return "blocked"
+	case "review", "reviewing":
+		return "review"
+	case "done", "closed", "complete", "completed":
+		return "done"
+	default:
+		return strings.TrimSpace(strings.ToLower(value))
+	}
+}
+
+func normalizeTaskPriority(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "low", "medium", "high":
+		return strings.TrimSpace(strings.ToLower(value))
+	case "med", "normal":
+		return "medium"
+	case "urgent", "critical":
+		return "high"
+	default:
+		return strings.TrimSpace(strings.ToLower(value))
 	}
 }
 

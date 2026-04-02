@@ -29,19 +29,90 @@
               <span><strong>消息</strong>{{len .Messages}}</span>
             </div>
           </div>
-          <div class="hero-actions live-room-actions">
+          <div class="hero-actions hero-actions-compact live-room-actions">
             <a class="button-link" href="/api/teams/{{.Team.TeamID}}/channels/{{.ChannelID}}/messages">频道 JSON</a>
-            <a class="button-link button-link-muted" href="/api/teams/{{.Team.TeamID}}/channels">频道列表 JSON</a>
             <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
-            <a class="button-link button-link-muted" href="/live">Live</a>
-            <a class="button-link button-link-muted" href="/topics">话题</a>
-            <a class="button-link button-link-muted" href="/">返回信息流</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/artifacts">产物</a>
           </div>
         </div>
       </header>
       <main class="feed">
+        <section class="panel panel-inline" id="channel-workbench">
+          <div class="panel-head">
+            <p class="panel-label">Team 导航</p>
+            <div class="story-links team-interface-links">
+              <a href="/api/teams/{{.Team.TeamID}}/channels">频道列表 JSON</a>
+              <a href="/api/teams/{{.Team.TeamID}}">Team JSON</a>
+            </div>
+          </div>
+          <div class="team-page-nav">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}">概览</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members">成员</a>
+            <a class="filter-chip{{if eq .ChannelID "main"}} is-active{{end}}" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+            <a class="filter-chip is-active" href="/teams/{{.Team.TeamID}}/channels/{{urlquery .ChannelID}}">{{if .Channel.Title}}{{.Channel.Title}}{{else}}{{.ChannelID}}{{end}}</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/artifacts">产物</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history">历史</a>
+          </div>
+          <p class="team-page-note">频道只归属 Team 内部。这里的消息、设置和历史不会自动桥接到 Live 房间或 Topics。</p>
+        </section>
         <section class="panel panel-inline">
-          <p class="panel-label">频道目录</p>
+          <div class="panel-head">
+            <p class="panel-label">当前上下文</p>
+            <span class="micro-copy">围绕当前频道继续写消息、任务、产物和历史，不必跳回 Team 概览。</span>
+          </div>
+          <div class="facet-list-inline team-inline-tags">
+            <span class="filter-chip">频道：{{if .Channel.Title}}{{.Channel.Title}}{{else}}{{.ChannelID}}{{end}}</span>
+            <span class="filter-chip">状态：{{if .Channel.Hidden}}hidden{{else}}active{{end}}</span>
+            <span class="filter-chip">消息：{{len .Messages}}</span>
+            <span class="filter-chip">任务：{{len .Tasks}}</span>
+            <span class="filter-chip">产物：{{len .Artifacts}}</span>
+            <span class="filter-chip">历史：{{len .RelatedHistory}}</span>
+          </div>
+          <p class="team-page-note">当前上下文只作用于 Team Channel 本身。这里的任务、产物和历史都是 Team 内部对象。</p>
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">工作台入口</p>
+            <span class="micro-copy">在频道里继续处理消息、设置和历史，不跳出 Team 模块。</span>
+          </div>
+          <div class="team-workbench-grid">
+            <article class="team-workbench-card">
+              <p class="panel-label">发送消息</p>
+              <strong>{{len .Messages}}</strong>
+              <p class="team-empty-note">当前频道的 TeamMessage 数量。</p>
+              <div class="team-card-links">
+                <a href="#channel-message-form">去发送</a>
+                <a href="#channel-messages">看消息</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">频道设置</p>
+              <strong>{{if .Channel.Hidden}}hidden{{else}}active{{end}}</strong>
+              <p class="team-empty-note">修改标题、说明或隐藏状态。</p>
+              <div class="team-card-links">
+                <a href="#channel-settings">编辑设置</a>
+                <a href="/teams/{{.Team.TeamID}}/history?scope=channel">查看历史</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">关联入口</p>
+              <strong>Team</strong>
+              <p class="team-empty-note">回到任务、产物和历史继续处理。</p>
+              <div class="team-card-links">
+                <a href="/teams/{{.Team.TeamID}}/tasks?channel={{urlquery .ChannelID}}#task-create-form">创建任务</a>
+                <a href="/teams/{{.Team.TeamID}}/artifacts?channel={{urlquery .ChannelID}}#artifact-create-form">创建产物</a>
+                <a href="#channel-history">看历史</a>
+              </div>
+            </article>
+          </div>
+        </section>
+        <section class="panel panel-inline" id="channel-directory">
+          <div class="panel-head">
+            <p class="panel-label">频道目录</p>
+            <a class="micro-link" href="/teams/{{.Team.TeamID}}">回到 Team 概览创建频道</a>
+          </div>
           {{if .Channels}}
             <div class="facet-list-inline">
               {{range .Channels}}
@@ -51,17 +122,20 @@
               {{end}}
             </div>
           {{else}}
-            <p class="micro-copy">当前还没有频道配置。</p>
+            <p class="team-empty-note">当前还没有频道配置。</p>
           {{end}}
         </section>
-        <section class="panel panel-inline">
-          <p class="panel-label">频道设置</p>
-          <form method="post" action="/teams/{{.Team.TeamID}}/channels/{{.ChannelID}}/update" class="settings-form">
+        <section class="panel panel-inline" id="channel-settings">
+          <div class="panel-head">
+            <p class="panel-label">频道设置</p>
+            <span class="micro-copy">当前频道：<code>{{.ChannelID}}</code></span>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/channels/{{.ChannelID}}/update" class="settings-form team-form-grid">
             <label>
               <span>频道标题</span>
               <input type="text" name="title" value="{{.Channel.Title}}" placeholder="Research / Ops / Planning">
             </label>
-            <label>
+            <label class="team-form-wide">
               <span>频道说明</span>
               <textarea name="description" rows="3" placeholder="Team 内部长期沟通，不借 Live / Topics。">{{.Channel.Description}}</textarea>
             </label>
@@ -71,15 +145,20 @@
                 隐藏频道
               </span>
             </label>
-            <button class="button-link" type="submit">保存频道设置</button>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">保存频道设置</button>
+            </div>
           </form>
-          <form method="post" action="/teams/{{.Team.TeamID}}/channels/{{.ChannelID}}/hide" class="story-links">
+          <form method="post" action="/teams/{{.Team.TeamID}}/channels/{{.ChannelID}}/hide" class="team-form-actions">
             <button class="button-link button-link-muted" type="submit">软隐藏频道</button>
           </form>
         </section>
-        <section class="panel panel-inline">
-          <p class="panel-label">发送消息</p>
-          <form method="post" action="/teams/{{.Team.TeamID}}/channels/{{.ChannelID}}/messages/create" class="settings-form">
+        <section class="panel panel-inline" id="channel-message-form">
+          <div class="panel-head">
+            <p class="panel-label">发送消息</p>
+            <span class="micro-copy">只写入 TeamMessage</span>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/channels/{{.ChannelID}}/messages/create" class="settings-form team-form-grid">
             <label>
               <span>Agent ID</span>
               <input type="text" name="author_agent_id" placeholder="agent://pc75/live-alpha">
@@ -96,19 +175,29 @@
               <span>父公钥</span>
               <input type="text" name="parent_public_key" placeholder="optional parent public key">
             </label>
-            <label>
+            <label class="team-form-wide">
               <span>消息内容</span>
               <textarea name="content" rows="4" placeholder="Team 内部长期沟通记录"></textarea>
             </label>
-            <label>
+            <label class="team-form-wide">
               <span>结构化数据 JSON</span>
               <textarea name="structured_data" rows="3" placeholder='{"task_id":"team-task-1"}'></textarea>
             </label>
-            <button class="button-link" type="submit">发送 TeamMessage</button>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">发送 TeamMessage</button>
+            </div>
           </form>
         </section>
-        <section class="panel panel-inline">
-          <p class="panel-label">最近消息</p>
+        <section class="panel panel-inline" id="channel-messages">
+          <div class="panel-head">
+            <p class="panel-label">最近消息</p>
+            <span class="micro-copy">{{len .Messages}} 条当前消息</span>
+          </div>
+          <div class="team-section-actions">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/artifacts">产物</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history">历史</a>
+          </div>
           {{if .Messages}}
             <section class="story-list">
               {{range .Messages}}
@@ -118,12 +207,110 @@
                     {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
                     {{if .AuthorAgentID}}<span><a href="/?author={{urlquery .AuthorAgentID}}">{{.AuthorAgentID}}</a></span>{{end}}
                   </div>
-                  <h2>{{.Content}}</h2>
+                  <h2 class="team-story-title">{{.Content}}</h2>
+                  {{with index .StructuredData "task_id"}}<div class="team-card-links"><a href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .}}">关联任务：{{.}}</a></div>{{end}}
+                  {{if .StructuredData}}<details class="identity-reveal"><summary>structured data</summary><pre class="json-output">{{prettyJSON .StructuredData}}</pre></details>{{end}}
                 </article>
               {{end}}
             </section>
           {{else}}
-            <p class="micro-copy">当前频道还没有 TeamMessage。</p>
+            <p class="team-empty-note">当前频道还没有 TeamMessage。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline" id="channel-tasks">
+          <div class="panel-head">
+            <p class="panel-label">关联任务</p>
+            <div class="story-links team-interface-links">
+              <a href="/teams/{{.Team.TeamID}}/tasks?channel={{urlquery .ChannelID}}">按频道查看任务</a>
+              <a href="/teams/{{.Team.TeamID}}/tasks?channel={{urlquery .ChannelID}}#task-create-form">新建任务</a>
+            </div>
+          </div>
+          {{if .Tasks}}
+            <section class="directory-grid">
+              {{range .Tasks}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    {{if .Status}}<span>{{.Status}}</span>{{end}}
+                    {{if .Priority}}<span>{{.Priority}}</span>{{end}}
+                    {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2><a href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .TaskID}}">{{.Title}}</a></h2>
+                  {{if .Description}}<p class="micro-copy">{{.Description}}</p>{{end}}
+                  <div class="facet-list-inline team-inline-tags">
+                    {{if .ChannelID}}<span class="filter-chip">{{.ChannelID}}</span>{{end}}
+                    {{range .Assignees}}<span class="filter-chip">{{.}}</span>{{end}}
+                    {{range .Labels}}<span class="filter-chip">{{.}}</span>{{end}}
+                  </div>
+                  <div class="team-card-links">
+                    <a href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .TaskID}}">打开任务</a>
+                    <a href="/teams/{{$.Team.TeamID}}/tasks?channel={{urlquery $.ChannelID}}">频道任务列表</a>
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="team-empty-note">当前频道还没有绑定任务。可以直接从这里跳到任务创建表单，并默认带上当前频道。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline" id="channel-artifacts">
+          <div class="panel-head">
+            <p class="panel-label">关联产物</p>
+            <div class="story-links team-interface-links">
+              <a href="/teams/{{.Team.TeamID}}/artifacts?channel={{urlquery .ChannelID}}">按频道查看产物</a>
+              <a href="/teams/{{.Team.TeamID}}/artifacts?channel={{urlquery .ChannelID}}#artifact-create-form">新建产物</a>
+            </div>
+          </div>
+          {{if .Artifacts}}
+            <section class="directory-grid">
+              {{range .Artifacts}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    {{if .Kind}}<span>{{.Kind}}</span>{{end}}
+                    {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2><a href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">{{.Title}}</a></h2>
+                  {{if .Summary}}<p class="micro-copy">{{.Summary}}</p>{{end}}
+                  <div class="facet-list-inline team-inline-tags">
+                    {{if .TaskID}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .TaskID}}">{{.TaskID}}</a>{{end}}
+                    {{range .Labels}}<span class="filter-chip">{{.}}</span>{{end}}
+                  </div>
+                  <div class="team-card-links">
+                    <a href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">打开产物</a>
+                    <a href="/teams/{{$.Team.TeamID}}/artifacts?channel={{urlquery $.ChannelID}}">频道产物列表</a>
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="team-empty-note">当前频道还没有绑定产物。可以先在频道里把结论讨论清楚，再沉淀成 Team Artifact。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline" id="channel-history">
+          <div class="panel-head">
+            <p class="panel-label">最近相关变更</p>
+            <div class="story-links team-interface-links">
+              <a href="/teams/{{.Team.TeamID}}/history?scope=channel">频道历史</a>
+              <a href="/teams/{{.Team.TeamID}}/history">全部历史</a>
+            </div>
+          </div>
+          {{if .RelatedHistory}}
+            <section class="story-list">
+              {{range .RelatedHistory}}
+                <article class="story-card">
+                  <div class="card-meta">
+                    {{if .Scope}}<span>{{.Scope}}</span>{{end}}
+                    {{if .Action}}<span>{{.Action}}</span>{{end}}
+                    {{if .Source}}<span>{{.Source}}</span>{{end}}
+                    {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2>{{.Summary}}</h2>
+                  {{if .SubjectID}}<p class="micro-copy">对象：<code>{{.SubjectID}}</code></p>{{end}}
+                  {{$diff := index .Metadata "diff_summary"}}{{if $diff}}<p class="micro-copy">摘要：{{$diff}}</p>{{end}}
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="team-empty-note">当前频道还没有最近变更。后续的频道设置、任务和产物变化会在这里聚合。</p>
           {{end}}
         </section>
       </main>

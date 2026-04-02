@@ -23,19 +23,38 @@
             {{if .Task.Description}}<p class="hero-copy">{{.Task.Description}}</p>{{end}}
             <div class="live-room-summary-strip">
               <span><strong>Task ID</strong>{{.Task.TaskID}}</span>
+              <span><strong>频道</strong>{{if .Task.ChannelID}}{{.Task.ChannelID}}{{else}}-{{end}}</span>
               <span><strong>状态</strong>{{if .Task.Status}}{{.Task.Status}}{{else}}-{{end}}</span>
               <span><strong>优先级</strong>{{if .Task.Priority}}{{.Task.Priority}}{{else}}-{{end}}</span>
               <span><strong>Team</strong>{{.Team.TeamID}}</span>
             </div>
           </div>
-          <div class="hero-actions live-room-actions">
+          <div class="hero-actions hero-actions-compact live-room-actions">
             <a class="button-link" href="/api/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}">Task JSON</a>
             <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}">Team 详情</a>
-            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/channels/main">主频道</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/channels/{{if .Task.ChannelID}}{{urlquery .Task.ChannelID}}{{else}}main{{end}}">{{if .RelatedChannel}}{{if .RelatedChannel.Title}}{{.RelatedChannel.Title}}{{else}}{{.RelatedChannel.ChannelID}}{{end}}{{else}}主频道{{end}}</a>
+            <a class="button-link button-link-muted" href="/teams/{{.Team.TeamID}}/artifacts">产物</a>
           </div>
         </div>
       </header>
       <main class="feed">
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">Team 导航</p>
+            <div class="story-links team-interface-links">
+              <a href="/api/teams/{{.Team.TeamID}}/tasks">任务列表 JSON</a>
+              <a href="/api/teams/{{.Team.TeamID}}/history">历史 JSON</a>
+            </div>
+          </div>
+          <div class="team-page-nav">
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}">概览</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/members">成员</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/channels/{{if .Task.ChannelID}}{{urlquery .Task.ChannelID}}{{else}}main{{end}}">{{if .RelatedChannel}}{{if .RelatedChannel.Title}}{{.RelatedChannel.Title}}{{else}}{{.RelatedChannel.ChannelID}}{{end}}{{else}}主频道{{end}}</a>
+            <a class="filter-chip is-active" href="/teams/{{.Team.TeamID}}/tasks">任务</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/artifacts">产物</a>
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history">历史</a>
+          </div>
+        </section>
         <section class="panel panel-inline">
           <p class="panel-label">任务摘要</p>
           <div class="hero-stats hero-stats-wide">
@@ -54,10 +73,83 @@
               <strong>{{if .Task.Assignees}}{{joinStrings .Task.Assignees}}{{else}}-{{end}}</strong>
             </div>
           </div>
+          {{if .Task.Assignees}}
+            <div class="facet-list-inline team-inline-tags">
+              {{range .Task.Assignees}}<span class="filter-chip">{{.}}</span>{{end}}
+            </div>
+          {{end}}
+          {{if .Task.Labels}}
+            <div class="facet-list-inline team-inline-tags">
+              {{range .Task.Labels}}<span class="filter-chip">{{.}}</span>{{end}}
+            </div>
+          {{end}}
+          {{if .RelatedChannel}}
+            <div class="team-card-links">
+              <a href="/teams/{{.Team.TeamID}}/channels/{{urlquery .RelatedChannel.ChannelID}}">关联频道：{{if .RelatedChannel.Title}}{{.RelatedChannel.Title}}{{else}}{{.RelatedChannel.ChannelID}}{{end}}</a>
+            </div>
+          {{end}}
+          <div class="team-section-actions">
+            {{if .Task.Status}}<a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks?status={{urlquery .Task.Status}}">同状态任务</a>{{end}}
+            {{if .Task.ChannelID}}<a class="filter-chip" href="/teams/{{.Team.TeamID}}/tasks?channel={{urlquery .Task.ChannelID}}">同频道任务</a>{{end}}
+            {{range .Task.Assignees}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/tasks?assignee={{urlquery .}}">同负责者</a>{{end}}
+            {{range .Task.Labels}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/tasks?label={{urlquery .}}">同标签</a>{{end}}
+            <a class="filter-chip" href="/teams/{{.Team.TeamID}}/history?scope=task">任务历史</a>
+          </div>
         </section>
-        <section class="panel panel-inline">
-          <p class="panel-label">编辑任务</p>
-          <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/update" class="settings-form">
+        <section class="panel panel-inline" id="task-workbench">
+          <div class="panel-head">
+            <p class="panel-label">工作台入口</p>
+            <span class="micro-copy">围绕当前任务继续处理评论、产物和历史，不跳出 Team 模块。</span>
+          </div>
+          <div class="team-workbench-grid">
+            <article class="team-workbench-card">
+              <p class="panel-label">任务评论</p>
+              <strong>{{len .Messages}}</strong>
+              <p class="team-empty-note">当前任务下已沉淀的 TeamMessage。</p>
+              <div class="team-card-links">
+                <a href="#task-comments">查看评论</a>
+                <a href="/teams/{{.Team.TeamID}}/channels/{{if .Task.ChannelID}}{{urlquery .Task.ChannelID}}{{else}}main{{end}}">{{if .RelatedChannel}}去任务频道{{else}}任务频道{{end}}</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">关联产物</p>
+              <strong>{{len .Artifacts}}</strong>
+              <p class="team-empty-note">和当前任务绑定的 Team Artifact。</p>
+              <div class="team-card-links">
+                <a href="#task-artifacts">查看产物</a>
+                <a href="/teams/{{.Team.TeamID}}/artifacts?task={{urlquery .Task.TaskID}}">筛选产物</a>
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">相关历史</p>
+              <strong>{{len .RelatedHistory}}</strong>
+              <p class="team-empty-note">任务内部的状态流转与治理记录。</p>
+              <div class="team-card-links">
+                <a href="#task-history">查看历史</a>
+                <a href="/teams/{{.Team.TeamID}}/history?scope=task&actor={{urlquery .Task.CreatedBy}}">按创建者筛</a>
+              </div>
+            </article>
+          </div>
+        </section>
+        <section class="panel panel-inline" id="task-status">
+          <div class="panel-head">
+            <p class="panel-label">快速状态流转</p>
+            <span class="micro-copy">常用状态会直接写入 Team Task 和 Team History</span>
+          </div>
+          <div class="team-form-actions">
+            <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/status"><input type="hidden" name="status" value="open"><button class="button-link{{if eq .Task.Status "open"}} button-link-muted{{end}}" type="submit">open</button></form>
+            <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/status"><input type="hidden" name="status" value="doing"><button class="button-link{{if eq .Task.Status "doing"}} button-link-muted{{end}}" type="submit">doing</button></form>
+            <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/status"><input type="hidden" name="status" value="blocked"><button class="button-link{{if eq .Task.Status "blocked"}} button-link-muted{{end}}" type="submit">blocked</button></form>
+            <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/status"><input type="hidden" name="status" value="review"><button class="button-link{{if eq .Task.Status "review"}} button-link-muted{{end}}" type="submit">review</button></form>
+            <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/status"><input type="hidden" name="status" value="done"><button class="button-link{{if eq .Task.Status "done"}} button-link-muted{{end}}" type="submit">done</button></form>
+          </div>
+        </section>
+        <section class="panel panel-inline" id="task-edit">
+          <div class="panel-head">
+            <p class="panel-label">编辑任务</p>
+            <span class="micro-copy">状态和负责者变更会写入 Team History</span>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/update" class="settings-form team-form-grid">
             <label>
               <span>标题</span>
               <input type="text" name="title" value="{{.Task.Title}}">
@@ -71,6 +163,14 @@
               <input type="text" name="priority" value="{{.Task.Priority}}">
             </label>
             <label>
+              <span>频道</span>
+              <select name="channel_id">
+                {{range .Channels}}
+                  <option value="{{.ChannelID}}"{{if eq .ChannelID $.Task.ChannelID}} selected{{end}}>{{if .Title}}{{.Title}}{{else}}{{.ChannelID}}{{end}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
               <span>负责者</span>
               <input type="text" name="assignees" value="{{joinStrings .Task.Assignees}}">
             </label>
@@ -78,18 +178,94 @@
               <span>标签</span>
               <input type="text" name="labels" value="{{joinStrings .Task.Labels}}">
             </label>
-            <label>
+            <label class="team-form-wide">
               <span>说明</span>
               <textarea name="description" rows="8">{{.Task.Description}}</textarea>
             </label>
-            <button class="button-link" type="submit">保存任务</button>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">保存任务</button>
+            </div>
           </form>
-          <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/delete" class="settings-form">
+          <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/delete" class="team-form-actions">
             <button class="button-link button-link-muted" type="submit">删除任务</button>
           </form>
         </section>
-        <section class="panel panel-inline">
-          <p class="panel-label">最近任务</p>
+        <section class="panel panel-inline" id="task-create-artifact">
+          <div class="panel-head">
+            <p class="panel-label">从任务创建产物</p>
+            <span class="micro-copy">自动绑定当前 task_id，产物仍完全留在 Team 内部</span>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/artifacts/create" class="settings-form team-form-grid">
+            <input type="hidden" name="task_id" value="{{.Task.TaskID}}">
+            <label>
+              <span>标题</span>
+              <input type="text" name="title" placeholder="例如：Task outcome / weekly note">
+            </label>
+            <label>
+              <span>类型</span>
+              <input type="text" name="kind" value="markdown" placeholder="markdown / json / link / post">
+            </label>
+            <label>
+              <span>频道</span>
+              <input type="text" name="channel_id" value="{{if .Task.ChannelID}}{{.Task.ChannelID}}{{else}}main{{end}}" placeholder="main / research">
+            </label>
+            <label>
+              <span>创建者</span>
+              <input type="text" name="created_by" value="{{.Task.CreatedBy}}" placeholder="agent://pc75/live-bravo">
+            </label>
+            <label>
+              <span>摘要</span>
+              <input type="text" name="summary" placeholder="一句话摘要">
+            </label>
+            <label>
+              <span>标签</span>
+              <input type="text" name="labels" value="{{joinStrings .Task.Labels}}" placeholder="weekly, summary">
+            </label>
+            <label class="team-form-wide">
+              <span>正文</span>
+              <textarea name="content" rows="6" placeholder="围绕当前任务沉淀结果物"></textarea>
+            </label>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">创建关联产物</button>
+            </div>
+          </form>
+        </section>
+        <section class="panel panel-inline" id="task-artifacts">
+          <div class="panel-head">
+            <p class="panel-label">任务产物</p>
+            <a class="micro-link" href="/teams/{{.Team.TeamID}}/artifacts?task={{urlquery .Task.TaskID}}">任务筛选产物</a>
+          </div>
+          {{if .Artifacts}}
+            <section class="directory-grid">
+              {{range .Artifacts}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    {{if .Kind}}<span>{{.Kind}}</span>{{end}}
+                    {{if .ChannelID}}<span>{{.ChannelID}}</span>{{end}}
+                    {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2><a href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">{{.Title}}</a></h2>
+                  {{if .Summary}}<p class="micro-copy">{{.Summary}}</p>{{end}}
+                  <div class="facet-list-inline team-inline-tags">
+                    {{if .TaskID}}<span class="filter-chip">{{.TaskID}}</span>{{end}}
+                    {{range .Labels}}<span class="filter-chip">{{.}}</span>{{end}}
+                  </div>
+                  <div class="story-links">
+                    <a href="/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">打开产物</a>
+                    <a href="/api/teams/{{$.Team.TeamID}}/artifacts/{{urlquery .ArtifactID}}">查看 JSON</a>
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="micro-copy">当前任务还没有关联产物。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline" id="task-relatives">
+          <div class="panel-head">
+            <p class="panel-label">相关任务</p>
+            <a class="micro-link" href="/teams/{{.Team.TeamID}}/tasks">返回任务列表</a>
+          </div>
           {{if .Tasks}}
             <div class="facet-list-inline">
               {{range .Tasks}}
@@ -102,8 +278,48 @@
             <p class="micro-copy">当前没有更多 Team Task。</p>
           {{end}}
         </section>
-        <section class="panel panel-inline">
-          <p class="panel-label">关联消息</p>
+        <section class="panel panel-inline" id="task-comments">
+          <div class="panel-head">
+            <p class="panel-label">任务消息</p>
+            <a class="micro-link" href="/teams/{{.Team.TeamID}}/channels/{{if .Task.ChannelID}}{{urlquery .Task.ChannelID}}{{else}}main{{end}}">{{if .RelatedChannel}}去任务频道补充讨论{{else}}去主频道补充讨论{{end}}</a>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/tasks/{{urlquery .Task.TaskID}}/comment" class="settings-form team-form-grid">
+            <label>
+              <span>Agent ID</span>
+              <input type="text" name="author_agent_id" placeholder="agent://pc75/live-alpha">
+            </label>
+            <label>
+              <span>消息类型</span>
+              <input type="text" name="message_type" value="{{.DefaultCommentType}}" placeholder="comment / note / decision">
+            </label>
+            <label>
+              <span>写入频道</span>
+              <select name="channel_id">
+                {{range .Channels}}
+                  <option value="{{.ChannelID}}"{{if eq .ChannelID $.DefaultChannelID}} selected{{end}}>{{if .Title}}{{.Title}}{{else}}{{.ChannelID}}{{end}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <span>子公钥</span>
+              <input type="text" name="origin_public_key" placeholder="optional origin public key">
+            </label>
+            <label>
+              <span>父公钥</span>
+              <input type="text" name="parent_public_key" placeholder="optional parent public key">
+            </label>
+            <label class="team-form-wide">
+              <span>评论内容</span>
+              <textarea name="content" rows="4" placeholder="围绕这个 Task 追加 Team 评论"></textarea>
+            </label>
+            <label class="team-form-wide">
+              <span>附加 structured_data JSON</span>
+              <textarea name="structured_data" rows="2" placeholder='{"kind":"review-note"}'></textarea>
+            </label>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">追加 Task 评论</button>
+            </div>
+          </form>
           {{if .Messages}}
             <section class="story-list">
               {{range .Messages}}
@@ -114,7 +330,7 @@
                     {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
                     {{if .AuthorAgentID}}<span><a href="/?author={{urlquery .AuthorAgentID}}">{{.AuthorAgentID}}</a></span>{{end}}
                   </div>
-                  <h2>{{.Content}}</h2>
+                  <h2 class="team-story-title">{{.Content}}</h2>
                 </article>
               {{end}}
             </section>
@@ -122,6 +338,39 @@
             <p class="micro-copy">当前还没有和这个任务绑定的 TeamMessage。</p>
           {{end}}
         </section>
+        {{if .RelatedHistory}}
+        <section class="panel panel-inline" id="task-history">
+          <div class="panel-head">
+            <p class="panel-label">最近相关变更</p>
+            <a class="micro-link" href="/teams/{{.Team.TeamID}}/history?scope=task">历史页筛选</a>
+          </div>
+          <div class="team-section-stack">
+            {{range .RelatedHistory}}
+              <article class="story-card team-history-item">
+                <div class="card-meta">
+                  {{if .Action}}<span>{{.Action}}</span>{{end}}
+                  {{if .Source}}<span>{{.Source}}</span>{{end}}
+                  {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                </div>
+                <p class="team-card-copy">{{if .Summary}}{{.Summary}}{{else}}Team Task 变更{{end}}</p>
+                {{if index .Metadata "diff_summary"}}<p class="micro-copy">摘要：{{index .Metadata "diff_summary"}}</p>{{end}}
+                {{$titleBefore := index .Metadata "title_before"}}{{$titleAfter := index .Metadata "title_after"}}
+                {{if or $titleBefore $titleAfter}}<p class="micro-copy">标题：{{if $titleBefore}}{{$titleBefore}}{{else}}-{{end}} → {{if $titleAfter}}{{$titleAfter}}{{else}}-{{end}}</p>{{end}}
+                {{$statusBefore := index .Metadata "status_before"}}{{$statusAfter := index .Metadata "status_after"}}
+                {{if or $statusBefore $statusAfter}}<p class="micro-copy">状态：{{if $statusBefore}}{{$statusBefore}}{{else}}-{{end}} → {{if $statusAfter}}{{$statusAfter}}{{else}}-{{end}}</p>{{end}}
+                {{$priorityBefore := index .Metadata "priority_before"}}{{$priorityAfter := index .Metadata "priority_after"}}
+                {{if or $priorityBefore $priorityAfter}}<p class="micro-copy">优先级：{{if $priorityBefore}}{{$priorityBefore}}{{else}}-{{end}} → {{if $priorityAfter}}{{$priorityAfter}}{{else}}-{{end}}</p>{{end}}
+                {{$channelBefore := index .Metadata "channel_before"}}{{$channelAfter := index .Metadata "channel_after"}}
+                {{if or $channelBefore $channelAfter}}<p class="micro-copy">频道：{{if $channelBefore}}{{$channelBefore}}{{else}}-{{end}} → {{if $channelAfter}}{{$channelAfter}}{{else}}-{{end}}</p>{{end}}
+                {{$assigneesBefore := index .Metadata "assignees_before"}}{{$assigneesAfter := index .Metadata "assignees_after"}}
+                {{if or $assigneesBefore $assigneesAfter}}<p class="micro-copy">负责者：{{if $assigneesBefore}}{{$assigneesBefore}}{{else}}-{{end}} → {{if $assigneesAfter}}{{$assigneesAfter}}{{else}}-{{end}}</p>{{end}}
+                {{$labelsBefore := index .Metadata "labels_before"}}{{$labelsAfter := index .Metadata "labels_after"}}
+                {{if or $labelsBefore $labelsAfter}}<p class="micro-copy">标签：{{if $labelsBefore}}{{$labelsBefore}}{{else}}-{{end}} → {{if $labelsAfter}}{{$labelsAfter}}{{else}}-{{end}}</p>{{end}}
+              </article>
+            {{end}}
+          </div>
+        </section>
+        {{end}}
       </main>
     </div>
   </div>

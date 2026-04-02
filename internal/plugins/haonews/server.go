@@ -2,6 +2,7 @@ package newsplugin
 
 import (
 	"embed"
+	"encoding/json"
 	"html/template"
 	"io/fs"
 	"net/url"
@@ -520,7 +521,17 @@ func newApp(storeRoot, project, version, archiveRoot, rulesPath, writerPath, net
 			}
 			return filepath.Base(value)
 		},
-		"join":            strings.Join,
+		"join": strings.Join,
+		"joinStrings": func(values []string) string {
+			return strings.Join(values, ", ")
+		},
+		"prettyJSON": func(value any) string {
+			body, err := json.MarshalIndent(value, "", "  ")
+			if err != nil {
+				return "{}"
+			}
+			return string(body)
+		},
 		"lower":           strings.ToLower,
 		"renderMarkdown":  renderMarkdown,
 		"renderPostBody":  renderPostBody,
