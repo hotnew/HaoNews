@@ -268,6 +268,19 @@ func (a *App) invalidateIndexCache() {
 	a.nodeStatusMu.Unlock()
 }
 
+func (a *App) cachedIndexSignature() (string, bool) {
+	a.indexMu.Lock()
+	defer a.indexMu.Unlock()
+	if !a.indexCache.ready {
+		return "", false
+	}
+	signature := strings.TrimSpace(a.indexCache.contentSignature)
+	if signature == "" {
+		return "", false
+	}
+	return signature, true
+}
+
 func (a *App) coldStartAge() time.Duration {
 	if a == nil || a.startedAt.IsZero() {
 		return 0

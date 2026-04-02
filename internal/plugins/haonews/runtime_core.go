@@ -54,6 +54,10 @@ func (a *App) IndexSignature() (string, error) {
 	return a.indexSignature()
 }
 
+func (a *App) CachedIndexSignature() (string, bool) {
+	return a.cachedIndexSignature()
+}
+
 func (a *App) ColdStartPending() bool {
 	return a.coldStartPending()
 }

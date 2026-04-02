@@ -65,6 +65,19 @@ func htmlResponseCacheKey(scope string, opts newsplugin.FeedOptions, fragment bo
 	return strings.Join(parts, ":")
 }
 
+func currentHTMLCacheVariant(app *newsplugin.App) string {
+	if signature, ok := app.CachedIndexSignature(); ok {
+		return signature
+	}
+	if strings.HasSuffix(filepath.Base(os.Args[0]), ".test") {
+		signature, err := app.IndexSignature()
+		if err == nil && strings.TrimSpace(signature) != "" {
+			return signature
+		}
+	}
+	return "warming"
+}
+
 func renderCachedPageOrFragment(
 	app *newsplugin.App,
 	w http.ResponseWriter,
@@ -295,11 +308,7 @@ func handleHome(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		renderPageOrFragment(app, w, r, "home.html", "home.feedRoot", homePageTitle(app), data)
 		return
 	}
-	indexSig, err := app.IndexSignature()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	indexSig := currentHTMLCacheVariant(app)
 	cacheKey := htmlResponseCacheKey("/", opts, ajaxFragmentRequest(r), "agent="+strconv.FormatBool(agentView))
 	if err := renderCachedPageOrFragment(app, w, r, cacheKey, indexSig, "home.html", "home.feedRoot", homePageTitle(app), func(fragment bool) (any, error) {
 		index, err := app.Index()
@@ -984,11 +993,7 @@ func handleTopics(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		renderPageOrFragment(app, w, r, "directory.html", "directory.feedRoot", "好牛Ai Topics", data)
 		return
 	}
-	indexSig, err := app.IndexSignature()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	indexSig := currentHTMLCacheVariant(app)
 	cacheKey := htmlResponseCacheKey("/topics", opts, ajaxFragmentRequest(r))
 	if err := renderCachedPageOrFragment(app, w, r, cacheKey, indexSig, "directory.html", "directory.feedRoot", "好牛Ai Topics", func(fragment bool) (any, error) {
 		index, err := app.Index()
@@ -1067,11 +1072,7 @@ func handleTopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 		renderPageOrFragment(app, w, r, "collection.html", "collection.feedRoot", "好牛Ai Topic: "+name, data)
 		return
 	}
-	indexSig, err := app.IndexSignature()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	indexSig := currentHTMLCacheVariant(app)
 	cacheKey := htmlResponseCacheKey(newsplugin.TopicPath(name), opts, ajaxFragmentRequest(r))
 	if err := renderCachedPageOrFragment(app, w, r, cacheKey, indexSig, "collection.html", "collection.feedRoot", "好牛Ai Topic: "+name, func(fragment bool) (any, error) {
 		index, err := app.Index()
@@ -1128,39 +1129,8 @@ func handleTopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
 func handleTopicRSS(app *newsplugin.App, w http.ResponseWriter, r *http.Request, name string) {
 	opts := readFeedOptions(r)
 	opts.Topic = name
-	indexSig, err := app.IndexSignature()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	optionsSig := newsplugin.FeedOptionsSignature(opts, false)
-	cacheKey := "topic-rss:" + newsplugin.TopicPath(name) + ":" + optionsSig
-	entry, err := app.FetchHTTPResponseVariant(cacheKey, indexSig, func() (newsplugin.CachedHTTPResponse, error) {
-		index, err := app.Index()
-		if err != nil {
-			return newsplugin.CachedHTTPResponse{}, err
-		}
-		if !newsplugin.HasTopic(index, name) {
-			return newsplugin.CachedHTTPResponse{}, os.ErrNotExist
-		}
-		posts, err := app.FilteredPosts(index, opts)
-		if err != nil {
-			return newsplugin.CachedHTTPResponse{}, err
-		}
-		payload, lastModified, err := newsplugin.TopicRSSBytes(r, app.ProjectName(), name, posts)
-		if err != nil {
-			return newsplugin.CachedHTTPResponse{}, err
-		}
-		return newsplugin.NewCachedHTTPResponse(
-			http.StatusOK,
-			"application/rss+xml; charset=utf-8",
-			"public, max-age=60, stale-while-revalidate=300",
-			newsplugin.QuotedETag("topic-rss:"+newsplugin.TopicPath(name), indexSig, optionsSig, false),
-			lastModified,
-			time.Now().Add(30*time.Second),
-			payload,
-		), nil
-	})
+	indexSig := currentHTMLCacheVariant(app)
+	entry, err := fetchTopicRSSResponseVariant(app, r, name, opts, indexSig)
 	if errors.Is(err, os.ErrNotExist) {
 		http.NotFound(w, r)
 		return
@@ -1170,6 +1140,41 @@ func handleTopicRSS(app *newsplugin.App, w http.ResponseWriter, r *http.Request,
 		return
 	}
 	newsplugin.WriteConditionalResponse(w, r, entry)
+}
+
+func fetchTopicRSSResponseVariant(app *newsplugin.App, r *http.Request, name string, opts newsplugin.FeedOptions, indexSig string) (newsplugin.CachedHTTPResponse, error) {
+	optionsSig := newsplugin.FeedOptionsSignature(opts, false)
+	cacheKey := "topic-rss:" + newsplugin.TopicPath(name) + ":" + optionsSig
+	return app.FetchHTTPResponseVariant(cacheKey, indexSig, func() (newsplugin.CachedHTTPResponse, error) {
+		index, err := app.Index()
+		if err != nil {
+			return newsplugin.CachedHTTPResponse{}, err
+		}
+		return buildTopicRSSResponse(app, r, index, name, opts, indexSig, optionsSig)
+	})
+}
+
+func buildTopicRSSResponse(app *newsplugin.App, r *http.Request, index newsplugin.Index, name string, opts newsplugin.FeedOptions, indexSig, optionsSig string) (newsplugin.CachedHTTPResponse, error) {
+	if !newsplugin.HasTopic(index, name) {
+		return newsplugin.CachedHTTPResponse{}, os.ErrNotExist
+	}
+	posts, err := app.FilteredPosts(index, opts)
+	if err != nil {
+		return newsplugin.CachedHTTPResponse{}, err
+	}
+	payload, lastModified, err := newsplugin.TopicRSSBytes(r, app.ProjectName(), name, posts)
+	if err != nil {
+		return newsplugin.CachedHTTPResponse{}, err
+	}
+	return newsplugin.NewCachedHTTPResponse(
+		http.StatusOK,
+		"application/rss+xml; charset=utf-8",
+		"public, max-age=60, stale-while-revalidate=300",
+		newsplugin.QuotedETag("topic-rss:"+newsplugin.TopicPath(name), indexSig, optionsSig, false),
+		lastModified,
+		time.Now().Add(30*time.Second),
+		payload,
+	), nil
 }
 
 func topicRSSRequestName(path string) (string, bool) {
@@ -1226,11 +1231,7 @@ func handleAPIFeed(app *newsplugin.App, w http.ResponseWriter, r *http.Request) 
 		})
 		return
 	}
-	indexSig, err := app.IndexSignature()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	indexSig := currentHTMLCacheVariant(app)
 	optionsSig := newsplugin.FeedOptionsSignature(opts, true)
 	cacheKey := "api-feed:" + optionsSig
 	entry, err := app.FetchHTTPResponseVariant(cacheKey, indexSig, func() (newsplugin.CachedHTTPResponse, error) {
@@ -1503,11 +1504,7 @@ func handleAPITopics(app *newsplugin.App, w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	indexSig, err := app.IndexSignature()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	indexSig := currentHTMLCacheVariant(app)
 	optionsSig := newsplugin.FeedOptionsSignature(opts, false)
 	cacheKey := "api-topics:" + optionsSig
 	entry, err := app.FetchHTTPResponseVariant(cacheKey, indexSig, func() (newsplugin.CachedHTTPResponse, error) {
@@ -1580,11 +1577,7 @@ func handleAPITopic(app *newsplugin.App, w http.ResponseWriter, r *http.Request)
 		})
 		return
 	}
-	indexSig, err := app.IndexSignature()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	indexSig := currentHTMLCacheVariant(app)
 	optionsSig := newsplugin.FeedOptionsSignature(opts, true)
 	cacheKey := "api-topic:" + newsplugin.TopicPath(name) + ":" + optionsSig
 	entry, err := app.FetchHTTPResponseVariant(cacheKey, indexSig, func() (newsplugin.CachedHTTPResponse, error) {

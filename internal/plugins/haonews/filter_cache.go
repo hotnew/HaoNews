@@ -1,7 +1,6 @@
 package newsplugin
 
 import (
-	"fmt"
 	"strings"
 	"time"
 )
@@ -44,9 +43,9 @@ func (a *App) cachedPostListStateLocked(key, variant string, now time.Time) (cac
 }
 
 func (a *App) fetchFilteredPosts(index Index, opts FeedOptions) ([]Post, error) {
-	variant, err := a.IndexSignature()
-	if err != nil {
-		return nil, err
+	variant, ok := a.CachedIndexSignature()
+	if !ok {
+		variant = contentSignatureForIndex(index)
 	}
 	key := "filter-posts:" + filterOptionsSignature(opts)
 	now := time.Now()
@@ -77,7 +76,7 @@ func (a *App) fetchFilteredPosts(index Index, opts FeedOptions) ([]Post, error) 
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("filtered posts unavailable")
+		return index.FilterPosts(opts), nil
 	}
 	if a.filterBuilds == nil {
 		a.filterBuilds = make(map[string]*postListBuildState)
@@ -110,9 +109,9 @@ func (a *App) fetchFilteredPosts(index Index, opts FeedOptions) ([]Post, error) 
 }
 
 func (a *App) fetchTopicDirectory(index Index, opts FeedOptions) ([]DirectoryItem, error) {
-	variant, err := a.IndexSignature()
-	if err != nil {
-		return nil, err
+	variant, ok := a.CachedIndexSignature()
+	if !ok {
+		variant = contentSignatureForIndex(index)
 	}
 	key := "topic-directory:" + filterOptionsSignature(FeedOptions{
 		Tab:    opts.Tab,
