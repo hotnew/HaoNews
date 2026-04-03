@@ -313,8 +313,8 @@ func TestPluginBuildServesBootstrapReadinessDuringColdStart(t *testing.T) {
 	if payload.Readiness.Stage != "warming_index" {
 		t.Fatalf("payload.Readiness = %#v, want warming_index", payload.Readiness)
 	}
-	if !payload.Readiness.HTTPReady || payload.Readiness.IndexReady || !payload.Readiness.ColdStarting {
-		t.Fatalf("payload.Readiness = %#v, want http_ready=true index_ready=false cold_starting=true", payload.Readiness)
+	if !payload.Readiness.HTTPReady || payload.Readiness.IndexReady || payload.Readiness.WarmupReady || !payload.Readiness.ColdStarting {
+		t.Fatalf("payload.Readiness = %#v, want http_ready=true index_ready=false warmup_ready=false cold_starting=true", payload.Readiness)
 	}
 }
 
@@ -360,8 +360,8 @@ func TestPluginBuildServesBootstrapReadinessReadyByDefault(t *testing.T) {
 	if payload.Readiness.Stage != "ready" {
 		t.Fatalf("payload.Readiness = %#v, want ready", payload.Readiness)
 	}
-	if !payload.Readiness.HTTPReady || !payload.Readiness.IndexReady || payload.Readiness.ColdStarting {
-		t.Fatalf("payload.Readiness = %#v, want http_ready=true index_ready=true cold_starting=false", payload.Readiness)
+	if !payload.Readiness.HTTPReady || !payload.Readiness.IndexReady || !payload.Readiness.WarmupReady || payload.Readiness.ColdStarting {
+		t.Fatalf("payload.Readiness = %#v, want http_ready=true index_ready=true warmup_ready=true cold_starting=false", payload.Readiness)
 	}
 }
 

@@ -70,6 +70,33 @@ func (a *App) ColdStartNodeStatus() NodeStatus {
 	return a.coldStartNodeStatus()
 }
 
+func (a *App) WarmupReady() bool {
+	if a == nil {
+		return true
+	}
+	a.warmupMu.Lock()
+	defer a.warmupMu.Unlock()
+	return a.warmupReady
+}
+
+func (a *App) SetWarmupPending() {
+	if a == nil {
+		return
+	}
+	a.warmupMu.Lock()
+	a.warmupReady = false
+	a.warmupMu.Unlock()
+}
+
+func (a *App) SetWarmupReady() {
+	if a == nil {
+		return
+	}
+	a.warmupMu.Lock()
+	a.warmupReady = true
+	a.warmupMu.Unlock()
+}
+
 func (a *App) CachedHTTPResponse(key string) (CachedHTTPResponse, bool) {
 	return a.cachedHTTPResponse(key)
 }

@@ -38,6 +38,8 @@ type App struct {
 	loadSync        func(storeRoot, netPath string) (SyncRuntimeStatus, error)
 	loadSuper       func(path string) (SyncSupervisorState, error)
 	options         AppOptions
+	warmupMu        sync.Mutex
+	warmupReady     bool
 	indexMu         sync.Mutex
 	indexCache      cachedIndexState
 	probeCache      cachedProbeState
@@ -454,6 +456,7 @@ type ReadinessStatus struct {
 	Stage        string `json:"stage,omitempty"`
 	HTTPReady    bool   `json:"http_ready"`
 	IndexReady   bool   `json:"index_ready"`
+	WarmupReady  bool   `json:"warmup_ready"`
 	ColdStarting bool   `json:"cold_starting"`
 	AgeSeconds   int64  `json:"age_seconds,omitempty"`
 }
@@ -561,24 +564,25 @@ func newApp(storeRoot, project, version, archiveRoot, rulesPath, writerPath, net
 		return nil, err
 	}
 	return &App{
-		storeRoot:  storeRoot,
-		project:    project,
-		version:    strings.TrimSpace(version),
-		startedAt:  time.Now(),
-		archive:    archiveRoot,
-		rulesPath:  rulesPath,
-		writerPath: writerPath,
-		netPath:    netPath,
-		templates:  tmpl,
-		staticFS:   staticFS,
-		loadIndex:  LoadIndex,
-		syncIndex:  SyncMarkdownArchive,
-		loadRules:  LoadSubscriptionRules,
-		loadWriter: LoadWriterPolicy,
-		loadNet:    LoadNetworkBootstrapConfig,
-		loadSync:   loadSyncRuntimeStatusWithNet,
-		loadSuper:  loadSyncSupervisorState,
-		options:    options,
+		storeRoot:   storeRoot,
+		project:     project,
+		version:     strings.TrimSpace(version),
+		startedAt:   time.Now(),
+		archive:     archiveRoot,
+		rulesPath:   rulesPath,
+		writerPath:  writerPath,
+		netPath:     netPath,
+		templates:   tmpl,
+		staticFS:    staticFS,
+		loadIndex:   LoadIndex,
+		syncIndex:   SyncMarkdownArchive,
+		loadRules:   LoadSubscriptionRules,
+		loadWriter:  LoadWriterPolicy,
+		loadNet:     LoadNetworkBootstrapConfig,
+		loadSync:    loadSyncRuntimeStatusWithNet,
+		loadSuper:   loadSyncSupervisorState,
+		options:     options,
+		warmupReady: true,
 	}, nil
 }
 

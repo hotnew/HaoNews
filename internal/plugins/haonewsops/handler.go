@@ -492,6 +492,7 @@ func handleAPINetworkBootstrap(app *newsplugin.App, w http.ResponseWriter, r *ht
 		Stage:        "ready",
 		HTTPReady:    true,
 		IndexReady:   !cold,
+		WarmupReady:  !cold && app.WarmupReady(),
 		ColdStarting: cold,
 		AgeSeconds:   int64(age / time.Second),
 	}

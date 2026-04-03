@@ -65,6 +65,7 @@ func (Plugin) Build(ctx context.Context, cfg apphost.Config, theme apphost.WebTh
 
 func startBackgroundIndexWarmup(ctx context.Context, app *newsplugin.App) {
 	const warmupInterval = 2 * time.Second
+	app.SetWarmupPending()
 	go func() {
 		lastDerivedSignature := ""
 		ticker := time.NewTicker(warmupInterval)
@@ -79,6 +80,7 @@ func startBackgroundIndexWarmup(ctx context.Context, app *newsplugin.App) {
 				_ = app.NodeStatus(index)
 				if signature, ok := app.CachedIndexSignature(); ok && signature != lastDerivedSignature {
 					warmDerivedContentCaches(app, index)
+					app.SetWarmupReady()
 					lastDerivedSignature = signature
 				}
 			}

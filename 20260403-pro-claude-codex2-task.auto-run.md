@@ -300,19 +300,25 @@
 
 完成标准：
 - 能够抓到 heap / CPU / goroutine 证据。
+- 当前状态：
+  - `defer`
+  - 新 bench 证据已经能把瓶颈范围收敛到“高并发下未预热 key 的同步重建等待”，暂不需要引入新的公开 profile 入口。
 
 #### E2. 冷启动指标
 
 步骤：
-- [ ] 记录：
+- [x] 记录：
   - HTTP ready
   - libp2p ready
   - index ready
   - warmup ready
-- [ ] 暴露到 readiness 或 ops 输出。
+- [x] 暴露到 readiness 或 ops 输出。
 
 完成标准：
 - 冷启动瓶颈能被具体定位，而不是靠猜。
+- 当前状态：
+  - `done`
+  - `readiness` 已新增 `warmup_ready`，用于区分“索引 ready”与“派生缓存 / HTTP warmup ready”。
 
 ## Verification
 
@@ -507,6 +513,36 @@
 - `C1 Witness 并行收集`
 - `C2 Team LoadMessages 尾部读取 / 分页`
 - `C3 LAN peer 并行 HTTP`
+- `E2 冷启动指标（warmup_ready）`
+
+### 本轮 bench / profile 证据
+
+- 基准脚本：
+  - `python3 scripts/bench_hao_news.py --base-url http://127.0.0.1:51818 --concurrency 20 --requests-per-path 80`
+- 未额外 warmup 时：
+  - `/` `p95 ~ 1065.7ms`
+  - `/api/feed` `p95 ~ 1062.4ms`
+  - `/topics` `p95 ~ 1067.4ms`
+  - `/topics/futures/rss` `p99 ~ 1058.5ms`
+- 同样负载二次复跑：
+  - `/` `p95 ~ 418.5ms`
+  - `/api/feed` `p95 ~ 386.7ms`
+  - `/topics` `p95 ~ 385.0ms`
+- 低并发 `c=4`：
+  - `/` `p95 ~ 11.3ms`
+  - `/api/feed` `p95 ~ 1.8ms`
+  - `/topics` `p95 ~ 1.6ms`
+  - `/topics/futures/rss` `p95 ~ 1.7ms`
+- 明确预热 `--warmup-per-path 3` 后：
+  - `/` `p95 ~ 15.4ms`
+  - `/api/feed` `p95 ~ 13.0ms`
+  - `/topics` `p95 ~ 5.6ms`
+  - `/topics/futures/rss` `p95 ~ 11.7ms`
+- 判断：
+  - 现阶段瓶颈主要是“高并发下未预热 key 的同步重建等待”
+  - 不是稳定热态算法瓶颈
+  - 因此 `Phase D` 高风险项继续 `defer`
+  - `Phase E` 只补低风险的 `warmup_ready`，不引入新的 pprof 入口
 
 ### 本轮验证
 
@@ -517,19 +553,24 @@
 - `go test ./internal/haonews -run 'TestRequestCreditWitness|TestSelectWitnessCandidatesDeterministic|TestCollectWitnessesFromCandidatesStopsAfterLimit'`
 - `go test ./internal/haonews/team -run 'TestStoreAppendAndLoadMessages|TestStoreLoadMessagesLimitReadsLatestMessages|TestStoreLoadChannelMessagesAlias'`
 - `go test ./internal/haonews -run 'TestResolveLANBootstrapPeersFetchesCandidatesInParallel|TestFetchBundleFallbackPayloadReturnsFastSuccess|TestResolveExplicitBootstrapPeers|TestSortLANPeerCandidates|TestCandidateBundleURLs|TestWithSourcePeerHint'`
+- `go test ./internal/plugins/haonewsops ./internal/plugins/haonewscontent ./internal/plugins/haonews -run 'TestPluginBuildServesBootstrapReadinessColdStart|TestPluginBuildServesBootstrapReadinessReadyByDefault'`
 - `go build ./cmd/haonews`
 
 ### 当前未完成
 
-- `Phase D / Phase E` 全部仍未进入
+- `Phase D` 全部仍未进入
+- `E1 pprof / tracing`
 
 ### 恢复下一步
 
-- 下一步：仅在新的 profile / bench 证据出现时，再决定是否进入 `Phase D / Phase E`
+- 下一步：仅在新的 profile / bench 继续显示“预热后仍有明显长尾”时，再决定是否进入 `Phase D`
 - 文件：
-  - `internal/haonews/live/notices.go`
   - `internal/plugins/haonewscontent/plugin.go`
+  - `internal/plugins/haonews/http_cache.go`
   - `internal/plugins/haonews/index_cache.go`
 - 验证：
-  - 先补 profile / bench 证据，再决定具体测试集
+  - 先复跑：
+    - `python3 scripts/bench_hao_news.py --base-url http://127.0.0.1:51818 --concurrency 20 --requests-per-path 80`
+    - `python3 scripts/bench_hao_news.py --base-url http://127.0.0.1:51818 --concurrency 20 --requests-per-path 80 --warmup-per-path 3`
+  - 若 warmup 后仍持续 `p95 > 100ms`，再考虑 `D3 / D5`
   - `go build ./cmd/haonews`
