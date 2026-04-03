@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -80,15 +81,42 @@ func resolveLANBootstrapPeers(ctx context.Context, cfg NetworkBootstrapConfig) (
 		errs = append(errs, fmt.Sprintf("load lan peer health cache: %v", err))
 		cache = &lanPeerHealthCache{}
 	}
-	for _, value := range sortLANPeerCandidates(cfg.LANPeers, cache, "lan_peer", time.Now().UTC()) {
-		peers, observedHost, err := fetchLANBootstrapPeer(ctx, cache.bootstrapTargets("lan_peer", value), value, cfg.NetworkID)
-		if err != nil {
-			cache.recordFailure("lan_peer", value, err)
-			errs = append(errs, err.Error())
+	ordered := sortLANPeerCandidates(cfg.LANPeers, cache, "lan_peer", time.Now().UTC())
+	type bootstrapResult struct {
+		index        int
+		value        string
+		peers        []string
+		observedHost string
+		err          error
+	}
+	results := make([]bootstrapResult, len(ordered))
+	var wg sync.WaitGroup
+	sema := make(chan struct{}, 3)
+	for index, value := range ordered {
+		wg.Add(1)
+		go func(index int, value string) {
+			defer wg.Done()
+			sema <- struct{}{}
+			defer func() { <-sema }()
+			peers, observedHost, err := fetchLANBootstrapPeer(ctx, cache.bootstrapTargets("lan_peer", value), value, cfg.NetworkID)
+			results[index] = bootstrapResult{
+				index:        index,
+				value:        value,
+				peers:        peers,
+				observedHost: observedHost,
+				err:          err,
+			}
+		}(index, value)
+	}
+	wg.Wait()
+	for _, result := range results {
+		if result.err != nil {
+			cache.recordFailure("lan_peer", result.value, result.err)
+			errs = append(errs, result.err.Error())
 			continue
 		}
-		cache.recordSuccess("lan_peer", value, observedHost)
-		for _, peerValue := range peers {
+		cache.recordSuccess("lan_peer", result.value, result.observedHost)
+		for _, peerValue := range result.peers {
 			if _, ok := seen[peerValue]; ok {
 				continue
 			}

@@ -199,14 +199,47 @@ func loadCachedSyncAnnouncementsByIndex(ctx context.Context, rc *RedisClient, in
 	if err != nil {
 		return nil, err
 	}
-	out := make([]SyncAnnouncement, 0, len(infoHashes))
+	if len(infoHashes) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(infoHashes))
 	for _, infoHash := range infoHashes {
-		var announcement SyncAnnouncement
-		ok, err := rc.GetJSON(ctx, syncAnnouncementRedisKey(rc, infoHash), &announcement)
-		if err != nil {
-			return nil, err
+		if key := syncAnnouncementRedisKey(rc, infoHash); key != "" {
+			keys = append(keys, key)
 		}
-		if !ok {
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	values, err := rc.client.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SyncAnnouncement, 0, len(infoHashes))
+	for _, raw := range values {
+		if raw == nil {
+			continue
+		}
+		var announcement SyncAnnouncement
+		switch value := raw.(type) {
+		case string:
+			if err := json.Unmarshal([]byte(value), &announcement); err != nil {
+				return nil, err
+			}
+		case []byte:
+			if err := json.Unmarshal(value, &announcement); err != nil {
+				return nil, err
+			}
+		default:
+			body, err := json.Marshal(value)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(body, &announcement); err != nil {
+				return nil, err
+			}
+		}
+		if strings.TrimSpace(announcement.InfoHash) == "" {
 			continue
 		}
 		out = append(out, normalizeAnnouncement(announcement))

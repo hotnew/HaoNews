@@ -236,6 +236,18 @@ type SubscriptionRules struct {
 	HistoryChannels                  []string          `json:"history_channels,omitempty"`
 	HistoryTopics                    []string          `json:"history_topics,omitempty"`
 	HistoryAuthors                   []string          `json:"history_authors,omitempty"`
+
+	channelSet           map[string]struct{} `json:"-"`
+	topicSet             map[string]struct{} `json:"-"`
+	tagSet               map[string]struct{} `json:"-"`
+	authorSet            map[string]struct{} `json:"-"`
+	allowedOriginKeySet  map[string]struct{} `json:"-"`
+	blockedOriginKeySet  map[string]struct{} `json:"-"`
+	allowedParentKeySet  map[string]struct{} `json:"-"`
+	blockedParentKeySet  map[string]struct{} `json:"-"`
+	historyChannelSet    map[string]struct{} `json:"-"`
+	historyTopicSet      map[string]struct{} `json:"-"`
+	historyAuthorSet     map[string]struct{} `json:"-"`
 }
 
 type ArchiveDay struct {

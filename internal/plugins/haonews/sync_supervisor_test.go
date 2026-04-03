@@ -197,3 +197,37 @@ func TestIsSyncStatusStalePrefersRedisMirror(t *testing.T) {
 		t.Fatalf("expected redis mirror to suppress stale result")
 	}
 }
+
+func TestTrimRestartWindowAndCircuitWait(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)
+	restarts := []time.Time{
+		now.Add(-5 * time.Minute),
+		now.Add(-90 * time.Second),
+		now.Add(-30 * time.Second),
+		now,
+	}
+	trimmed := trimRestartWindow(restarts, now, 2*time.Minute)
+	if len(trimmed) != 3 {
+		t.Fatalf("trimRestartWindow len = %d, want 3", len(trimmed))
+	}
+
+	until := now.Add(45 * time.Second)
+	s := &ManagedSyncSupervisor{
+		state: SyncSupervisorState{
+			CircuitOpen:      true,
+			CircuitOpenUntil: &until,
+		},
+	}
+	wait := s.circuitWait(now)
+	if wait < 44*time.Second || wait > 45*time.Second {
+		t.Fatalf("circuitWait() = %s, want ~45s", wait)
+	}
+	if s.circuitWait(until.Add(time.Second)) != 0 {
+		t.Fatalf("expected circuit to close after deadline")
+	}
+	if s.state.CircuitOpen {
+		t.Fatalf("expected circuit_open false after expiry")
+	}
+}

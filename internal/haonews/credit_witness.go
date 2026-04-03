@@ -169,20 +169,64 @@ func collectRemoteWitnesses(ctx context.Context, runtime *libp2pRuntime, proof O
 	if len(candidates) == 0 {
 		return nil, nil
 	}
-	out := make([]ProofWitness, 0, limit)
+	return collectWitnessesWithRequester(ctx, runtime.host, proof, candidates, limit, requestCreditWitness)
+}
+
+func collectWitnessesFromCandidates(ctx context.Context, h host.Host, proof OnlineProof, candidates []witnessCandidate, limit int) ([]ProofWitness, error) {
+	return collectWitnessesWithRequester(ctx, h, proof, candidates, limit, requestCreditWitness)
+}
+
+func collectWitnessesWithRequester(ctx context.Context, h host.Host, proof OnlineProof, candidates []witnessCandidate, limit int, requestFn func(context.Context, host.Host, peer.ID, OnlineProof, string) (*ProofWitness, error)) ([]ProofWitness, error) {
+	if len(candidates) == 0 || limit <= 0 {
+		return nil, nil
+	}
+	type witnessResult struct {
+		index   int
+		witness *ProofWitness
+		err     error
+	}
+	reqCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make(chan witnessResult, len(candidates))
+	for index, candidate := range candidates {
+		go func(index int, candidate witnessCandidate) {
+			witness, err := requestFn(reqCtx, h, candidate.PeerID, proof, candidate.Role)
+			results <- witnessResult{index: index, witness: witness, err: err}
+		}(index, candidate)
+	}
+
+	type indexedWitness struct {
+		index   int
+		witness ProofWitness
+	}
+	collected := make([]indexedWitness, 0, limit)
 	var errs []string
-	for _, candidate := range candidates {
-		witness, err := requestCreditWitness(ctx, runtime.host, candidate.PeerID, proof, candidate.Role)
-		if err != nil {
-			errs = append(errs, err.Error())
+	for range candidates {
+		result := <-results
+		if result.err != nil {
+			if !errors.Is(result.err, context.Canceled) && !errors.Is(result.err, context.DeadlineExceeded) {
+				errs = append(errs, result.err.Error())
+			}
 			continue
 		}
-		out = append(out, *witness)
-		if len(out) >= limit {
+		if result.witness == nil {
+			continue
+		}
+		collected = append(collected, indexedWitness{index: result.index, witness: *result.witness})
+		if len(collected) >= limit {
+			cancel()
 			break
 		}
 	}
-	if len(out) > 0 {
+	if len(collected) > 0 {
+		sort.Slice(collected, func(i, j int) bool {
+			return collected[i].index < collected[j].index
+		})
+		out := make([]ProofWitness, 0, len(collected))
+		for _, item := range collected {
+			out = append(out, item.witness)
+		}
 		return out, nil
 	}
 	if len(errs) > 0 {

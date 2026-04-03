@@ -9,19 +9,23 @@ import (
 )
 
 type SyncSupervisorState struct {
-	Mode              string     `json:"mode"`
-	BinaryPath        string     `json:"binary_path"`
-	LogPath           string     `json:"log_path"`
-	StatusPath        string     `json:"status_path"`
-	StoreRoot         string     `json:"store_root"`
-	WorkerPID         int        `json:"worker_pid"`
-	RestartCount      int        `json:"restart_count"`
-	StaleAfter        string     `json:"stale_after"`
-	StartedAt         time.Time  `json:"started_at"`
-	LastStartAt       *time.Time `json:"last_start_at,omitempty"`
-	LastRestartAt     *time.Time `json:"last_restart_at,omitempty"`
-	LastRestartReason string     `json:"last_restart_reason,omitempty"`
-	LastExit          string     `json:"last_exit,omitempty"`
+	Mode               string     `json:"mode"`
+	BinaryPath         string     `json:"binary_path"`
+	LogPath            string     `json:"log_path"`
+	StatusPath         string     `json:"status_path"`
+	StoreRoot          string     `json:"store_root"`
+	WorkerPID          int        `json:"worker_pid"`
+	RestartCount       int        `json:"restart_count"`
+	RestartWindowCount int        `json:"restart_window_count,omitempty"`
+	StaleAfter         string     `json:"stale_after"`
+	CircuitOpen        bool       `json:"circuit_open,omitempty"`
+	CircuitReason      string     `json:"circuit_reason,omitempty"`
+	CircuitOpenUntil   *time.Time `json:"circuit_open_until,omitempty"`
+	StartedAt          time.Time  `json:"started_at"`
+	LastStartAt        *time.Time `json:"last_start_at,omitempty"`
+	LastRestartAt      *time.Time `json:"last_restart_at,omitempty"`
+	LastRestartReason  string     `json:"last_restart_reason,omitempty"`
+	LastExit           string     `json:"last_exit,omitempty"`
 }
 
 func loadSyncSupervisorState(path string) (SyncSupervisorState, error) {

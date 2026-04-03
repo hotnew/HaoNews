@@ -85,6 +85,17 @@ func (r *SubscriptionRules) normalize() {
 	r.HistoryChannels = uniqueFold(r.HistoryChannels)
 	r.HistoryTopics = uniqueCanonicalTopicsWithAliases(r.HistoryTopics, r.TopicAliases, whitelist)
 	r.HistoryAuthors = uniqueFold(r.HistoryAuthors)
+	r.channelSet = foldLookupSet(r.Channels)
+	r.topicSet = foldLookupSet(r.Topics)
+	r.tagSet = foldLookupSet(r.Tags)
+	r.authorSet = foldLookupSet(r.Authors)
+	r.allowedOriginKeySet = foldLookupSet(r.AllowedOriginKeys)
+	r.blockedOriginKeySet = foldLookupSet(r.BlockedOriginKeys)
+	r.allowedParentKeySet = foldLookupSet(r.AllowedParentKeys)
+	r.blockedParentKeySet = foldLookupSet(r.BlockedParentKeys)
+	r.historyChannelSet = foldLookupSet(r.HistoryChannels)
+	r.historyTopicSet = foldLookupSet(r.HistoryTopics)
+	r.historyAuthorSet = foldLookupSet(r.HistoryAuthors)
 	if r.MaxAgeDays <= 0 {
 		r.MaxAgeDays = defaultMaxAgeDays
 	}
@@ -208,22 +219,22 @@ func matchesSubscriptionBundle(bundle Bundle, rules SubscriptionRules) bool {
 	if rules.Empty() {
 		return true
 	}
-	if containsFold(rules.Topics, reservedTopicAll) {
+	if lookupContains(rules.topicSet, rules.Topics, reservedTopicAll) {
 		return true
 	}
-	if containsFold(rules.Channels, bundle.Message.Channel) {
+	if lookupContains(rules.channelSet, rules.Channels, bundle.Message.Channel) {
 		return true
 	}
-	if containsFold(rules.Authors, bundle.Message.Author) {
+	if lookupContains(rules.authorSet, rules.Authors, bundle.Message.Author) {
 		return true
 	}
 	for _, topic := range uniqueCanonicalTopicsWithAliases(stringSlice(bundle.Message.Extensions["topics"]), rules.TopicAliases, whitelist) {
-		if containsFold(rules.Topics, topic) {
+		if lookupContains(rules.topicSet, rules.Topics, topic) {
 			return true
 		}
 	}
 	for _, tag := range bundle.Message.Tags {
-		if containsFold(rules.Tags, tag) {
+		if lookupContains(rules.tagSet, rules.Tags, tag) {
 			return true
 		}
 	}
@@ -362,16 +373,16 @@ func uniqueNormalizedPublicKeys(items []string) []string {
 func matchPublicKeyFilters(originKey, parentKey string, rules SubscriptionRules) (blocked bool, allowed bool) {
 	originKey = normalizePublicKey(originKey)
 	parentKey = normalizePublicKey(parentKey)
-	if containsFold(rules.BlockedOriginKeys, originKey) {
+	if lookupContains(rules.blockedOriginKeySet, rules.BlockedOriginKeys, originKey) {
 		return true, false
 	}
-	if containsFold(rules.BlockedParentKeys, parentKey) {
+	if lookupContains(rules.blockedParentKeySet, rules.BlockedParentKeys, parentKey) {
 		return true, false
 	}
-	if containsFold(rules.AllowedOriginKeys, originKey) {
+	if lookupContains(rules.allowedOriginKeySet, rules.AllowedOriginKeys, originKey) {
 		return false, true
 	}
-	if containsFold(rules.AllowedParentKeys, parentKey) {
+	if lookupContains(rules.allowedParentKeySet, rules.AllowedParentKeys, parentKey) {
 		return false, true
 	}
 	return false, false
@@ -640,4 +651,34 @@ func topicAllowedByWhitelist(topic string, whitelist map[string]struct{}) bool {
 	}
 	_, ok := whitelist[strings.ToLower(strings.TrimSpace(topic))]
 	return ok
+}
+
+func foldLookupSet(items []string) map[string]struct{} {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		key := strings.ToLower(strings.TrimSpace(item))
+		if key == "" {
+			continue
+		}
+		out[key] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func lookupContains(set map[string]struct{}, items []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	if len(set) != 0 {
+		_, ok := set[strings.ToLower(target)]
+		return ok
+	}
+	return containsFold(items, target)
 }

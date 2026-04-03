@@ -60,6 +60,18 @@ type SyncSubscriptions struct {
 	HistoryChannels                  []string          `json:"history_channels,omitempty"`
 	HistoryTopics                    []string          `json:"history_topics,omitempty"`
 	HistoryAuthors                   []string          `json:"history_authors,omitempty"`
+
+	channelSet          map[string]struct{} `json:"-"`
+	topicSet            map[string]struct{} `json:"-"`
+	tagSet              map[string]struct{} `json:"-"`
+	authorSet           map[string]struct{} `json:"-"`
+	allowedOriginKeySet map[string]struct{} `json:"-"`
+	blockedOriginKeySet map[string]struct{} `json:"-"`
+	allowedParentKeySet map[string]struct{} `json:"-"`
+	blockedParentKeySet map[string]struct{} `json:"-"`
+	historyChannelSet   map[string]struct{} `json:"-"`
+	historyTopicSet     map[string]struct{} `json:"-"`
+	historyAuthorSet    map[string]struct{} `json:"-"`
 }
 
 func LoadSyncSubscriptions(path string) (SyncSubscriptions, error) {
@@ -118,6 +130,17 @@ func (r *SyncSubscriptions) Normalize() {
 	r.HistoryChannels = uniqueFold(r.HistoryChannels)
 	r.HistoryTopics = uniqueCanonicalTopicsWithAliases(r.HistoryTopics, r.TopicAliases, whitelist)
 	r.HistoryAuthors = uniqueFold(r.HistoryAuthors)
+	r.channelSet = foldLookupSet(r.Channels)
+	r.topicSet = foldLookupSet(r.Topics)
+	r.tagSet = foldLookupSet(r.Tags)
+	r.authorSet = foldLookupSet(r.Authors)
+	r.allowedOriginKeySet = foldLookupSet(r.AllowedOriginKeys)
+	r.blockedOriginKeySet = foldLookupSet(r.BlockedOriginKeys)
+	r.allowedParentKeySet = foldLookupSet(r.AllowedParentKeys)
+	r.blockedParentKeySet = foldLookupSet(r.BlockedParentKeys)
+	r.historyChannelSet = foldLookupSet(r.HistoryChannels)
+	r.historyTopicSet = foldLookupSet(r.HistoryTopics)
+	r.historyAuthorSet = foldLookupSet(r.HistoryAuthors)
 	if r.MaxAgeDays <= 0 {
 		r.MaxAgeDays = defaultMaxAgeDays
 	}
@@ -215,17 +238,17 @@ func matchesHistoryAnnouncement(announcement SyncAnnouncement, rules SyncSubscri
 		return false
 	}
 	if rules.hasHistorySelectors() {
-		if containsFold(rules.HistoryTopics, reservedTopicAll) {
+		if lookupContains(rules.historyTopicSet, rules.HistoryTopics, reservedTopicAll) {
 			return true
 		}
-		if containsFold(rules.HistoryChannels, announcement.Channel) {
+		if lookupContains(rules.historyChannelSet, rules.HistoryChannels, announcement.Channel) {
 			return true
 		}
-		if containsFold(rules.HistoryAuthors, announcement.Author) {
+		if lookupContains(rules.historyAuthorSet, rules.HistoryAuthors, announcement.Author) {
 			return true
 		}
 		for _, topic := range announcement.Topics {
-			if containsFold(rules.HistoryTopics, topic) {
+			if lookupContains(rules.historyTopicSet, rules.HistoryTopics, topic) {
 				return true
 			}
 		}
@@ -285,16 +308,16 @@ func uniqueNormalizedPublicKeys(items []string) []string {
 func matchPublicKeyFilters(originKey, parentKey string, rules SyncSubscriptions) (blocked bool, allowed bool) {
 	originKey = normalizePublicKey(originKey)
 	parentKey = normalizePublicKey(parentKey)
-	if containsFold(rules.BlockedOriginKeys, originKey) {
+	if lookupContains(rules.blockedOriginKeySet, rules.BlockedOriginKeys, originKey) {
 		return true, false
 	}
-	if containsFold(rules.BlockedParentKeys, parentKey) {
+	if lookupContains(rules.blockedParentKeySet, rules.BlockedParentKeys, parentKey) {
 		return true, false
 	}
-	if containsFold(rules.AllowedOriginKeys, originKey) {
+	if lookupContains(rules.allowedOriginKeySet, rules.AllowedOriginKeys, originKey) {
 		return false, true
 	}
-	if containsFold(rules.AllowedParentKeys, parentKey) {
+	if lookupContains(rules.allowedParentKeySet, rules.AllowedParentKeys, parentKey) {
 		return false, true
 	}
 	return false, false
@@ -563,6 +586,36 @@ func topicAllowedByWhitelist(topic string, whitelist map[string]struct{}) bool {
 	}
 	_, ok := whitelist[strings.ToLower(strings.TrimSpace(topic))]
 	return ok
+}
+
+func foldLookupSet(items []string) map[string]struct{} {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		key := strings.ToLower(strings.TrimSpace(item))
+		if key == "" {
+			continue
+		}
+		out[key] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func lookupContains(set map[string]struct{}, items []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	if len(set) != 0 {
+		_, ok := set[strings.ToLower(target)]
+		return ok
+	}
+	return containsFold(items, target)
 }
 
 func containsFold(items []string, target string) bool {

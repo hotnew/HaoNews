@@ -21,6 +21,12 @@ const (
 	SyncModeOff      SyncMode = "off"
 )
 
+const (
+	supervisorRestartWindow    = 2 * time.Minute
+	supervisorRestartThreshold = 4
+	supervisorCircuitCooldown  = 2 * time.Minute
+)
+
 type ManagedSyncConfig struct {
 	Runtime          RuntimePaths
 	BinaryPath       string
@@ -41,6 +47,7 @@ type ManagedSyncSupervisor struct {
 	cmd      *exec.Cmd
 	state    SyncSupervisorState
 	progress syncProgressSnapshot
+	restarts []time.Time
 }
 
 type syncProgressSnapshot struct {
@@ -115,6 +122,14 @@ func (s *ManagedSyncSupervisor) loop(ctx context.Context) {
 			s.stopChild()
 			return
 		}
+		if wait := s.circuitWait(time.Now().UTC()); wait > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			continue
+		}
 		if firstStart && s.cfg.InitialDelay > 0 {
 			select {
 			case <-ctx.Done():
@@ -125,6 +140,7 @@ func (s *ManagedSyncSupervisor) loop(ctx context.Context) {
 		cmd, exitCh, err := s.startChild()
 		if err != nil {
 			s.cfg.Logf("managed sync: start failed: %v", err)
+			s.recordRestart("start failed")
 			select {
 			case <-ctx.Done():
 				return
@@ -150,6 +166,7 @@ func (s *ManagedSyncSupervisor) loop(ctx context.Context) {
 				s.recordExit(err)
 				staleTicker.Stop()
 				s.cfg.Logf("managed sync: worker exited: %v", err)
+				s.recordRestart("worker exited")
 				shouldDelay = true
 				running = false
 			case <-staleTicker.C:
@@ -196,6 +213,9 @@ func (s *ManagedSyncSupervisor) startChild() (*exec.Cmd, <-chan error, error) {
 	now := time.Now().UTC()
 	s.state.WorkerPID = cmd.Process.Pid
 	s.state.LastStartAt = &now
+	s.state.CircuitOpen = false
+	s.state.CircuitReason = ""
+	s.state.CircuitOpenUntil = nil
 	if s.state.LastRestartAt == nil && s.state.RestartCount == 0 {
 		s.state.LastRestartAt = &now
 	}
@@ -232,6 +252,16 @@ func (s *ManagedSyncSupervisor) recordRestart(reason string) {
 	s.state.RestartCount++
 	s.state.LastRestartAt = &now
 	s.state.LastRestartReason = reason
+	s.restarts = trimRestartWindow(append(s.restarts, now), now, supervisorRestartWindow)
+	s.state.RestartWindowCount = len(s.restarts)
+	if len(s.restarts) >= supervisorRestartThreshold {
+		until := now.Add(supervisorCircuitCooldown)
+		s.state.CircuitOpen = true
+		s.state.CircuitReason = reason
+		s.state.CircuitOpenUntil = &until
+		s.restarts = nil
+		s.state.RestartWindowCount = 0
+	}
 	_ = writeSyncSupervisorState(s.cfg.Runtime.SupervisorStatePath, s.state)
 }
 
@@ -244,6 +274,39 @@ func (s *ManagedSyncSupervisor) recordExit(err error) {
 		s.state.LastExit = err.Error()
 	}
 	_ = writeSyncSupervisorState(s.cfg.Runtime.SupervisorStatePath, s.state)
+}
+
+func (s *ManagedSyncSupervisor) circuitWait(now time.Time) time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.state.CircuitOpen || s.state.CircuitOpenUntil == nil {
+		return 0
+	}
+	if !now.Before(*s.state.CircuitOpenUntil) {
+		s.state.CircuitOpen = false
+		s.state.CircuitReason = ""
+		s.state.CircuitOpenUntil = nil
+		s.state.RestartWindowCount = 0
+		s.restarts = nil
+		_ = writeSyncSupervisorState(s.cfg.Runtime.SupervisorStatePath, s.state)
+		return 0
+	}
+	return s.state.CircuitOpenUntil.Sub(now)
+}
+
+func trimRestartWindow(items []time.Time, now time.Time, window time.Duration) []time.Time {
+	if window <= 0 || len(items) == 0 {
+		return items
+	}
+	cutoff := now.Add(-window)
+	out := items[:0]
+	for _, item := range items {
+		if item.Before(cutoff) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func resolveManagedSyncBinary(cfg ManagedSyncConfig) (string, error) {

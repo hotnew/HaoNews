@@ -95,3 +95,48 @@ func TestLocalStoreUsesRedisCacheForRoomAndEvents(t *testing.T) {
 		t.Fatalf("cached rooms = %+v", rooms)
 	}
 }
+
+func TestListRoomsFallsBackToRoomSummaryWithoutEventsScan(t *testing.T) {
+	t.Parallel()
+
+	store, err := OpenLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	room := RoomInfo{
+		RoomID:    "summary-room",
+		Title:     "Summary Room",
+		Creator:   "agent://pc75/test",
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Channel:   "hao.news/live",
+	}
+	if err := store.SaveRoom(room); err != nil {
+		t.Fatalf("SaveRoom error = %v", err)
+	}
+	if err := store.AppendEvent(room.RoomID, LiveMessage{
+		RoomID:       room.RoomID,
+		Type:         TypeMessage,
+		Sender:       room.Creator,
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		Seq:          1,
+		Signature:    "summary-sig-1",
+		SenderPubKey: "pub-summary-1",
+		Payload:      LivePayload{Content: "hello summary"},
+	}); err != nil {
+		t.Fatalf("AppendEvent error = %v", err)
+	}
+
+	if err := os.Remove(filepath.Join(store.RoomDir(room.RoomID), "events.jsonl")); err != nil {
+		t.Fatalf("remove events.jsonl: %v", err)
+	}
+	rooms, err := store.ListRooms()
+	if err != nil {
+		t.Fatalf("ListRooms error = %v", err)
+	}
+	if len(rooms) != 1 {
+		t.Fatalf("expected 1 room, got %d", len(rooms))
+	}
+	if rooms[0].EventCount != 1 {
+		t.Fatalf("EventCount = %d, want 1", rooms[0].EventCount)
+	}
+}

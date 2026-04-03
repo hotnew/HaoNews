@@ -2,9 +2,11 @@ package haonews
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -174,5 +176,46 @@ func TestSelectWitnessCandidatesDeterministic(t *testing.T) {
 			t.Fatalf("duplicate candidate: %s", candidate.PeerID)
 		}
 		seen[candidate.PeerID] = struct{}{}
+	}
+}
+
+func TestCollectWitnessesFromCandidatesStopsAfterLimit(t *testing.T) {
+	requestFn := func(ctx context.Context, _ host.Host, target peer.ID, _ OnlineProof, role string) (*ProofWitness, error) {
+		switch target {
+		case peer.ID("p1"):
+			time.Sleep(80 * time.Millisecond)
+			return &ProofWitness{Author: "agent://w1", Role: role}, nil
+		case peer.ID("p2"):
+			time.Sleep(20 * time.Millisecond)
+			return &ProofWitness{Author: "agent://w2", Role: role}, nil
+		case peer.ID("p3"):
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(300 * time.Millisecond):
+				return nil, errors.New("slow witness should have been canceled")
+			}
+		default:
+			return nil, errors.New("unexpected target")
+		}
+	}
+
+	start := time.Now()
+	witnesses, err := collectWitnessesWithRequester(context.Background(), nil, OnlineProof{}, []witnessCandidate{
+		{PeerID: peer.ID("p1"), Role: "dht_neighbor"},
+		{PeerID: peer.ID("p2"), Role: "random_check"},
+		{PeerID: peer.ID("p3"), Role: "random_check"},
+	}, 2, requestFn)
+	if err != nil {
+		t.Fatalf("collectWitnessesFromCandidates error = %v", err)
+	}
+	if len(witnesses) != 2 {
+		t.Fatalf("witnesses = %d", len(witnesses))
+	}
+	if witnesses[0].Author != "agent://w1" || witnesses[1].Author != "agent://w2" {
+		t.Fatalf("witnesses = %#v", witnesses)
+	}
+	if elapsed := time.Since(start); elapsed >= 250*time.Millisecond {
+		t.Fatalf("collectWitnessesFromCandidates took too long: %s", elapsed)
 	}
 }

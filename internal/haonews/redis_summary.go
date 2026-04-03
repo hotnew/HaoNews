@@ -65,11 +65,22 @@ func countRedisKeys(ctx context.Context, rc *RedisClient, pattern string) (int, 
 	if rc == nil || !rc.Enabled() || strings.TrimSpace(pattern) == "" {
 		return 0, nil
 	}
-	keys, err := rc.client.Keys(ctx, pattern).Result()
-	if err != nil {
-		return 0, err
+	var (
+		count  int
+		cursor uint64
+	)
+	for {
+		keys, next, err := rc.client.Scan(ctx, cursor, pattern, 256).Result()
+		if err != nil {
+			return 0, err
+		}
+		count += len(keys)
+		cursor = next
+		if cursor == 0 {
+			break
+		}
 	}
-	return len(keys), nil
+	return count, nil
 }
 
 func redisListLength(ctx context.Context, rc *RedisClient, key string) (int, error) {

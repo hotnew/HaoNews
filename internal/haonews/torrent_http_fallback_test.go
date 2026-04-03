@@ -1,8 +1,12 @@
 package haonews
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCandidateBundleURLsUsesLANAndPeerHints(t *testing.T) {
@@ -93,5 +97,39 @@ func TestWithSourcePeerHintRewritesLegacyMagnet(t *testing.T) {
 	}
 	if !strings.Contains(got, "x.pe=ai.jie.news%3A51818") {
 		t.Fatalf("rewritten x.pe missing: %q", got)
+	}
+}
+
+func TestFetchBundleFallbackPayloadReturnsFastSuccess(t *testing.T) {
+	t.Parallel()
+
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(250 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/x-tar")
+		_, _ = w.Write([]byte("slow-payload"))
+	}))
+	defer slow.Close()
+
+	fast := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(25 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/x-tar")
+		_, _ = w.Write([]byte("fast-payload"))
+	}))
+	defer fast.Close()
+
+	ref := SyncRef{InfoHash: "abc123"}
+	start := time.Now()
+	payload, endpoint, err := fetchBundleFallbackPayload(context.Background(), ref, []string{slow.URL, fast.URL}, 1024)
+	if err != nil {
+		t.Fatalf("fetchBundleFallbackPayload error = %v", err)
+	}
+	if string(payload) != "fast-payload" {
+		t.Fatalf("payload = %q", string(payload))
+	}
+	if endpoint != peerHTTPResourceURL(fast.URL, "/api/bundles/"+ref.InfoHash+".tar") {
+		t.Fatalf("endpoint = %q", endpoint)
+	}
+	if elapsed := time.Since(start); elapsed >= 200*time.Millisecond {
+		t.Fatalf("fetchBundleFallbackPayload took too long: %s", elapsed)
 	}
 }

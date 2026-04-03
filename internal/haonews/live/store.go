@@ -70,9 +70,12 @@ type RoomHistoryArchive struct {
 }
 
 type roomRecord struct {
-	Info        RoomInfo `json:"info"`
-	EventCount  int      `json:"event_count"`
-	LastEventAt string   `json:"last_event_at,omitempty"`
+	Info               RoomInfo `json:"info"`
+	EventCount         int      `json:"event_count"`
+	LastEventAt        string   `json:"last_event_at,omitempty"`
+	Active             bool     `json:"active,omitempty"`
+	ActiveParticipants int      `json:"active_participants,omitempty"`
+	TotalParticipants  int      `json:"total_participants,omitempty"`
 }
 
 func OpenLocalStore(storeRoot string) (*LocalStore, error) {
@@ -133,6 +136,9 @@ func (s *LocalStore) SaveRoom(info RoomInfo) error {
 			if err := json.Unmarshal(current, &existing); err == nil {
 				record.EventCount = existing.EventCount
 				record.LastEventAt = existing.LastEventAt
+				record.Active = existing.Active
+				record.ActiveParticipants = existing.ActiveParticipants
+				record.TotalParticipants = existing.TotalParticipants
 				record.Info = mergeRoomInfo(existing.Info, info)
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -167,6 +173,9 @@ func (s *LocalStore) SaveRoomAuthoritative(info RoomInfo) error {
 			if err := json.Unmarshal(current, &existing); err == nil {
 				record.EventCount = existing.EventCount
 				record.LastEventAt = existing.LastEventAt
+				record.Active = existing.Active
+				record.ActiveParticipants = existing.ActiveParticipants
+				record.TotalParticipants = existing.TotalParticipants
 				record.Info = mergeRoomInfoAuthoritative(existing.Info, info)
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -366,14 +375,17 @@ func (s *LocalStore) ListRooms() ([]RoomSummary, error) {
 			return nil, err
 		}
 		summary := RoomSummary{
-			RoomID:          record.Info.RoomID,
-			Title:           record.Info.Title,
-			Creator:         record.Info.Creator,
-			CreatorPubKey:   record.Info.CreatorPubKey,
-			ParentPublicKey: record.Info.ParentPublicKey,
-			EventCount:      record.EventCount,
-			Channel:         record.Info.Channel,
-			Path:            filepath.Join(s.Root, entry.Name()),
+			RoomID:             record.Info.RoomID,
+			Title:              record.Info.Title,
+			Creator:            record.Info.Creator,
+			CreatorPubKey:      record.Info.CreatorPubKey,
+			ParentPublicKey:    record.Info.ParentPublicKey,
+			EventCount:         record.EventCount,
+			Channel:            record.Info.Channel,
+			Active:             record.Active,
+			ActiveParticipants: record.ActiveParticipants,
+			TotalParticipants:  record.TotalParticipants,
+			Path:               filepath.Join(s.Root, entry.Name()),
 		}
 		archive, err := s.LoadArchiveResult(entry.Name())
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -388,18 +400,20 @@ func (s *LocalStore) ListRooms() ([]RoomSummary, error) {
 				summary.LastEventAt = lastEventAt
 			}
 		}
-		events, err := s.ReadEvents(entry.Name())
-		if err != nil {
-			return nil, err
-		}
-		roster := BuildRoster(events, time.Now().UTC(), 30*time.Second)
-		summary.TotalParticipants = len(roster)
-		for _, participant := range roster {
-			if participant.Online {
-				summary.ActiveParticipants++
+		if summary.TotalParticipants == 0 && summary.ActiveParticipants == 0 && summary.EventCount > 0 {
+			events, err := s.ReadEvents(entry.Name())
+			if err != nil {
+				return nil, err
 			}
+			roster := BuildRoster(events, time.Now().UTC(), 30*time.Second)
+			summary.TotalParticipants = len(roster)
+			for _, participant := range roster {
+				if participant.Online {
+					summary.ActiveParticipants++
+				}
+			}
+			summary.Active = summary.ActiveParticipants > 0
 		}
-		summary.Active = summary.ActiveParticipants > 0
 		rooms = append(rooms, summary)
 	}
 	sort.Slice(rooms, func(i, j int) bool {
@@ -428,6 +442,15 @@ func (s *LocalStore) refreshRoomIndex(roomID string) error {
 	}
 	record.EventCount = countIndexedLiveEvents(events)
 	record.LastEventAt = latestEventTimestamp(events)
+	roster := BuildRoster(events, time.Now().UTC(), 30*time.Second)
+	record.TotalParticipants = len(roster)
+	record.ActiveParticipants = 0
+	for _, participant := range roster {
+		if participant.Online {
+			record.ActiveParticipants++
+		}
+	}
+	record.Active = record.ActiveParticipants > 0
 	body, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return err

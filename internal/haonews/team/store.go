@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -310,34 +311,36 @@ func (s *Store) SaveMembers(teamID string, members []Member) error {
 	if teamID == "" {
 		return errors.New("empty team id")
 	}
-	out := make([]Member, 0, len(members))
-	seen := make(map[string]struct{}, len(members))
-	for _, member := range members {
-		member.AgentID = strings.TrimSpace(member.AgentID)
-		if member.AgentID == "" {
-			continue
+	return s.withTeamLock(teamID, func() error {
+		out := make([]Member, 0, len(members))
+		seen := make(map[string]struct{}, len(members))
+		for _, member := range members {
+			member.AgentID = strings.TrimSpace(member.AgentID)
+			if member.AgentID == "" {
+				continue
+			}
+			if _, ok := seen[member.AgentID]; ok {
+				continue
+			}
+			seen[member.AgentID] = struct{}{}
+			member.Role = normalizeMemberRole(member.Role)
+			member.Status = normalizeMemberStatus(member.Status)
+			if member.JoinedAt.IsZero() {
+				member.JoinedAt = time.Now().UTC()
+			}
+			out = append(out, member)
 		}
-		if _, ok := seen[member.AgentID]; ok {
-			continue
+		path := filepath.Join(s.root, teamID, "members.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
 		}
-		seen[member.AgentID] = struct{}{}
-		member.Role = normalizeMemberRole(member.Role)
-		member.Status = normalizeMemberStatus(member.Status)
-		if member.JoinedAt.IsZero() {
-			member.JoinedAt = time.Now().UTC()
+		body, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
 		}
-		out = append(out, member)
-	}
-	path := filepath.Join(s.root, teamID, "members.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	body, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return err
-	}
-	body = append(body, '\n')
-	return os.WriteFile(path, body, 0o644)
+		body = append(body, '\n')
+		return os.WriteFile(path, body, 0o644)
+	})
 }
 
 func (s *Store) LoadPolicy(teamID string) (Policy, error) {
@@ -375,16 +378,18 @@ func (s *Store) SavePolicy(teamID string, policy Policy) error {
 	if policy.UpdatedAt.IsZero() {
 		policy.UpdatedAt = time.Now().UTC()
 	}
-	path := filepath.Join(s.root, teamID, "policy.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	body, err := json.MarshalIndent(policy, "", "  ")
-	if err != nil {
-		return err
-	}
-	body = append(body, '\n')
-	return os.WriteFile(path, body, 0o644)
+	return s.withTeamLock(teamID, func() error {
+		path := filepath.Join(s.root, teamID, "policy.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		body, err := json.MarshalIndent(policy, "", "  ")
+		if err != nil {
+			return err
+		}
+		body = append(body, '\n')
+		return os.WriteFile(path, body, 0o644)
+	})
 }
 
 func (s *Store) AppendMessage(teamID string, msg Message) error {
@@ -421,23 +426,25 @@ func (s *Store) AppendMessage(teamID string, msg Message) error {
 	if strings.TrimSpace(msg.MessageID) == "" {
 		msg.MessageID = buildMessageID(msg)
 	}
-	path := s.channelPath(teamID, channelID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	if _, err := file.Write(append(body, '\n')); err != nil {
-		return err
-	}
-	return nil
+	return s.withTeamLock(teamID, func() error {
+		path := s.channelPath(teamID, channelID)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		body, err := json.Marshal(msg)
+		if err != nil {
+			return err
+		}
+		if _, err := file.Write(append(body, '\n')); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (s *Store) LoadMessages(teamID, channelID string, limit int) ([]Message, error) {
@@ -462,23 +469,35 @@ func (s *Store) LoadMessages(teamID, channelID string, limit int) ([]Message, er
 	}
 	defer file.Close()
 	var out []Message
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+	if limit > 0 {
+		lines, err := readLastJSONLLines(path, limit)
+		if err != nil {
+			return nil, err
 		}
-		var msg Message
-		if err := json.Unmarshal([]byte(line), &msg); err != nil {
-			continue
+		out = make([]Message, 0, len(lines))
+		for _, line := range lines {
+			var msg Message
+			if err := json.Unmarshal([]byte(line), &msg); err != nil {
+				continue
+			}
+			out = append(out, msg)
 		}
-		out = append(out, msg)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	if limit > 0 && len(out) > limit {
-		out = append([]Message(nil), out[len(out)-limit:]...)
+	} else {
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			var msg Message
+			if err := json.Unmarshal([]byte(line), &msg); err != nil {
+				continue
+			}
+			out = append(out, msg)
+		}
+		if err := scanner.Err(); err != nil {
+			return nil, err
+		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
@@ -487,6 +506,57 @@ func (s *Store) LoadMessages(teamID, channelID string, limit int) ([]Message, er
 		return out[i].MessageID > out[j].MessageID
 	})
 	return out, nil
+}
+
+func readLastJSONLLines(path string, limit int) ([]string, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() == 0 {
+		return nil, nil
+	}
+	lines := make([]string, 0, limit)
+	current := make([]byte, 0, 256)
+	for pos := info.Size() - 1; pos >= 0 && len(lines) < limit; pos-- {
+		var b [1]byte
+		if _, err := file.ReadAt(b[:], pos); err != nil {
+			return nil, err
+		}
+		if b[0] == '\n' {
+			if line := strings.TrimSpace(reverseBytesToString(current)); line != "" {
+				lines = append(lines, line)
+			}
+			current = current[:0]
+			continue
+		}
+		current = append(current, b[0])
+		if pos == 0 {
+			if line := strings.TrimSpace(reverseBytesToString(current)); line != "" {
+				lines = append(lines, line)
+			}
+		}
+	}
+	return lines, nil
+}
+
+func reverseBytesToString(input []byte) string {
+	if len(input) == 0 {
+		return ""
+	}
+	out := make([]byte, len(input))
+	for i := range input {
+		out[len(input)-1-i] = input[i]
+	}
+	return string(out)
 }
 
 func (s *Store) LoadChannel(teamID, channelID string) (Channel, error) {
@@ -525,37 +595,39 @@ func (s *Store) SaveChannel(teamID string, channel Channel) error {
 	if channel.ChannelID == "" {
 		return errors.New("empty channel id")
 	}
-	channels, err := s.loadChannelConfigs(teamID)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	if channel.UpdatedAt.IsZero() {
-		channel.UpdatedAt = now
-	}
-	updated := false
-	for i := range channels {
-		if channels[i].ChannelID != channel.ChannelID {
-			continue
+	return s.withTeamLock(teamID, func() error {
+		channels, err := s.loadChannelConfigs(teamID)
+		if err != nil {
+			return err
 		}
-		if channel.CreatedAt.IsZero() {
-			channel.CreatedAt = channels[i].CreatedAt
+		now := time.Now().UTC()
+		if channel.UpdatedAt.IsZero() {
+			channel.UpdatedAt = now
 		}
-		if channel.CreatedAt.IsZero() {
-			channel.CreatedAt = now
+		updated := false
+		for i := range channels {
+			if channels[i].ChannelID != channel.ChannelID {
+				continue
+			}
+			if channel.CreatedAt.IsZero() {
+				channel.CreatedAt = channels[i].CreatedAt
+			}
+			if channel.CreatedAt.IsZero() {
+				channel.CreatedAt = now
+			}
+			channels[i] = mergeChannel(channels[i], channel)
+			channels[i].UpdatedAt = channel.UpdatedAt
+			updated = true
+			break
 		}
-		channels[i] = mergeChannel(channels[i], channel)
-		channels[i].UpdatedAt = channel.UpdatedAt
-		updated = true
-		break
-	}
-	if !updated {
-		if channel.CreatedAt.IsZero() {
-			channel.CreatedAt = now
+		if !updated {
+			if channel.CreatedAt.IsZero() {
+				channel.CreatedAt = now
+			}
+			channels = append(channels, channel)
 		}
-		channels = append(channels, channel)
-	}
-	return s.saveChannels(teamID, channels)
+		return s.saveChannels(teamID, channels)
+	})
 }
 
 func (s *Store) HideChannel(teamID, channelID string) error {
@@ -657,12 +729,14 @@ func (s *Store) AppendTask(teamID string, task Task) error {
 	if strings.TrimSpace(task.TaskID) == "" {
 		task.TaskID = buildTaskID(task)
 	}
-	tasks, err := s.LoadTasks(teamID, 0)
-	if err != nil {
-		return err
-	}
-	tasks = append(tasks, task)
-	return s.saveTasks(teamID, tasks)
+	return s.withTeamLock(teamID, func() error {
+		tasks, err := s.LoadTasks(teamID, 0)
+		if err != nil {
+			return err
+		}
+		tasks = append(tasks, task)
+		return s.saveTasks(teamID, tasks)
+	})
 }
 
 func (s *Store) LoadTasks(teamID string, limit int) ([]Task, error) {
@@ -746,48 +820,50 @@ func (s *Store) SaveTask(teamID string, task Task) error {
 	if taskID == "" {
 		return errors.New("empty task id")
 	}
-	tasks, err := s.LoadTasks(teamID, 0)
-	if err != nil {
-		return err
-	}
-	updated := false
-	for i := range tasks {
-		if tasks[i].TaskID != taskID {
-			continue
+	return s.withTeamLock(teamID, func() error {
+		tasks, err := s.LoadTasks(teamID, 0)
+		if err != nil {
+			return err
 		}
-		task.TeamID = teamID
-		task.TaskID = taskID
-		task.Title = strings.TrimSpace(task.Title)
-		if task.Title == "" {
-			return errors.New("empty team task title")
-		}
-		task.Status = normalizeTaskStatus(task.Status)
-		if task.Status == "" {
-			task.Status = tasks[i].Status
-			if task.Status == "" {
-				task.Status = "open"
+		updated := false
+		for i := range tasks {
+			if tasks[i].TaskID != taskID {
+				continue
 			}
+			task.TeamID = teamID
+			task.TaskID = taskID
+			task.Title = strings.TrimSpace(task.Title)
+			if task.Title == "" {
+				return errors.New("empty team task title")
+			}
+			task.Status = normalizeTaskStatus(task.Status)
+			if task.Status == "" {
+				task.Status = tasks[i].Status
+				if task.Status == "" {
+					task.Status = "open"
+				}
+			}
+			task.Priority = normalizeTaskPriority(task.Priority)
+			task.ChannelID = normalizeChannelID(task.ChannelID)
+			task.Description = strings.TrimSpace(task.Description)
+			task.CreatedBy = strings.TrimSpace(task.CreatedBy)
+			task.Assignees = normalizeNonEmptyStrings(task.Assignees)
+			task.Labels = normalizeNonEmptyStrings(task.Labels)
+			if task.CreatedAt.IsZero() {
+				task.CreatedAt = tasks[i].CreatedAt
+			}
+			if task.UpdatedAt.IsZero() {
+				task.UpdatedAt = time.Now().UTC()
+			}
+			tasks[i] = task
+			updated = true
+			break
 		}
-		task.Priority = normalizeTaskPriority(task.Priority)
-		task.ChannelID = normalizeChannelID(task.ChannelID)
-		task.Description = strings.TrimSpace(task.Description)
-		task.CreatedBy = strings.TrimSpace(task.CreatedBy)
-		task.Assignees = normalizeNonEmptyStrings(task.Assignees)
-		task.Labels = normalizeNonEmptyStrings(task.Labels)
-		if task.CreatedAt.IsZero() {
-			task.CreatedAt = tasks[i].CreatedAt
+		if !updated {
+			return os.ErrNotExist
 		}
-		if task.UpdatedAt.IsZero() {
-			task.UpdatedAt = time.Now().UTC()
-		}
-		tasks[i] = task
-		updated = true
-		break
-	}
-	if !updated {
-		return os.ErrNotExist
-	}
-	return s.saveTasks(teamID, tasks)
+		return s.saveTasks(teamID, tasks)
+	})
 }
 
 func (s *Store) DeleteTask(teamID, taskID string) error {
@@ -802,23 +878,25 @@ func (s *Store) DeleteTask(teamID, taskID string) error {
 	if taskID == "" {
 		return errors.New("empty task id")
 	}
-	tasks, err := s.LoadTasks(teamID, 0)
-	if err != nil {
-		return err
-	}
-	out := make([]Task, 0, len(tasks))
-	removed := false
-	for _, task := range tasks {
-		if task.TaskID == taskID {
-			removed = true
-			continue
+	return s.withTeamLock(teamID, func() error {
+		tasks, err := s.LoadTasks(teamID, 0)
+		if err != nil {
+			return err
 		}
-		out = append(out, task)
-	}
-	if !removed {
-		return os.ErrNotExist
-	}
-	return s.saveTasks(teamID, out)
+		out := make([]Task, 0, len(tasks))
+		removed := false
+		for _, task := range tasks {
+			if task.TaskID == taskID {
+				removed = true
+				continue
+			}
+			out = append(out, task)
+		}
+		if !removed {
+			return os.ErrNotExist
+		}
+		return s.saveTasks(teamID, out)
+	})
 }
 
 func (s *Store) AppendArtifact(teamID string, artifact Artifact) error {
@@ -855,12 +933,14 @@ func (s *Store) AppendArtifact(teamID string, artifact Artifact) error {
 	if strings.TrimSpace(artifact.ArtifactID) == "" {
 		artifact.ArtifactID = buildArtifactID(artifact)
 	}
-	artifacts, err := s.LoadArtifacts(teamID, 0)
-	if err != nil {
-		return err
-	}
-	artifacts = append(artifacts, artifact)
-	return s.saveArtifacts(teamID, artifacts)
+	return s.withTeamLock(teamID, func() error {
+		artifacts, err := s.LoadArtifacts(teamID, 0)
+		if err != nil {
+			return err
+		}
+		artifacts = append(artifacts, artifact)
+		return s.saveArtifacts(teamID, artifacts)
+	})
 }
 
 func (s *Store) LoadArtifacts(teamID string, limit int) ([]Artifact, error) {
@@ -959,23 +1039,25 @@ func (s *Store) AppendHistory(teamID string, event ChangeEvent) error {
 	if strings.TrimSpace(event.EventID) == "" {
 		event.EventID = buildChangeEventID(event)
 	}
-	path := filepath.Join(s.root, teamID, "history.jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	body, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	if _, err := file.Write(append(body, '\n')); err != nil {
-		return err
-	}
-	return nil
+	return s.withTeamLock(teamID, func() error {
+		path := filepath.Join(s.root, teamID, "history.jsonl")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		body, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		if _, err := file.Write(append(body, '\n')); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (s *Store) LoadHistory(teamID string, limit int) ([]ChangeEvent, error) {
@@ -1035,41 +1117,43 @@ func (s *Store) SaveArtifact(teamID string, artifact Artifact) error {
 	if artifactID == "" {
 		return errors.New("empty artifact id")
 	}
-	artifacts, err := s.LoadArtifacts(teamID, 0)
-	if err != nil {
-		return err
-	}
-	updated := false
-	for i := range artifacts {
-		if artifacts[i].ArtifactID != artifactID {
-			continue
+	return s.withTeamLock(teamID, func() error {
+		artifacts, err := s.LoadArtifacts(teamID, 0)
+		if err != nil {
+			return err
 		}
-		artifact.TeamID = teamID
-		artifact.ArtifactID = artifactID
-		artifact.Title = strings.TrimSpace(artifact.Title)
-		if artifact.Title == "" {
-			return errors.New("empty team artifact title")
+		updated := false
+		for i := range artifacts {
+			if artifacts[i].ArtifactID != artifactID {
+				continue
+			}
+			artifact.TeamID = teamID
+			artifact.ArtifactID = artifactID
+			artifact.Title = strings.TrimSpace(artifact.Title)
+			if artifact.Title == "" {
+				return errors.New("empty team artifact title")
+			}
+			artifact.Kind = normalizeArtifactKind(artifact.Kind)
+			artifact.ChannelID = normalizeChannelID(artifact.ChannelID)
+			artifact.TaskID = strings.TrimSpace(artifact.TaskID)
+			artifact.Summary = strings.TrimSpace(artifact.Summary)
+			artifact.Content = strings.TrimSpace(artifact.Content)
+			artifact.LinkURL = strings.TrimSpace(artifact.LinkURL)
+			if artifact.CreatedAt.IsZero() {
+				artifact.CreatedAt = artifacts[i].CreatedAt
+			}
+			if artifact.UpdatedAt.IsZero() {
+				artifact.UpdatedAt = time.Now().UTC()
+			}
+			artifacts[i] = artifact
+			updated = true
+			break
 		}
-		artifact.Kind = normalizeArtifactKind(artifact.Kind)
-		artifact.ChannelID = normalizeChannelID(artifact.ChannelID)
-		artifact.TaskID = strings.TrimSpace(artifact.TaskID)
-		artifact.Summary = strings.TrimSpace(artifact.Summary)
-		artifact.Content = strings.TrimSpace(artifact.Content)
-		artifact.LinkURL = strings.TrimSpace(artifact.LinkURL)
-		if artifact.CreatedAt.IsZero() {
-			artifact.CreatedAt = artifacts[i].CreatedAt
+		if !updated {
+			return os.ErrNotExist
 		}
-		if artifact.UpdatedAt.IsZero() {
-			artifact.UpdatedAt = time.Now().UTC()
-		}
-		artifacts[i] = artifact
-		updated = true
-		break
-	}
-	if !updated {
-		return os.ErrNotExist
-	}
-	return s.saveArtifacts(teamID, artifacts)
+		return s.saveArtifacts(teamID, artifacts)
+	})
 }
 
 func (s *Store) DeleteArtifact(teamID, artifactID string) error {
@@ -1084,23 +1168,25 @@ func (s *Store) DeleteArtifact(teamID, artifactID string) error {
 	if artifactID == "" {
 		return errors.New("empty artifact id")
 	}
-	artifacts, err := s.LoadArtifacts(teamID, 0)
-	if err != nil {
-		return err
-	}
-	out := make([]Artifact, 0, len(artifacts))
-	removed := false
-	for _, artifact := range artifacts {
-		if artifact.ArtifactID == artifactID {
-			removed = true
-			continue
+	return s.withTeamLock(teamID, func() error {
+		artifacts, err := s.LoadArtifacts(teamID, 0)
+		if err != nil {
+			return err
 		}
-		out = append(out, artifact)
-	}
-	if !removed {
-		return os.ErrNotExist
-	}
-	return s.saveArtifacts(teamID, out)
+		out := make([]Artifact, 0, len(artifacts))
+		removed := false
+		for _, artifact := range artifacts {
+			if artifact.ArtifactID == artifactID {
+				removed = true
+				continue
+			}
+			out = append(out, artifact)
+		}
+		if !removed {
+			return os.ErrNotExist
+		}
+		return s.saveArtifacts(teamID, out)
+	})
 }
 
 func (s *Store) LoadTaskMessages(teamID, taskID string, limit int) ([]Message, error) {
@@ -1161,68 +1247,71 @@ func (s *Store) CreateManualArchive(teamID string, now time.Time) (*ArchiveSnaps
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	info, err := s.LoadTeam(teamID)
-	if err != nil {
-		return nil, err
-	}
-	policy, err := s.LoadPolicy(teamID)
-	if err != nil {
-		return nil, err
-	}
-	members, err := s.LoadMembers(teamID)
-	if err != nil {
-		return nil, err
-	}
-	channelSummaries, err := s.ListChannels(teamID)
-	if err != nil {
-		return nil, err
-	}
-	channels := make([]Channel, 0, len(channelSummaries))
-	messages := make([]Message, 0)
-	for _, summary := range channelSummaries {
-		channel, err := s.LoadChannel(teamID, summary.ChannelID)
+	var snapshot ArchiveSnapshot
+	if err := s.withTeamLock(teamID, func() error {
+		info, err := s.LoadTeam(teamID)
 		if err != nil {
-			channel = summary.Channel
+			return err
 		}
-		channels = append(channels, channel)
-		items, err := s.LoadMessages(teamID, summary.ChannelID, 0)
+		policy, err := s.LoadPolicy(teamID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		messages = append(messages, items...)
-	}
-	tasks, err := s.LoadTasks(teamID, 0)
-	if err != nil {
-		return nil, err
-	}
-	artifacts, err := s.LoadArtifacts(teamID, 0)
-	if err != nil {
-		return nil, err
-	}
-	history, err := s.LoadHistory(teamID, 0)
-	if err != nil {
-		return nil, err
-	}
-	snapshot := ArchiveSnapshot{
-		ArchiveID:     fmt.Sprintf("manual-%s", now.UTC().Format("20060102T150405Z")),
-		TeamID:        teamID,
-		Kind:          "manual",
-		Label:         "手动归档",
-		ArchivedAt:    now.UTC(),
-		Info:          info,
-		Policy:        policy,
-		Members:       append([]Member(nil), members...),
-		Channels:      append([]Channel(nil), channels...),
-		Messages:      append([]Message(nil), messages...),
-		Tasks:         append([]Task(nil), tasks...),
-		Artifacts:     append([]Artifact(nil), artifacts...),
-		History:       append([]ChangeEvent(nil), history...),
-		MessageCount:  len(messages),
-		TaskCount:     len(tasks),
-		ArtifactCount: len(artifacts),
-		HistoryCount:  len(history),
-	}
-	if err := s.saveArchiveSnapshot(teamID, snapshot); err != nil {
+		members, err := s.LoadMembers(teamID)
+		if err != nil {
+			return err
+		}
+		channelSummaries, err := s.ListChannels(teamID)
+		if err != nil {
+			return err
+		}
+		channels := make([]Channel, 0, len(channelSummaries))
+		messages := make([]Message, 0)
+		for _, summary := range channelSummaries {
+			channel, err := s.LoadChannel(teamID, summary.ChannelID)
+			if err != nil {
+				channel = summary.Channel
+			}
+			channels = append(channels, channel)
+			items, err := s.LoadMessages(teamID, summary.ChannelID, 0)
+			if err != nil {
+				return err
+			}
+			messages = append(messages, items...)
+		}
+		tasks, err := s.LoadTasks(teamID, 0)
+		if err != nil {
+			return err
+		}
+		artifacts, err := s.LoadArtifacts(teamID, 0)
+		if err != nil {
+			return err
+		}
+		history, err := s.LoadHistory(teamID, 0)
+		if err != nil {
+			return err
+		}
+		snapshot = ArchiveSnapshot{
+			ArchiveID:     fmt.Sprintf("manual-%s", now.UTC().Format("20060102T150405Z")),
+			TeamID:        teamID,
+			Kind:          "manual",
+			Label:         "手动归档",
+			ArchivedAt:    now.UTC(),
+			Info:          info,
+			Policy:        policy,
+			Members:       append([]Member(nil), members...),
+			Channels:      append([]Channel(nil), channels...),
+			Messages:      append([]Message(nil), messages...),
+			Tasks:         append([]Task(nil), tasks...),
+			Artifacts:     append([]Artifact(nil), artifacts...),
+			History:       append([]ChangeEvent(nil), history...),
+			MessageCount:  len(messages),
+			TaskCount:     len(tasks),
+			ArtifactCount: len(artifacts),
+			HistoryCount:  len(history),
+		}
+		return s.saveArchiveSnapshot(teamID, snapshot)
+	}); err != nil {
 		return nil, err
 	}
 	return &snapshot, nil
@@ -1498,6 +1587,35 @@ func (s *Store) channelPath(teamID, channelID string) string {
 
 func (s *Store) channelsConfigPath(teamID string) string {
 	return filepath.Join(s.root, NormalizeTeamID(teamID), "channels.json")
+}
+
+func (s *Store) teamLockPath(teamID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), ".lock")
+}
+
+func (s *Store) withTeamLock(teamID string, fn func() error) error {
+	if s == nil {
+		return errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return errors.New("empty team id")
+	}
+	if err := os.MkdirAll(filepath.Join(s.root, teamID), 0o755); err != nil {
+		return err
+	}
+	lockFile, err := os.OpenFile(s.teamLockPath(teamID), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer lockFile.Close()
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer func() {
+		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	}()
+	return fn()
 }
 
 func buildMessageID(msg Message) string {

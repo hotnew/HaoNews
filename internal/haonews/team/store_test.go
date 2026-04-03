@@ -2,9 +2,11 @@ package team
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -210,6 +212,45 @@ func TestStoreAppendAndLoadMessages(t *testing.T) {
 	}
 	if messages[0].Content != "second team message" || messages[1].Content != "first team message" {
 		t.Fatalf("unexpected message order: %#v", messages)
+	}
+}
+
+func TestStoreLoadMessagesLimitReadsLatestMessages(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-limit")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-limit","title":"Project Limit"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	for i := 1; i <= 5; i++ {
+		if err := store.AppendMessage("project-limit", Message{
+			ChannelID:     "main",
+			AuthorAgentID: "agent://pc75/live-alpha",
+			MessageType:   "chat",
+			Content:       fmt.Sprintf("message-%d", i),
+			CreatedAt:     time.Date(2026, 4, 1, i, 0, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("AppendMessage(%d) error = %v", i, err)
+		}
+	}
+
+	messages, err := store.LoadMessages("project-limit", "main", 2)
+	if err != nil {
+		t.Fatalf("LoadMessages error = %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	if messages[0].Content != "message-5" || messages[1].Content != "message-4" {
+		t.Fatalf("unexpected limited message order: %#v", messages)
 	}
 }
 
@@ -890,5 +931,51 @@ func TestStoreNormalizesTaskStatusPriorityAndArtifactTaskID(t *testing.T) {
 	}
 	if artifact.ChannelID != "main" || artifact.TaskID != "normalize-task-1" {
 		t.Fatalf("unexpected normalized artifact: %#v", artifact)
+	}
+}
+
+func TestStoreAppendTaskConcurrentPreservesAllTasks(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-concurrent")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-concurrent","title":"Project Concurrent"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+
+	const writers = 12
+	var wg sync.WaitGroup
+	wg.Add(writers)
+	for i := 0; i < writers; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			if err := store.AppendTask("project-concurrent", Task{
+				TaskID:    "task-" + strings.TrimSpace(time.Unix(int64(i), 0).UTC().Format("150405")),
+				Title:     "Concurrent Task " + time.Unix(int64(i), 0).UTC().Format("150405"),
+				Status:    "open",
+				Labels:    []string{"load"},
+				CreatedBy: "agent://pc75/test",
+			}); err != nil {
+				t.Errorf("AppendTask(%d) error = %v", i, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	tasks, err := store.LoadTasks("project-concurrent", 0)
+	if err != nil {
+		t.Fatalf("LoadTasks error = %v", err)
+	}
+	if len(tasks) != writers {
+		t.Fatalf("expected %d tasks, got %d", writers, len(tasks))
 	}
 }

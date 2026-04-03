@@ -484,7 +484,7 @@ func subscribedAnnouncementTopics(networkID string, rules SyncSubscriptions) []s
 	topics := []string{namespacedGlobalTopic(networkID)}
 	if !rules.Empty() {
 		topics = topics[:0]
-		if containsFold(rules.Topics, reservedTopicAll) {
+		if lookupContains(rules.topicSet, rules.Topics, reservedTopicAll) {
 			topics = append(topics, namespacedGlobalTopic(networkID))
 		}
 		for _, channel := range rules.Channels {
@@ -761,22 +761,22 @@ func matchesAnnouncement(announcement SyncAnnouncement, rules SyncSubscriptions)
 	if rules.Empty() {
 		return true
 	}
-	if containsFold(rules.Topics, reservedTopicAll) {
+	if lookupContains(rules.topicSet, rules.Topics, reservedTopicAll) {
 		return true
 	}
-	if containsFold(rules.Channels, announcement.Channel) {
+	if lookupContains(rules.channelSet, rules.Channels, announcement.Channel) {
 		return true
 	}
-	if containsFold(rules.Authors, announcement.Author) {
+	if lookupContains(rules.authorSet, rules.Authors, announcement.Author) {
 		return true
 	}
 	for _, topic := range announcement.Topics {
-		if containsFold(rules.Topics, topic) {
+		if lookupContains(rules.topicSet, rules.Topics, topic) {
 			return true
 		}
 	}
 	for _, tag := range announcement.Tags {
-		if containsFold(rules.Tags, tag) {
+		if lookupContains(rules.tagSet, rules.Tags, tag) {
 			return true
 		}
 	}

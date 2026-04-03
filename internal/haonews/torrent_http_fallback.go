@@ -2,6 +2,7 @@ package haonews
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,71 +26,107 @@ func fetchBundleFallback(ctx context.Context, store *Store, ref SyncRef, peerSou
 		maxBytes = defaultMaxBundleMB
 	}
 	maxBytes *= 1024 * 1024
-	var lastErr error
-	for _, endpoint := range candidateBundleURLs(ref, peerSources) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		resp, err := doLANHTTPRequest(req, 12*time.Second, peerSources)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("status %d from %s", resp.StatusCode, endpoint)
-			_ = resp.Body.Close()
-			continue
-		}
-		if resp.ContentLength > 0 && resp.ContentLength > maxBytes {
-			lastErr = fmt.Errorf("bundle tar too large from %s", endpoint)
-			_ = resp.Body.Close()
-			continue
-		}
-		payload, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
-		closeErr := resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if closeErr != nil {
-			lastErr = closeErr
-			continue
-		}
-		if int64(len(payload)) > maxBytes {
-			lastErr = fmt.Errorf("bundle tar too large from %s", endpoint)
-			continue
-		}
-		contentDir, err := untarBundleToStore(payload, store)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		rebuiltInfoHash, err := rebuildTorrentForContentDir(store, contentDir)
-		if err != nil {
-			_ = os.RemoveAll(contentDir)
-			lastErr = err
-			continue
-		}
-		if rebuiltInfoHash != ref.InfoHash {
-			_ = os.RemoveAll(contentDir)
-			_ = store.RemoveTorrent(rebuiltInfoHash)
-			lastErr = fmt.Errorf("bundle infohash mismatch: got %s want %s", rebuiltInfoHash, ref.InfoHash)
-			continue
-		}
-		if _, _, err := LoadMessage(contentDir); err != nil {
-			_ = os.RemoveAll(contentDir)
-			_ = store.RemoveTorrent(ref.InfoHash)
-			lastErr = err
-			continue
-		}
-		return contentDir, nil
+	payload, _, err := fetchBundleFallbackPayload(ctx, ref, peerSources, maxBytes)
+	if err != nil {
+		return "", err
 	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no bundle fallback candidates")
+	contentDir, err := untarBundleToStore(payload, store)
+	if err != nil {
+		return "", err
 	}
-	return "", lastErr
+	rebuiltInfoHash, err := rebuildTorrentForContentDir(store, contentDir)
+	if err != nil {
+		_ = os.RemoveAll(contentDir)
+		return "", err
+	}
+	if rebuiltInfoHash != ref.InfoHash {
+		_ = os.RemoveAll(contentDir)
+		_ = store.RemoveTorrent(rebuiltInfoHash)
+		return "", fmt.Errorf("bundle infohash mismatch: got %s want %s", rebuiltInfoHash, ref.InfoHash)
+	}
+	if _, _, err := LoadMessage(contentDir); err != nil {
+		_ = os.RemoveAll(contentDir)
+		_ = store.RemoveTorrent(ref.InfoHash)
+		return "", err
+	}
+	return contentDir, nil
+}
+
+func fetchBundleFallbackPayload(ctx context.Context, ref SyncRef, peerSources []string, maxBytes int64) ([]byte, string, error) {
+	endpoints := candidateBundleURLs(ref, peerSources)
+	if len(endpoints) == 0 {
+		return nil, "", fmt.Errorf("no bundle fallback candidates")
+	}
+	type bundleResult struct {
+		endpoint string
+		payload  []byte
+		err      error
+	}
+	reqCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan bundleResult, len(endpoints))
+	sema := make(chan struct{}, 3)
+	var wg sync.WaitGroup
+	for _, endpoint := range endpoints {
+		wg.Add(1)
+		go func(endpoint string) {
+			defer wg.Done()
+			sema <- struct{}{}
+			defer func() { <-sema }()
+			payload, err := fetchBundlePayloadFromEndpoint(reqCtx, endpoint, peerSources, maxBytes)
+			results <- bundleResult{endpoint: endpoint, payload: payload, err: err}
+		}(endpoint)
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	var errs []string
+	for result := range results {
+		if result.err != nil {
+			if !errors.Is(result.err, context.Canceled) && !errors.Is(result.err, context.DeadlineExceeded) {
+				errs = append(errs, result.err.Error())
+			}
+			continue
+		}
+		cancel()
+		return result.payload, result.endpoint, nil
+	}
+	if len(errs) == 0 {
+		return nil, "", fmt.Errorf("no bundle fallback candidates")
+	}
+	return nil, "", errors.New(strings.Join(errs, "; "))
+}
+
+func fetchBundlePayloadFromEndpoint(ctx context.Context, endpoint string, peerSources []string, maxBytes int64) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := doLANHTTPRequest(req, 12*time.Second, peerSources)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("status %d from %s", resp.StatusCode, endpoint)
+	}
+	if resp.ContentLength > 0 && resp.ContentLength > maxBytes {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("bundle tar too large from %s", endpoint)
+	}
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	closeErr := resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	if int64(len(payload)) > maxBytes {
+		return nil, fmt.Errorf("bundle tar too large from %s", endpoint)
+	}
+	return payload, nil
 }
 
 func candidateBundleURLs(ref SyncRef, peerSources []string) []string {

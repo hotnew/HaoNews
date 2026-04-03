@@ -241,6 +241,51 @@ func TestResolveExplicitBootstrapPeersUsesRelayPeerBootstrapEndpoint(t *testing.
 	}
 }
 
+func TestResolveLANBootstrapPeersFetchesCandidatesInParallel(t *testing.T) {
+	t.Parallel()
+
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(250 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(lanBootstrapResponse{
+			NetworkID: latestOrgNetworkID,
+			PeerID:    "QmSlowPeer",
+			DialAddrs: []string{"/ip4/192.168.102.74/tcp/50584"},
+		})
+	}))
+	defer slow.Close()
+
+	fast := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(25 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(lanBootstrapResponse{
+			NetworkID: latestOrgNetworkID,
+			PeerID:    "QmFastPeer",
+			DialAddrs: []string{"/ip4/192.168.102.75/tcp/50584"},
+		})
+	}))
+	defer fast.Close()
+
+	root := t.TempDir()
+	cfg := NetworkBootstrapConfig{
+		Path:      filepath.Join(root, "hao_news_net.inf"),
+		NetworkID: latestOrgNetworkID,
+		LANPeers:  []string{slow.URL, fast.URL},
+	}
+
+	start := time.Now()
+	peers, err := resolveLANBootstrapPeers(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("resolveLANBootstrapPeers error = %v", err)
+	}
+	if len(peers) != 2 {
+		t.Fatalf("len(peers) = %d, want 2", len(peers))
+	}
+	if elapsed := time.Since(start); elapsed >= 450*time.Millisecond {
+		t.Fatalf("resolveLANBootstrapPeers took too long: %s", elapsed)
+	}
+}
+
 func TestResolveExplicitBootstrapPeersAppendsTargetPeerToRelayCircuitAddr(t *testing.T) {
 	t.Parallel()
 
