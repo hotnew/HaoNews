@@ -45,6 +45,7 @@ type Member struct {
 	Role            string    `json:"role,omitempty"`
 	Status          string    `json:"status,omitempty"`
 	JoinedAt        time.Time `json:"joined_at,omitempty"`
+	UpdatedAt       time.Time `json:"updated_at,omitempty"`
 }
 
 type Policy struct {
@@ -362,6 +363,9 @@ func (s *Store) LoadMembers(teamID string) ([]Member, error) {
 	for i := range members {
 		members[i].Role = normalizeMemberRole(members[i].Role)
 		members[i].Status = normalizeMemberStatus(members[i].Status)
+		if members[i].UpdatedAt.IsZero() {
+			members[i].UpdatedAt = members[i].JoinedAt
+		}
 	}
 	sort.SliceStable(members, func(i, j int) bool {
 		if members[i].Role != members[j].Role {
@@ -397,6 +401,9 @@ func (s *Store) SaveMembers(teamID string, members []Member) error {
 			if member.JoinedAt.IsZero() {
 				member.JoinedAt = time.Now().UTC()
 			}
+			if member.UpdatedAt.IsZero() {
+				member.UpdatedAt = member.JoinedAt
+			}
 			out = append(out, member)
 		}
 		path := filepath.Join(s.root, teamID, "members.json")
@@ -419,6 +426,30 @@ func (s *Store) SaveMembers(teamID string, members []Member) error {
 		})
 	}
 	return err
+}
+
+func (s *Store) LoadMembersSnapshot(teamID string) ([]Member, time.Time, error) {
+	members, err := s.LoadMembers(teamID)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	return members, membersSnapshotVersion(members), nil
+}
+
+func (s *Store) LoadPolicySnapshot(teamID string) (Policy, time.Time, error) {
+	policy, err := s.LoadPolicy(teamID)
+	if err != nil {
+		return Policy{}, time.Time{}, err
+	}
+	return policy, policySnapshotVersion(policy), nil
+}
+
+func (s *Store) LoadChannelSnapshot(teamID, channelID string) (Channel, time.Time, error) {
+	channel, err := s.LoadChannel(teamID, channelID)
+	if err != nil {
+		return Channel{}, time.Time{}, err
+	}
+	return channel, channelSnapshotVersion(channel), nil
 }
 
 func (s *Store) LoadWebhookConfigs(teamID string) ([]PushNotificationConfig, error) {

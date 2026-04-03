@@ -1843,6 +1843,250 @@ func TestStoreApplyReplicatedSyncMessageAndHistoryAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestStoreApplyReplicatedSyncTaskArtifactAndDeleteHistory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	teamRoot := filepath.Join(root, "team", "project-sync-objects")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-sync-objects","title":"Project Sync Objects"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+
+	task := Task{
+		TeamID:      "project-sync-objects",
+		TaskID:      "task-sync-1",
+		ChannelID:   "main",
+		ContextID:   "ctx-sync-task",
+		Title:       "replicated task",
+		Status:      "doing",
+		Priority:    "high",
+		Description: "remote task",
+		CreatedBy:   "agent://remote/task",
+		CreatedAt:   time.Date(2026, 4, 3, 12, 10, 0, 0, time.UTC),
+		UpdatedAt:   time.Date(2026, 4, 3, 12, 10, 1, 0, time.UTC),
+	}
+	taskSync := TeamSyncMessage{Type: TeamSyncTypeTask, TeamID: "project-sync-objects", Task: &task}.Normalize()
+	applied, err := store.ApplyReplicatedSync(taskSync)
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(task) error = %v", err)
+	}
+	if !applied {
+		t.Fatalf("expected replicated task to apply")
+	}
+	loadedTask, err := store.LoadTask("project-sync-objects", "task-sync-1")
+	if err != nil {
+		t.Fatalf("LoadTask error = %v", err)
+	}
+	if loadedTask.Status != "doing" || loadedTask.Priority != "high" {
+		t.Fatalf("unexpected replicated task: %#v", loadedTask)
+	}
+
+	staleTask := task
+	staleTask.Status = "open"
+	staleTask.UpdatedAt = time.Date(2026, 4, 3, 12, 9, 59, 0, time.UTC)
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{Type: TeamSyncTypeTask, TeamID: "project-sync-objects", Task: &staleTask}.Normalize())
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(stale task) error = %v", err)
+	}
+	if applied {
+		t.Fatalf("expected stale replicated task to be skipped")
+	}
+
+	artifact := Artifact{
+		TeamID:     "project-sync-objects",
+		ArtifactID: "artifact-sync-1",
+		ChannelID:  "main",
+		TaskID:     "task-sync-1",
+		Title:      "replicated artifact",
+		Kind:       "markdown",
+		Summary:    "remote artifact",
+		Content:    "hello",
+		CreatedBy:  "agent://remote/task",
+		CreatedAt:  time.Date(2026, 4, 3, 12, 11, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 4, 3, 12, 11, 1, 0, time.UTC),
+	}
+	artifactSync := TeamSyncMessage{Type: TeamSyncTypeArtifact, TeamID: "project-sync-objects", Artifact: &artifact}.Normalize()
+	applied, err = store.ApplyReplicatedSync(artifactSync)
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(artifact) error = %v", err)
+	}
+	if !applied {
+		t.Fatalf("expected replicated artifact to apply")
+	}
+	loadedArtifact, err := store.LoadArtifact("project-sync-objects", "artifact-sync-1")
+	if err != nil {
+		t.Fatalf("LoadArtifact error = %v", err)
+	}
+	if loadedArtifact.TaskID != "task-sync-1" || loadedArtifact.Title != "replicated artifact" {
+		t.Fatalf("unexpected replicated artifact: %#v", loadedArtifact)
+	}
+
+	deleteTaskHistory := ChangeEvent{
+		EventID:   "task-delete-event-1",
+		TeamID:    "project-sync-objects",
+		Scope:     "task",
+		Action:    "delete",
+		SubjectID: "task-sync-1",
+		Summary:   "task deleted remotely",
+		Source:    "p2p",
+		CreatedAt: time.Date(2026, 4, 3, 12, 12, 0, 0, time.UTC),
+	}
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{Type: TeamSyncTypeHistory, TeamID: "project-sync-objects", History: &deleteTaskHistory}.Normalize())
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(task delete history) error = %v", err)
+	}
+	if !applied {
+		t.Fatalf("expected task delete history to apply")
+	}
+	if _, err := store.LoadTask("project-sync-objects", "task-sync-1"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected deleted replicated task to disappear, got err=%v", err)
+	}
+
+	deleteArtifactHistory := ChangeEvent{
+		EventID:   "artifact-delete-event-1",
+		TeamID:    "project-sync-objects",
+		Scope:     "artifact",
+		Action:    "delete",
+		SubjectID: "artifact-sync-1",
+		Summary:   "artifact deleted remotely",
+		Source:    "p2p",
+		CreatedAt: time.Date(2026, 4, 3, 12, 12, 1, 0, time.UTC),
+	}
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{Type: TeamSyncTypeHistory, TeamID: "project-sync-objects", History: &deleteArtifactHistory}.Normalize())
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(artifact delete history) error = %v", err)
+	}
+	if !applied {
+		t.Fatalf("expected artifact delete history to apply")
+	}
+	if _, err := store.LoadArtifact("project-sync-objects", "artifact-sync-1"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected deleted replicated artifact to disappear, got err=%v", err)
+	}
+}
+
+func TestStoreApplyReplicatedSyncMemberPolicyChannel(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "replicate-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"replicate-team","title":"Replicate Team"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+
+	memberVersion := time.Date(2026, 4, 3, 13, 10, 0, 0, time.UTC)
+	members := []Member{
+		{AgentID: "agent://pc75/owner", Role: "owner", Status: "active", JoinedAt: memberVersion.Add(-time.Hour), UpdatedAt: memberVersion},
+		{AgentID: "agent://pc76/member", Role: "member", Status: "pending", JoinedAt: memberVersion.Add(-30 * time.Minute), UpdatedAt: memberVersion},
+	}
+	applied, err := store.ApplyReplicatedSync(TeamSyncMessage{
+		Type:      TeamSyncTypeMember,
+		TeamID:    "replicate-team",
+		Members:   members,
+		CreatedAt: memberVersion,
+	})
+	if err != nil || !applied {
+		t.Fatalf("ApplyReplicatedSync(members) = (%v, %v), want (true, nil)", applied, err)
+	}
+	gotMembers, err := store.LoadMembers("replicate-team")
+	if err != nil {
+		t.Fatalf("LoadMembers error = %v", err)
+	}
+	if len(gotMembers) != 2 || gotMembers[1].UpdatedAt.IsZero() {
+		t.Fatalf("unexpected replicated members: %#v", gotMembers)
+	}
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{
+		Type:      TeamSyncTypeMember,
+		TeamID:    "replicate-team",
+		Members:   members,
+		CreatedAt: memberVersion.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(stale members) error = %v", err)
+	}
+	if applied {
+		t.Fatalf("expected stale member snapshot to be skipped")
+	}
+
+	policyVersion := time.Date(2026, 4, 3, 13, 15, 0, 0, time.UTC)
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{
+		Type:   TeamSyncTypePolicy,
+		TeamID: "replicate-team",
+		Policy: &Policy{
+			MessageRoles:     []string{"owner", "member"},
+			TaskRoles:        []string{"owner", "maintainer"},
+			SystemNoteRoles:  []string{"owner"},
+			RequireSignature: true,
+			UpdatedAt:        policyVersion,
+		},
+		CreatedAt: policyVersion,
+	})
+	if err != nil || !applied {
+		t.Fatalf("ApplyReplicatedSync(policy) = (%v, %v), want (true, nil)", applied, err)
+	}
+	gotPolicy, err := store.LoadPolicy("replicate-team")
+	if err != nil {
+		t.Fatalf("LoadPolicy error = %v", err)
+	}
+	if !gotPolicy.RequireSignature || len(gotPolicy.MessageRoles) != 2 {
+		t.Fatalf("unexpected replicated policy: %#v", gotPolicy)
+	}
+
+	channelVersion := time.Date(2026, 4, 3, 13, 20, 0, 0, time.UTC)
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{
+		Type:   TeamSyncTypeChannel,
+		TeamID: "replicate-team",
+		Channel: &Channel{
+			ChannelID:   "research",
+			Title:       "Research",
+			Description: "deep work",
+			Hidden:      true,
+			CreatedAt:   channelVersion.Add(-time.Minute),
+			UpdatedAt:   channelVersion,
+		},
+		CreatedAt: channelVersion,
+	})
+	if err != nil || !applied {
+		t.Fatalf("ApplyReplicatedSync(channel) = (%v, %v), want (true, nil)", applied, err)
+	}
+	gotChannel, err := store.LoadChannel("replicate-team", "research")
+	if err != nil {
+		t.Fatalf("LoadChannel error = %v", err)
+	}
+	if gotChannel.Title != "Research" || !gotChannel.Hidden {
+		t.Fatalf("unexpected replicated channel: %#v", gotChannel)
+	}
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{
+		Type:   TeamSyncTypeChannel,
+		TeamID: "replicate-team",
+		Channel: &Channel{
+			ChannelID: "research",
+			Title:     "Old Research",
+			UpdatedAt: channelVersion.Add(-time.Minute),
+		},
+		CreatedAt: channelVersion.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(stale channel) error = %v", err)
+	}
+	if applied {
+		t.Fatalf("expected stale channel snapshot to be skipped")
+	}
+}
+
 func TestStoreSaveMembersNormalizesStatusesForApprovalFlow(t *testing.T) {
 	t.Parallel()
 

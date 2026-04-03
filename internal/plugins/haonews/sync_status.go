@@ -21,6 +21,7 @@ type SyncRuntimeStatus struct {
 	NetworkID        string                     `json:"network_id"`
 	LibP2P           SyncLibP2PStatus           `json:"libp2p"`
 	PubSub           SyncPubSubStatus           `json:"pubsub"`
+	TeamSync         SyncTeamSyncStatus         `json:"team_sync"`
 	SyncActivity     SyncActivityStatus         `json:"sync_activity"`
 	HistoryBootstrap SyncHistoryBootstrapStatus `json:"history_bootstrap"`
 }
@@ -105,6 +106,70 @@ type SyncPubSubStatus struct {
 	LastPublishedAt                  *time.Time `json:"last_published_at"`
 	LastReceivedAt                   *time.Time `json:"last_received_at"`
 	LastError                        string     `json:"last_error"`
+}
+
+type SyncTeamSyncStatus struct {
+	Enabled                 bool       `json:"enabled"`
+	NodeID                  string     `json:"node_id,omitempty"`
+	SubscribedTeams         int        `json:"subscribed_teams"`
+	PrimedChannels          int        `json:"primed_channels"`
+	PrimedHistoryTeams      int        `json:"primed_history_teams"`
+	PrimedTaskTeams         int        `json:"primed_task_teams"`
+	PrimedArtifactTeams     int        `json:"primed_artifact_teams"`
+	PrimedMemberTeams       int        `json:"primed_member_teams"`
+	PrimedPolicyTeams       int        `json:"primed_policy_teams"`
+	PrimedConfigChannels    int        `json:"primed_config_channels"`
+	ScannedMessages         int        `json:"scanned_messages"`
+	ScannedHistory          int        `json:"scanned_history"`
+	ScannedTasks            int        `json:"scanned_tasks"`
+	ScannedArtifacts        int        `json:"scanned_artifacts"`
+	ScannedMembers          int        `json:"scanned_members"`
+	ScannedPolicies         int        `json:"scanned_policies"`
+	ScannedConfigChannels   int        `json:"scanned_config_channels"`
+	PublishedMessages       int        `json:"published_messages"`
+	PublishedHistory        int        `json:"published_history"`
+	PublishedTasks          int        `json:"published_tasks"`
+	PublishedArtifacts      int        `json:"published_artifacts"`
+	PublishedMembers        int        `json:"published_members"`
+	PublishedPolicies       int        `json:"published_policies"`
+	PublishedConfigChannels int        `json:"published_config_channels"`
+	ReceivedMessages        int        `json:"received_messages"`
+	ReceivedHistory         int        `json:"received_history"`
+	ReceivedTasks           int        `json:"received_tasks"`
+	ReceivedArtifacts       int        `json:"received_artifacts"`
+	ReceivedMembers         int        `json:"received_members"`
+	ReceivedPolicies        int        `json:"received_policies"`
+	ReceivedConfigChannels  int        `json:"received_config_channels"`
+	AppliedMessages         int        `json:"applied_messages"`
+	AppliedHistory          int        `json:"applied_history"`
+	AppliedTasks            int        `json:"applied_tasks"`
+	AppliedArtifacts        int        `json:"applied_artifacts"`
+	AppliedMembers          int        `json:"applied_members"`
+	AppliedPolicies         int        `json:"applied_policies"`
+	AppliedConfigChannels   int        `json:"applied_config_channels"`
+	SkippedMessages         int        `json:"skipped_messages"`
+	SkippedHistory          int        `json:"skipped_history"`
+	SkippedTasks            int        `json:"skipped_tasks"`
+	SkippedArtifacts        int        `json:"skipped_artifacts"`
+	SkippedMembers          int        `json:"skipped_members"`
+	SkippedPolicies         int        `json:"skipped_policies"`
+	SkippedConfigChannels   int        `json:"skipped_config_channels"`
+	LastTeamID              string     `json:"last_team_id,omitempty"`
+	LastPublishedKey        string     `json:"last_published_key,omitempty"`
+	LastReceivedKey         string     `json:"last_received_key,omitempty"`
+	LastAppliedKey          string     `json:"last_applied_key,omitempty"`
+	LastScannedChannelID    string     `json:"last_scanned_channel_id,omitempty"`
+	LastScannedMessageID    string     `json:"last_scanned_message_id,omitempty"`
+	LastScannedEventID      string     `json:"last_scanned_event_id,omitempty"`
+	LastScannedTaskID       string     `json:"last_scanned_task_id,omitempty"`
+	LastScannedArtifactID   string     `json:"last_scanned_artifact_id,omitempty"`
+	LastPublishedAt         *time.Time `json:"last_published_at,omitempty"`
+	LastReceivedAt          *time.Time `json:"last_received_at,omitempty"`
+	LastAppliedAt           *time.Time `json:"last_applied_at,omitempty"`
+	LastScannedAt           *time.Time `json:"last_scanned_at,omitempty"`
+	LastSubscriptionAt      *time.Time `json:"last_subscription_at,omitempty"`
+	LastSubscriptionTeam    string     `json:"last_subscription_team,omitempty"`
+	LastError               string     `json:"last_error,omitempty"`
 }
 
 type SyncActivityStatus struct {
