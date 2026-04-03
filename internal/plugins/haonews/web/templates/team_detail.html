@@ -165,6 +165,10 @@
               <span>系统说明角色</span>
               <input type="text" name="system_note_roles" value="{{joinStrings .Policy.SystemNoteRoles}}" placeholder="owner, maintainer">
             </label>
+            <label class="checkbox-field">
+              <span>消息必须签名</span>
+              <input type="checkbox" name="require_signature" value="1" {{if .Policy.RequireSignature}}checked{{end}}>
+            </label>
             <div class="team-form-actions team-form-wide">
               <button class="button-link" type="submit">保存 Team Policy</button>
             </div>

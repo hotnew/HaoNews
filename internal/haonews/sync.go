@@ -162,6 +162,14 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 		return err
 	}
 	defer runtime.pubsub.Close()
+	nodeID := ""
+	if libp2pRuntime != nil && libp2pRuntime.host != nil {
+		nodeID = libp2pRuntime.host.ID().String()
+	}
+	runtime.teamSync, err = startTeamPubSubRuntime(store.Root, runtime.pubsub, nodeID)
+	if err != nil && logf != nil {
+		logf("start team pubsub sync: %v", err)
+	}
 	if state, err := loadHistoryBootstrapState(store); err == nil {
 		runtime.historyBootstrap = state
 	} else if logf != nil {
@@ -186,6 +194,11 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	}
 
 	if opts.Once {
+		if runtime.teamSync != nil {
+			if err := runtime.teamSync.SyncOnce(ctx, logf); err != nil && logf != nil {
+				logf("team sync: %v", err)
+			}
+		}
 		if err := runtime.probeLANAnchors(ctx, logf); err != nil && logf != nil {
 			logf("probe LAN anchors: %v", err)
 		}
@@ -213,6 +226,11 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 	ticker := time.NewTicker(opts.PollInterval)
 	defer ticker.Stop()
 	for {
+		if runtime.teamSync != nil {
+			if err := runtime.teamSync.SyncOnce(ctx, logf); err != nil && logf != nil {
+				logf("team sync: %v", err)
+			}
+		}
 		if err := runtime.maybeProbeLANAnchors(ctx, logf); err != nil && logf != nil {
 			logf("probe LAN anchors: %v", err)
 		}
@@ -242,6 +260,7 @@ func RunSync(ctx context.Context, opts SyncOptions, logf func(string, ...any)) e
 type syncRuntime struct {
 	mu               sync.Mutex
 	store            *Store
+	teamSync         *teamPubSubRuntime
 	queuePath        string
 	historyQueuePath string
 	mode             string

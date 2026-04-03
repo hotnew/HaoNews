@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	teamcore "hao.news/internal/haonews/team"
+
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -27,6 +29,7 @@ const (
 	syncPubSubGlobalTopic      = syncPubSubTopicPrefix + "/global"
 	syncPubSubDiscoveryDefault = "haonews/sync"
 	creditProofTopicPrefix     = "haonews/credit/proofs"
+	teamSyncTopicPrefix        = "haonews/team"
 	reservedTopicAll           = "all"
 	pubsubHandlerTimeout       = 5 * time.Second
 	maxPubSubSubscriptions     = 64
@@ -250,6 +253,42 @@ func (r *pubsubRuntime) PublishCreditProof(ctx context.Context, proof OnlineProo
 	return nil
 }
 
+func (r *pubsubRuntime) PublishTeamSync(ctx context.Context, sync teamcore.TeamSyncMessage) error {
+	if r == nil {
+		return nil
+	}
+	sync = sync.Normalize()
+	if sync.TeamID == "" || sync.Key() == "" {
+		return fmt.Errorf("team sync requires team_id and payload")
+	}
+	body, err := json.Marshal(sync)
+	if err != nil {
+		return err
+	}
+	topicName := teamSyncTopic(r.host.networkID, sync.TeamID)
+	topic, err := r.ensureTopic(topicName)
+	if err != nil {
+		r.recordError(err)
+		return err
+	}
+	publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	err = topic.Publish(publishCtx, body)
+	cancel()
+	if err != nil {
+		r.recordError(err)
+		return fmt.Errorf("publish team sync to %s: %w", topicName, err)
+	}
+	return nil
+}
+
+func (r *pubsubRuntime) SubscribeTeamSync(ctx context.Context, teamID string, handler func(teamcore.TeamSyncMessage) (bool, error)) error {
+	if r == nil {
+		return nil
+	}
+	topicName := teamSyncTopic(r.host.networkID, teamID)
+	return r.subscribeTeamSync(ctx, topicName, handler)
+}
+
 func (r *pubsubRuntime) subscribe(ctx context.Context, topicName string, onAnnouncement func(SyncAnnouncement) (bool, error)) error {
 	topic, err := r.ensureTopic(topicName)
 	if err != nil {
@@ -360,6 +399,65 @@ func (r *pubsubRuntime) subscribeCreditProofs(ctx context.Context, topicName str
 				}
 			}
 			r.recordCreditReceived(proof.ProofID, saved)
+		}
+	}()
+	return nil
+}
+
+func (r *pubsubRuntime) subscribeTeamSync(ctx context.Context, topicName string, handler func(teamcore.TeamSyncMessage) (bool, error)) error {
+	topic, err := r.ensureTopic(topicName)
+	if err != nil {
+		return err
+	}
+	sub, err := topic.Subscribe()
+	if err != nil {
+		return fmt.Errorf("subscribe %s: %w", topicName, err)
+	}
+	r.mu.Lock()
+	r.subscriptions[topicName] = sub
+	r.joinedTopics = uniqueStrings(append(r.joinedTopics, topicName))
+	r.status.JoinedTopics = append([]string(nil), r.joinedTopics...)
+	r.mu.Unlock()
+	if !r.reserveSubscription() {
+		sub.Cancel()
+		r.mu.Lock()
+		delete(r.subscriptions, topicName)
+		r.mu.Unlock()
+		return fmt.Errorf("pubsub subscription limit exceeded")
+	}
+
+	go func() {
+		defer r.releaseSubscription()
+		for {
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				if ctx.Err() == nil {
+					r.recordError(err)
+				}
+				return
+			}
+			if msg.ReceivedFrom == r.host.host.ID() {
+				continue
+			}
+			var syncMsg teamcore.TeamSyncMessage
+			if err := json.Unmarshal(msg.Data, &syncMsg); err != nil {
+				r.recordError(fmt.Errorf("decode team sync on %s: %w", topicName, err))
+				continue
+			}
+			syncMsg = syncMsg.Normalize()
+			if syncMsg.TeamID == "" || syncMsg.Key() == "" {
+				r.recordError(fmt.Errorf("ignore incomplete team sync on %s", topicName))
+				continue
+			}
+			if handler != nil {
+				_, err = runPubSubHandlerWithTimeout(ctx, pubsubHandlerTimeout, func() (bool, error) {
+					return handler(syncMsg)
+				})
+				if err != nil {
+					r.recordError(fmt.Errorf("handle team sync on %s: %w", topicName, err))
+					continue
+				}
+			}
 		}
 	}()
 	return nil
@@ -687,6 +785,14 @@ func creditProofTopic(networkID string) string {
 		return creditProofTopicPrefix
 	}
 	return creditProofTopicPrefix + "/" + url.PathEscape(networkID)
+}
+
+func teamSyncTopic(networkID, teamID string) string {
+	teamID = strings.TrimSpace(strings.ToLower(teamID))
+	if networkID == "" {
+		return teamSyncTopicPrefix + "/" + url.PathEscape(teamID) + "/sync"
+	}
+	return teamSyncTopicPrefix + "/" + url.PathEscape(networkID) + "/" + url.PathEscape(teamID) + "/sync"
 }
 
 func normalizeAnnouncement(announcement SyncAnnouncement) SyncAnnouncement {

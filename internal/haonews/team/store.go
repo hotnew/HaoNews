@@ -2,19 +2,26 @@ package team
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
 
 type Store struct {
-	root string
+	root        string
+	subMu       sync.RWMutex
+	subscribers map[string]map[chan TeamEvent]struct{}
 }
 
 type Info struct {
@@ -41,10 +48,13 @@ type Member struct {
 }
 
 type Policy struct {
-	MessageRoles    []string  `json:"message_roles,omitempty"`
-	TaskRoles       []string  `json:"task_roles,omitempty"`
-	SystemNoteRoles []string  `json:"system_note_roles,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at,omitempty"`
+	MessageRoles     []string                      `json:"message_roles,omitempty"`
+	TaskRoles        []string                      `json:"task_roles,omitempty"`
+	SystemNoteRoles  []string                      `json:"system_note_roles,omitempty"`
+	Permissions      map[string][]string           `json:"permissions,omitempty"`
+	RequireSignature bool                          `json:"require_signature,omitempty"`
+	TaskTransitions  map[string]TaskTransitionRule `json:"task_transitions,omitempty"`
+	UpdatedAt        time.Time                     `json:"updated_at,omitempty"`
 }
 
 type Summary struct {
@@ -72,6 +82,10 @@ type Message struct {
 	MessageID       string         `json:"message_id"`
 	TeamID          string         `json:"team_id"`
 	ChannelID       string         `json:"channel_id"`
+	ContextID       string         `json:"context_id,omitempty"`
+	Signature       string         `json:"signature,omitempty"`
+	Parts           []MessagePart  `json:"parts,omitempty"`
+	References      []Reference    `json:"references,omitempty"`
 	AuthorAgentID   string         `json:"author_agent_id"`
 	OriginPublicKey string         `json:"origin_public_key,omitempty"`
 	ParentPublicKey string         `json:"parent_public_key,omitempty"`
@@ -85,6 +99,7 @@ type Task struct {
 	TaskID          string    `json:"task_id"`
 	TeamID          string    `json:"team_id"`
 	ChannelID       string    `json:"channel_id,omitempty"`
+	ContextID       string    `json:"context_id,omitempty"`
 	Title           string    `json:"title"`
 	Description     string    `json:"description,omitempty"`
 	CreatedBy       string    `json:"created_by,omitempty"`
@@ -117,19 +132,50 @@ type Artifact struct {
 	UpdatedAt       time.Time `json:"updated_at,omitempty"`
 }
 
+type TaskIndexEntry struct {
+	TaskID    string    `json:"task_id"`
+	Offset    int64     `json:"offset"`
+	Length    int       `json:"length"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ChannelID string    `json:"channel_id,omitempty"`
+	ContextID string    `json:"context_id,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	Priority  string    `json:"priority,omitempty"`
+	Deleted   bool      `json:"deleted,omitempty"`
+}
+
+type ArtifactIndexEntry struct {
+	ArtifactID string    `json:"artifact_id"`
+	Offset     int64     `json:"offset"`
+	Length     int       `json:"length"`
+	CreatedAt  time.Time `json:"created_at,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at,omitempty"`
+	ChannelID  string    `json:"channel_id,omitempty"`
+	TaskID     string    `json:"task_id,omitempty"`
+	Kind       string    `json:"kind,omitempty"`
+	Deleted    bool      `json:"deleted,omitempty"`
+}
+
 type ChangeEvent struct {
-	EventID              string         `json:"event_id"`
-	TeamID               string         `json:"team_id"`
-	Scope                string         `json:"scope"`
-	Action               string         `json:"action"`
-	SubjectID            string         `json:"subject_id,omitempty"`
-	Summary              string         `json:"summary,omitempty"`
-	ActorAgentID         string         `json:"actor_agent_id,omitempty"`
-	ActorOriginPublicKey string         `json:"actor_origin_public_key,omitempty"`
-	ActorParentPublicKey string         `json:"actor_parent_public_key,omitempty"`
-	Source               string         `json:"source,omitempty"`
-	Metadata             map[string]any `json:"metadata,omitempty"`
-	CreatedAt            time.Time      `json:"created_at,omitempty"`
+	EventID              string               `json:"event_id"`
+	TeamID               string               `json:"team_id"`
+	Scope                string               `json:"scope"`
+	Action               string               `json:"action"`
+	SubjectID            string               `json:"subject_id,omitempty"`
+	Summary              string               `json:"summary,omitempty"`
+	ActorAgentID         string               `json:"actor_agent_id,omitempty"`
+	ActorOriginPublicKey string               `json:"actor_origin_public_key,omitempty"`
+	ActorParentPublicKey string               `json:"actor_parent_public_key,omitempty"`
+	Source               string               `json:"source,omitempty"`
+	Diff                 map[string]FieldDiff `json:"diff,omitempty"`
+	Metadata             map[string]any       `json:"metadata,omitempty"`
+	CreatedAt            time.Time            `json:"created_at,omitempty"`
+}
+
+type FieldDiff struct {
+	Before any `json:"before,omitempty"`
+	After  any `json:"after,omitempty"`
 }
 
 type TaskThread struct {
@@ -157,12 +203,35 @@ type ArchiveSnapshot struct {
 	HistoryCount  int           `json:"history_count"`
 }
 
+type TeamEvent struct {
+	EventID   string         `json:"event_id"`
+	TeamID    string         `json:"team_id"`
+	Kind      string         `json:"kind"`
+	Action    string         `json:"action"`
+	SubjectID string         `json:"subject_id,omitempty"`
+	ChannelID string         `json:"channel_id,omitempty"`
+	ContextID string         `json:"context_id,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	CreatedAt time.Time      `json:"created_at,omitempty"`
+}
+
+type PushNotificationConfig struct {
+	WebhookID string    `json:"webhook_id,omitempty"`
+	URL       string    `json:"url"`
+	Token     string    `json:"token,omitempty"`
+	Events    []string  `json:"events,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
 func OpenStore(storeRoot string) (*Store, error) {
 	root := filepath.Join(strings.TrimSpace(storeRoot), "team")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return &Store{root: root}, nil
+	return &Store{
+		root:        root,
+		subscribers: make(map[string]map[chan TeamEvent]struct{}),
+	}, nil
 }
 
 func (s *Store) Root() string {
@@ -311,7 +380,7 @@ func (s *Store) SaveMembers(teamID string, members []Member) error {
 	if teamID == "" {
 		return errors.New("empty team id")
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
 		out := make([]Member, 0, len(members))
 		seen := make(map[string]struct{}, len(members))
 		for _, member := range members {
@@ -335,6 +404,60 @@ func (s *Store) SaveMembers(teamID string, members []Member) error {
 			return err
 		}
 		body, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
+		body = append(body, '\n')
+		return os.WriteFile(path, body, 0o644)
+	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:   teamID,
+			Kind:     "member",
+			Action:   "replace",
+			Metadata: map[string]any{"member_count": len(members)},
+		})
+	}
+	return err
+}
+
+func (s *Store) LoadWebhookConfigs(teamID string) ([]PushNotificationConfig, error) {
+	if s == nil {
+		return nil, errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return nil, errors.New("empty team id")
+	}
+	data, err := os.ReadFile(s.webhookConfigPath(teamID))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var configs []PushNotificationConfig
+	if err := json.Unmarshal(data, &configs); err != nil {
+		return nil, err
+	}
+	return normalizeWebhookConfigs(configs), nil
+}
+
+func (s *Store) SaveWebhookConfigs(teamID string, configs []PushNotificationConfig) error {
+	if s == nil {
+		return errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return errors.New("empty team id")
+	}
+	configs = normalizeWebhookConfigs(configs)
+	return s.withTeamLock(teamID, func() error {
+		path := s.webhookConfigPath(teamID)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		body, err := json.MarshalIndent(configs, "", "  ")
 		if err != nil {
 			return err
 		}
@@ -378,7 +501,7 @@ func (s *Store) SavePolicy(teamID string, policy Policy) error {
 	if policy.UpdatedAt.IsZero() {
 		policy.UpdatedAt = time.Now().UTC()
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
 		path := filepath.Join(s.root, teamID, "policy.json")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
@@ -390,6 +513,14 @@ func (s *Store) SavePolicy(teamID string, policy Policy) error {
 		body = append(body, '\n')
 		return os.WriteFile(path, body, 0o644)
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID: teamID,
+			Kind:   "policy",
+			Action: "update",
+		})
+	}
+	return err
 }
 
 func (s *Store) AppendMessage(teamID string, msg Message) error {
@@ -412,6 +543,13 @@ func (s *Store) AppendMessage(teamID string, msg Message) error {
 		return fmt.Errorf("team message team_id %q does not match %q", msg.TeamID, teamID)
 	}
 	msg.ChannelID = channelID
+	msg.ContextID = normalizeContextID(msg.ContextID)
+	if msg.ContextID == "" && len(msg.StructuredData) > 0 {
+		msg.ContextID = structuredDataContextID(msg.StructuredData)
+	}
+	msg.Signature = strings.TrimSpace(msg.Signature)
+	msg.Parts = normalizeMessageParts(msg.Parts)
+	msg.References = normalizeReferences(msg.References)
 	msg.MessageType = strings.TrimSpace(msg.MessageType)
 	if msg.MessageType == "" {
 		msg.MessageType = "chat"
@@ -423,11 +561,27 @@ func (s *Store) AppendMessage(teamID string, msg Message) error {
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now().UTC()
 	}
+	if msg.ContextID != "" {
+		if msg.StructuredData == nil {
+			msg.StructuredData = make(map[string]any, 1)
+		}
+		msg.StructuredData["context_id"] = msg.ContextID
+	}
 	if strings.TrimSpace(msg.MessageID) == "" {
 		msg.MessageID = buildMessageID(msg)
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
+		policy, err := s.LoadPolicy(teamID)
+		if err != nil {
+			return err
+		}
+		if err := validateMessageSignaturePolicy(msg, policy); err != nil {
+			return err
+		}
 		path := s.channelPath(teamID, channelID)
+		if s.isShardedChannel(teamID, channelID) {
+			path = s.channelShardPath(teamID, channelID, msg.CreatedAt)
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
@@ -445,6 +599,21 @@ func (s *Store) AppendMessage(teamID string, msg Message) error {
 		}
 		return nil
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "message",
+			Action:    "create",
+			SubjectID: msg.MessageID,
+			ChannelID: msg.ChannelID,
+			ContextID: msg.ContextID,
+			Metadata: map[string]any{
+				"author_agent_id": msg.AuthorAgentID,
+				"message_type":    msg.MessageType,
+			},
+		})
+	}
+	return err
 }
 
 func (s *Store) LoadMessages(teamID, channelID string, limit int) ([]Message, error) {
@@ -458,6 +627,9 @@ func (s *Store) LoadMessages(teamID, channelID string, limit int) ([]Message, er
 	channelID = normalizeChannelID(channelID)
 	if channelID == "" {
 		channelID = "main"
+	}
+	if s.isShardedChannel(teamID, channelID) {
+		return s.loadMessagesFromShards(teamID, channelID, limit)
 	}
 	path := s.channelPath(teamID, channelID)
 	file, err := os.Open(path)
@@ -506,6 +678,133 @@ func (s *Store) LoadMessages(teamID, channelID string, limit int) ([]Message, er
 		return out[i].MessageID > out[j].MessageID
 	})
 	return out, nil
+}
+
+func (s *Store) loadMessagesFromShards(teamID, channelID string, limit int) ([]Message, error) {
+	dir := s.channelShardDir(teamID, channelID)
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		paths = append(paths, filepath.Join(dir, entry.Name()))
+	}
+	sort.Slice(paths, func(i, j int) bool {
+		return filepath.Base(paths[i]) > filepath.Base(paths[j])
+	})
+	out := make([]Message, 0)
+	for _, path := range paths {
+		var lines []string
+		if limit > 0 {
+			lines, err = readLastJSONLLines(path, limit-len(out))
+		} else {
+			lines, err = readAllJSONLLines(path)
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range lines {
+			var msg Message
+			if err := json.Unmarshal([]byte(line), &msg); err != nil {
+				continue
+			}
+			out = append(out, msg)
+		}
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].MessageID > out[j].MessageID
+	})
+	if limit > 0 && len(out) > limit {
+		out = append([]Message(nil), out[:limit]...)
+	}
+	return out, nil
+}
+
+func readAllJSONLLines(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	lines := make([]string, 0, 32)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return lines, nil
+}
+
+func (s *Store) MigrateChannelToShards(teamID, channelID string) error {
+	if s == nil {
+		return errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	channelID = normalizeChannelID(channelID)
+	if teamID == "" {
+		return errors.New("empty team id")
+	}
+	return s.withTeamLock(teamID, func() error {
+		legacyPath := s.channelPath(teamID, channelID)
+		if s.isShardedChannel(teamID, channelID) {
+			if _, err := os.Stat(legacyPath); errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+		}
+		lines, err := readAllJSONLLines(legacyPath)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, line := range lines {
+			var msg Message
+			if err := json.Unmarshal([]byte(line), &msg); err != nil {
+				continue
+			}
+			if msg.CreatedAt.IsZero() {
+				msg.CreatedAt = time.Now().UTC()
+			}
+			shardPath := s.channelShardPath(teamID, channelID, msg.CreatedAt)
+			if err := os.MkdirAll(filepath.Dir(shardPath), 0o755); err != nil {
+				return err
+			}
+			file, err := os.OpenFile(shardPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+			if err != nil {
+				return err
+			}
+			if _, err := file.Write(append([]byte(line), '\n')); err != nil {
+				_ = file.Close()
+				return err
+			}
+			if err := file.Close(); err != nil {
+				return err
+			}
+		}
+		backupPath := s.channelLegacyBackupPath(teamID, channelID)
+		_ = os.Remove(backupPath)
+		return os.Rename(legacyPath, backupPath)
+	})
 }
 
 func readLastJSONLLines(path string, limit int) ([]string, error) {
@@ -577,7 +876,7 @@ func (s *Store) LoadChannel(teamID, channelID string) (Channel, error) {
 			return channel, nil
 		}
 	}
-	if _, err := os.Stat(s.channelPath(teamID, channelID)); err == nil {
+	if _, err := os.Stat(s.channelPath(teamID, channelID)); err == nil || s.isShardedChannel(teamID, channelID) {
 		return defaultChannel(channelID), nil
 	}
 	return Channel{}, os.ErrNotExist
@@ -595,7 +894,7 @@ func (s *Store) SaveChannel(teamID string, channel Channel) error {
 	if channel.ChannelID == "" {
 		return errors.New("empty channel id")
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
 		channels, err := s.loadChannelConfigs(teamID)
 		if err != nil {
 			return err
@@ -628,6 +927,16 @@ func (s *Store) SaveChannel(teamID string, channel Channel) error {
 		}
 		return s.saveChannels(teamID, channels)
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "channel",
+			Action:    "upsert",
+			SubjectID: channel.ChannelID,
+			ChannelID: channel.ChannelID,
+		})
+	}
+	return err
 }
 
 func (s *Store) HideChannel(teamID, channelID string) error {
@@ -668,10 +977,15 @@ func (s *Store) ListChannels(teamID string) ([]ChannelSummary, error) {
 		return nil, err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+		channelID := ""
+		if entry.IsDir() {
+			channelID = normalizeChannelID(entry.Name())
+		} else if strings.HasSuffix(entry.Name(), ".jsonl") {
+			channelID = normalizeChannelID(strings.TrimSuffix(entry.Name(), ".jsonl"))
+		}
+		if channelID == "" {
 			continue
 		}
-		channelID := normalizeChannelID(strings.TrimSuffix(entry.Name(), ".jsonl"))
 		if _, ok := seen[channelID]; ok {
 			continue
 		}
@@ -716,6 +1030,7 @@ func (s *Store) AppendTask(teamID string, task Task) error {
 	}
 	task.Priority = normalizeTaskPriority(task.Priority)
 	task.ChannelID = normalizeChannelID(task.ChannelID)
+	task.ContextID = normalizeContextID(task.ContextID)
 	task.Description = strings.TrimSpace(task.Description)
 	task.CreatedBy = strings.TrimSpace(task.CreatedBy)
 	task.Assignees = normalizeNonEmptyStrings(task.Assignees)
@@ -726,20 +1041,65 @@ func (s *Store) AppendTask(teamID string, task Task) error {
 	if task.UpdatedAt.IsZero() {
 		task.UpdatedAt = task.CreatedAt
 	}
+	if task.ContextID == "" {
+		task.ContextID = generateContextID(teamID)
+	}
 	if strings.TrimSpace(task.TaskID) == "" {
 		task.TaskID = buildTaskID(task)
 	}
-	return s.withTeamLock(teamID, func() error {
-		tasks, err := s.LoadTasks(teamID, 0)
+	err := s.withTeamLock(teamID, func() error {
+		policy, err := s.LoadPolicy(teamID)
+		if err != nil {
+			return err
+		}
+		if !IsValidTransitionWithPolicy("", task.Status, policy) {
+			return fmt.Errorf("invalid task status transition %q -> %q", "", task.Status)
+		}
+		if IsTerminalState(task.Status) && task.ClosedAt.IsZero() {
+			task.ClosedAt = task.UpdatedAt
+		}
+		if s.hasTaskIndex(teamID) {
+			return s.appendTaskIndexedLocked(teamID, task)
+		}
+		tasks, err := s.loadLegacyTasks(teamID)
 		if err != nil {
 			return err
 		}
 		tasks = append(tasks, task)
 		return s.saveTasks(teamID, tasks)
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "task",
+			Action:    "create",
+			SubjectID: task.TaskID,
+			ChannelID: task.ChannelID,
+			ContextID: task.ContextID,
+		})
+	}
+	return err
 }
 
 func (s *Store) LoadTasks(teamID string, limit int) ([]Task, error) {
+	if s == nil {
+		return nil, errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return nil, errors.New("empty team id")
+	}
+	if s.hasTaskIndex(teamID) {
+		return s.loadTasksFromIndex(teamID, limit)
+	}
+	return s.loadLegacyTasksWithLimit(teamID, limit)
+}
+
+func (s *Store) loadLegacyTasks(teamID string) ([]Task, error) {
+	return s.loadLegacyTasksWithLimit(teamID, 0)
+}
+
+func (s *Store) loadLegacyTasksWithLimit(teamID string, limit int) ([]Task, error) {
 	if s == nil {
 		return nil, errors.New("nil team store")
 	}
@@ -808,7 +1168,10 @@ func (s *Store) LoadTask(teamID, taskID string) (Task, error) {
 	if taskID == "" {
 		return Task{}, errors.New("empty task id")
 	}
-	tasks, err := s.LoadTasks(teamID, 0)
+	if s.hasTaskIndex(teamID) {
+		return s.loadTaskFromIndex(teamID, taskID)
+	}
+	tasks, err := s.loadLegacyTasks(teamID)
 	if err != nil {
 		return Task{}, err
 	}
@@ -832,7 +1195,14 @@ func (s *Store) SaveTask(teamID string, task Task) error {
 	if taskID == "" {
 		return errors.New("empty task id")
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
+		policy, err := s.LoadPolicy(teamID)
+		if err != nil {
+			return err
+		}
+		if s.hasTaskIndex(teamID) {
+			return s.saveTaskIndexedLocked(teamID, task, policy)
+		}
 		tasks, err := s.LoadTasks(teamID, 0)
 		if err != nil {
 			return err
@@ -855,8 +1225,15 @@ func (s *Store) SaveTask(teamID string, task Task) error {
 					task.Status = "open"
 				}
 			}
+			if !IsValidTransitionWithPolicy(tasks[i].Status, task.Status, policy) {
+				return fmt.Errorf("invalid task status transition %q -> %q", normalizeTaskStatus(tasks[i].Status), task.Status)
+			}
 			task.Priority = normalizeTaskPriority(task.Priority)
 			task.ChannelID = normalizeChannelID(task.ChannelID)
+			task.ContextID = normalizeContextID(task.ContextID)
+			if task.ContextID == "" {
+				task.ContextID = normalizeContextID(tasks[i].ContextID)
+			}
 			task.Description = strings.TrimSpace(task.Description)
 			task.CreatedBy = strings.TrimSpace(task.CreatedBy)
 			task.Assignees = normalizeNonEmptyStrings(task.Assignees)
@@ -867,6 +1244,13 @@ func (s *Store) SaveTask(teamID string, task Task) error {
 			if task.UpdatedAt.IsZero() {
 				task.UpdatedAt = time.Now().UTC()
 			}
+			if IsTerminalState(task.Status) {
+				if task.ClosedAt.IsZero() {
+					task.ClosedAt = task.UpdatedAt
+				}
+			} else {
+				task.ClosedAt = time.Time{}
+			}
 			tasks[i] = task
 			updated = true
 			break
@@ -876,6 +1260,21 @@ func (s *Store) SaveTask(teamID string, task Task) error {
 		}
 		return s.saveTasks(teamID, tasks)
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "task",
+			Action:    "update",
+			SubjectID: task.TaskID,
+			ChannelID: task.ChannelID,
+			ContextID: task.ContextID,
+			Metadata: map[string]any{
+				"status":   task.Status,
+				"priority": task.Priority,
+			},
+		})
+	}
+	return err
 }
 
 func (s *Store) DeleteTask(teamID, taskID string) error {
@@ -890,7 +1289,10 @@ func (s *Store) DeleteTask(teamID, taskID string) error {
 	if taskID == "" {
 		return errors.New("empty task id")
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
+		if s.hasTaskIndex(teamID) {
+			return s.deleteTaskIndexedLocked(teamID, taskID)
+		}
 		tasks, err := s.LoadTasks(teamID, 0)
 		if err != nil {
 			return err
@@ -909,6 +1311,15 @@ func (s *Store) DeleteTask(teamID, taskID string) error {
 		}
 		return s.saveTasks(teamID, out)
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "task",
+			Action:    "delete",
+			SubjectID: taskID,
+		})
+	}
+	return err
 }
 
 func (s *Store) AppendArtifact(teamID string, artifact Artifact) error {
@@ -945,17 +1356,52 @@ func (s *Store) AppendArtifact(teamID string, artifact Artifact) error {
 	if strings.TrimSpace(artifact.ArtifactID) == "" {
 		artifact.ArtifactID = buildArtifactID(artifact)
 	}
-	return s.withTeamLock(teamID, func() error {
-		artifacts, err := s.LoadArtifacts(teamID, 0)
+	err := s.withTeamLock(teamID, func() error {
+		if s.hasArtifactIndex(teamID) {
+			return s.appendArtifactIndexedLocked(teamID, artifact)
+		}
+		artifacts, err := s.loadLegacyArtifacts(teamID)
 		if err != nil {
 			return err
 		}
 		artifacts = append(artifacts, artifact)
 		return s.saveArtifacts(teamID, artifacts)
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "artifact",
+			Action:    "create",
+			SubjectID: artifact.ArtifactID,
+			ChannelID: artifact.ChannelID,
+			Metadata: map[string]any{
+				"task_id": artifact.TaskID,
+				"kind":    artifact.Kind,
+			},
+		})
+	}
+	return err
 }
 
 func (s *Store) LoadArtifacts(teamID string, limit int) ([]Artifact, error) {
+	if s == nil {
+		return nil, errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return nil, errors.New("empty team id")
+	}
+	if s.hasArtifactIndex(teamID) {
+		return s.loadArtifactsFromIndex(teamID, limit)
+	}
+	return s.loadLegacyArtifactsWithLimit(teamID, limit)
+}
+
+func (s *Store) loadLegacyArtifacts(teamID string) ([]Artifact, error) {
+	return s.loadLegacyArtifactsWithLimit(teamID, 0)
+}
+
+func (s *Store) loadLegacyArtifactsWithLimit(teamID string, limit int) ([]Artifact, error) {
 	if s == nil {
 		return nil, errors.New("nil team store")
 	}
@@ -1024,7 +1470,10 @@ func (s *Store) LoadArtifact(teamID, artifactID string) (Artifact, error) {
 	if artifactID == "" {
 		return Artifact{}, errors.New("empty artifact id")
 	}
-	artifacts, err := s.LoadArtifacts(teamID, 0)
+	if s.hasArtifactIndex(teamID) {
+		return s.loadArtifactFromIndex(teamID, artifactID)
+	}
+	artifacts, err := s.loadLegacyArtifacts(teamID)
 	if err != nil {
 		return Artifact{}, err
 	}
@@ -1051,6 +1500,7 @@ func (s *Store) AppendHistory(teamID string, event ChangeEvent) error {
 	event.ActorOriginPublicKey = strings.TrimSpace(event.ActorOriginPublicKey)
 	event.ActorParentPublicKey = strings.TrimSpace(event.ActorParentPublicKey)
 	event.Source = strings.TrimSpace(event.Source)
+	event.Diff = normalizeFieldDiffs(event.Diff)
 	if event.Scope == "" || event.Action == "" {
 		return errors.New("empty team history scope or action")
 	}
@@ -1063,7 +1513,7 @@ func (s *Store) AppendHistory(teamID string, event ChangeEvent) error {
 	if strings.TrimSpace(event.EventID) == "" {
 		event.EventID = buildChangeEventID(event)
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
 		path := filepath.Join(s.root, teamID, "history.jsonl")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
@@ -1082,6 +1532,39 @@ func (s *Store) AppendHistory(teamID string, event ChangeEvent) error {
 		}
 		return nil
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "history",
+			Action:    event.Action,
+			SubjectID: event.SubjectID,
+			Metadata: map[string]any{
+				"scope": event.Scope,
+			},
+		})
+	}
+	return err
+}
+
+func normalizeFieldDiffs(diff map[string]FieldDiff) map[string]FieldDiff {
+	if len(diff) == 0 {
+		return nil
+	}
+	out := make(map[string]FieldDiff, len(diff))
+	for key, item := range diff {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if reflect.DeepEqual(item.Before, item.After) {
+			continue
+		}
+		out[key] = item
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *Store) LoadHistory(teamID string, limit int) ([]ChangeEvent, error) {
@@ -1182,7 +1665,10 @@ func (s *Store) SaveArtifact(teamID string, artifact Artifact) error {
 	if artifactID == "" {
 		return errors.New("empty artifact id")
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
+		if s.hasArtifactIndex(teamID) {
+			return s.saveArtifactIndexedLocked(teamID, artifact)
+		}
 		artifacts, err := s.LoadArtifacts(teamID, 0)
 		if err != nil {
 			return err
@@ -1219,6 +1705,20 @@ func (s *Store) SaveArtifact(teamID string, artifact Artifact) error {
 		}
 		return s.saveArtifacts(teamID, artifacts)
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "artifact",
+			Action:    "update",
+			SubjectID: artifact.ArtifactID,
+			ChannelID: artifact.ChannelID,
+			Metadata: map[string]any{
+				"task_id": artifact.TaskID,
+				"kind":    artifact.Kind,
+			},
+		})
+	}
+	return err
 }
 
 func (s *Store) DeleteArtifact(teamID, artifactID string) error {
@@ -1233,7 +1733,10 @@ func (s *Store) DeleteArtifact(teamID, artifactID string) error {
 	if artifactID == "" {
 		return errors.New("empty artifact id")
 	}
-	return s.withTeamLock(teamID, func() error {
+	err := s.withTeamLock(teamID, func() error {
+		if s.hasArtifactIndex(teamID) {
+			return s.deleteArtifactIndexedLocked(teamID, artifactID)
+		}
 		artifacts, err := s.LoadArtifacts(teamID, 0)
 		if err != nil {
 			return err
@@ -1252,6 +1755,15 @@ func (s *Store) DeleteArtifact(teamID, artifactID string) error {
 		}
 		return s.saveArtifacts(teamID, out)
 	})
+	if err == nil {
+		s.publish(TeamEvent{
+			TeamID:    teamID,
+			Kind:      "artifact",
+			Action:    "delete",
+			SubjectID: artifactID,
+		})
+	}
+	return err
 }
 
 func (s *Store) LoadTaskMessages(teamID, taskID string, limit int) ([]Message, error) {
@@ -1299,6 +1811,71 @@ func (s *Store) LoadTaskMessages(teamID, taskID string, limit int) ([]Message, e
 		matched = append([]Message(nil), matched[:limit]...)
 	}
 	return matched, nil
+}
+
+func (s *Store) LoadMessagesByContext(teamID, contextID string, limit int) ([]Message, error) {
+	if s == nil {
+		return nil, errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	contextID = normalizeContextID(contextID)
+	if teamID == "" {
+		return nil, errors.New("empty team id")
+	}
+	if contextID == "" {
+		return nil, errors.New("empty context id")
+	}
+	channelSummaries, err := s.ListChannels(teamID)
+	if err != nil {
+		return nil, err
+	}
+	matched := make([]Message, 0)
+	for _, channel := range channelSummaries {
+		messages, err := s.LoadMessages(teamID, channel.ChannelID, 0)
+		if err != nil {
+			return nil, err
+		}
+		for _, message := range messages {
+			if normalizeContextID(message.ContextID) == contextID || structuredDataContextID(message.StructuredData) == contextID {
+				matched = append(matched, message)
+			}
+		}
+	}
+	sort.SliceStable(matched, func(i, j int) bool {
+		if !matched[i].CreatedAt.Equal(matched[j].CreatedAt) {
+			return matched[i].CreatedAt.After(matched[j].CreatedAt)
+		}
+		return matched[i].MessageID > matched[j].MessageID
+	})
+	if limit > 0 && len(matched) > limit {
+		matched = append([]Message(nil), matched[:limit]...)
+	}
+	return matched, nil
+}
+
+func (s *Store) LoadTasksByContext(teamID, contextID string) ([]Task, error) {
+	if s == nil {
+		return nil, errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	contextID = normalizeContextID(contextID)
+	if teamID == "" {
+		return nil, errors.New("empty team id")
+	}
+	if contextID == "" {
+		return nil, errors.New("empty context id")
+	}
+	tasks, err := s.LoadTasks(teamID, 0)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Task, 0)
+	for _, task := range tasks {
+		if normalizeContextID(task.ContextID) == contextID {
+			out = append(out, task)
+		}
+	}
+	return out, nil
 }
 
 func (s *Store) CreateManualArchive(teamID string, now time.Time) (*ArchiveSnapshot, error) {
@@ -1379,7 +1956,136 @@ func (s *Store) CreateManualArchive(teamID string, now time.Time) (*ArchiveSnaps
 	}); err != nil {
 		return nil, err
 	}
+	s.publish(TeamEvent{
+		TeamID:    teamID,
+		Kind:      "archive",
+		Action:    "create",
+		SubjectID: snapshot.ArchiveID,
+		Metadata: map[string]any{
+			"kind":          snapshot.Kind,
+			"message_count": snapshot.MessageCount,
+			"task_count":    snapshot.TaskCount,
+		},
+	})
 	return &snapshot, nil
+}
+
+func (s *Store) Subscribe(teamID string) (<-chan TeamEvent, func(), error) {
+	if s == nil {
+		return nil, nil, errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return nil, nil, errors.New("empty team id")
+	}
+	ch := make(chan TeamEvent, 32)
+	s.subMu.Lock()
+	if s.subscribers == nil {
+		s.subscribers = make(map[string]map[chan TeamEvent]struct{})
+	}
+	if s.subscribers[teamID] == nil {
+		s.subscribers[teamID] = make(map[chan TeamEvent]struct{})
+	}
+	s.subscribers[teamID][ch] = struct{}{}
+	s.subMu.Unlock()
+	cancel := func() {
+		s.subMu.Lock()
+		defer s.subMu.Unlock()
+		if subs := s.subscribers[teamID]; subs != nil {
+			delete(subs, ch)
+			if len(subs) == 0 {
+				delete(s.subscribers, teamID)
+			}
+		}
+	}
+	return ch, cancel, nil
+}
+
+func (s *Store) publish(event TeamEvent) {
+	if s == nil {
+		return
+	}
+	event.TeamID = NormalizeTeamID(event.TeamID)
+	event.Kind = strings.TrimSpace(event.Kind)
+	event.Action = strings.TrimSpace(event.Action)
+	event.SubjectID = strings.TrimSpace(event.SubjectID)
+	event.ChannelID = normalizeChannelID(event.ChannelID)
+	if event.ChannelID == "main" && strings.TrimSpace(event.Kind) != "message" && strings.TrimSpace(event.Kind) != "channel" {
+		event.ChannelID = ""
+	}
+	event.ContextID = normalizeContextID(event.ContextID)
+	if event.TeamID == "" || event.Kind == "" || event.Action == "" {
+		return
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
+	}
+	if strings.TrimSpace(event.EventID) == "" {
+		event.EventID = fmt.Sprintf("%s:%s:%s:%s", event.TeamID, event.Kind, event.Action, event.CreatedAt.UTC().Format(time.RFC3339Nano))
+	}
+	s.subMu.RLock()
+	subs := s.subscribers[event.TeamID]
+	targets := make([]chan TeamEvent, 0, len(subs))
+	for ch := range subs {
+		targets = append(targets, ch)
+	}
+	s.subMu.RUnlock()
+	for _, ch := range targets {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
+	configs, err := s.LoadWebhookConfigs(event.TeamID)
+	if err != nil || len(configs) == 0 {
+		return
+	}
+	for _, cfg := range configs {
+		if !matchesEventFilter(cfg.Events, event) {
+			continue
+		}
+		go s.sendWebhook(cfg, event)
+	}
+}
+
+func matchesEventFilter(filters []string, event TeamEvent) bool {
+	if len(filters) == 0 {
+		return true
+	}
+	kind := strings.ToLower(strings.TrimSpace(event.Kind))
+	action := strings.ToLower(strings.TrimSpace(event.Action))
+	full := kind + "." + action
+	for _, filter := range filters {
+		filter = strings.ToLower(strings.TrimSpace(filter))
+		if filter == "" {
+			continue
+		}
+		if filter == "*" || filter == kind || filter == full {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) sendWebhook(cfg PushNotificationConfig, event TeamEvent) {
+	body, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest(http.MethodPost, cfg.URL, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token := strings.TrimSpace(cfg.Token); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
 }
 
 func (s *Store) ListArchives(teamID string) ([]ArchiveSnapshot, error) {
@@ -1538,6 +2244,25 @@ func normalizeChannelID(value string) string {
 	return value
 }
 
+func normalizeContextID(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func generateContextID(teamID string) string {
+	return fmt.Sprintf("%s-%s", NormalizeTeamID(teamID), time.Now().UTC().Format("20060102T150405.000000000Z"))
+}
+
+func structuredDataContextID(values map[string]any) string {
+	if len(values) == 0 {
+		return ""
+	}
+	value, ok := values["context_id"]
+	if !ok || value == nil {
+		return ""
+	}
+	return normalizeContextID(fmt.Sprint(value))
+}
+
 func normalizeMemberRole(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "owner":
@@ -1572,6 +2297,8 @@ func normalizePolicy(policy Policy) Policy {
 	policy.MessageRoles = normalizePolicyRoles(policy.MessageRoles, []string{"owner", "maintainer", "member"})
 	policy.TaskRoles = normalizePolicyRoles(policy.TaskRoles, []string{"owner", "maintainer", "member"})
 	policy.SystemNoteRoles = normalizePolicyRoles(policy.SystemNoteRoles, []string{"owner", "maintainer"})
+	policy.Permissions = normalizePolicyPermissions(policy.Permissions)
+	policy.TaskTransitions = normalizeTaskTransitions(policy.TaskTransitions)
 	return policy
 }
 
@@ -1597,6 +2324,104 @@ func normalizePolicyRoles(values []string, defaults []string) []string {
 		return append([]string(nil), defaults...)
 	}
 	return out
+}
+
+func normalizePolicyPermissions(values map[string][]string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(values))
+	for action, roles := range values {
+		action = normalizePolicyAction(action)
+		if action == "" {
+			continue
+		}
+		out[action] = normalizePolicyRoles(roles, nil)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizePolicyAction(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeWebhookConfigs(values []PushNotificationConfig) []PushNotificationConfig {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]PushNotificationConfig, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, cfg := range values {
+		cfg.URL = strings.TrimSpace(cfg.URL)
+		if cfg.URL == "" {
+			continue
+		}
+		cfg.Token = strings.TrimSpace(cfg.Token)
+		cfg.Events = normalizeNonEmptyStrings(cfg.Events)
+		if cfg.UpdatedAt.IsZero() {
+			cfg.UpdatedAt = time.Now().UTC()
+		}
+		cfg.WebhookID = strings.TrimSpace(cfg.WebhookID)
+		if cfg.WebhookID == "" {
+			cfg.WebhookID = fmt.Sprintf("webhook-%s", cfg.UpdatedAt.UTC().Format("20060102T150405.000000000Z"))
+		}
+		if _, ok := seen[cfg.WebhookID]; ok {
+			continue
+		}
+		seen[cfg.WebhookID] = struct{}{}
+		out = append(out, cfg)
+	}
+	return out
+}
+
+func (p Policy) Allows(action, role string) bool {
+	action = normalizePolicyAction(action)
+	role = normalizeMemberRole(role)
+	if action == "" || role == "" {
+		return false
+	}
+	if len(p.Permissions) > 0 {
+		if roles, ok := p.Permissions[action]; ok {
+			return containsRole(roles, role)
+		}
+	}
+	return p.legacyAllows(action, role)
+}
+
+func (p Policy) legacyAllows(action, role string) bool {
+	switch {
+	case action == "message.send":
+		return containsRole(p.MessageRoles, role)
+	case strings.HasPrefix(action, "task."):
+		return containsRole(p.TaskRoles, role)
+	case strings.HasPrefix(action, "artifact."):
+		return containsRole(p.TaskRoles, role)
+	case strings.HasPrefix(action, "member."):
+		return containsRole(p.SystemNoteRoles, role)
+	case strings.HasPrefix(action, "channel."):
+		return containsRole(p.SystemNoteRoles, role)
+	case action == "policy.update":
+		return containsRole(p.SystemNoteRoles, role)
+	case action == "archive.create":
+		return containsRole(p.SystemNoteRoles, role)
+	case action == "agent_card.register":
+		return containsRole(p.SystemNoteRoles, role)
+	default:
+		return false
+	}
+}
+
+func containsRole(values []string, role string) bool {
+	role = normalizeMemberRole(role)
+	for _, value := range values {
+		if normalizeMemberRole(value) == role {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeArtifactKind(value string) string {
@@ -1650,12 +2475,35 @@ func (s *Store) channelPath(teamID, channelID string) string {
 	return filepath.Join(s.root, teamID, "channels", normalizeChannelID(channelID)+".jsonl")
 }
 
+func (s *Store) channelLegacyBackupPath(teamID, channelID string) string {
+	return s.channelPath(teamID, channelID) + ".bak"
+}
+
+func (s *Store) channelShardDir(teamID, channelID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), "channels", normalizeChannelID(channelID))
+}
+
+func (s *Store) channelShardPath(teamID, channelID string, at time.Time) string {
+	at = at.UTC()
+	year, week := at.ISOWeek()
+	return filepath.Join(s.channelShardDir(teamID, channelID), fmt.Sprintf("%04d-W%02d.jsonl", year, week))
+}
+
+func (s *Store) isShardedChannel(teamID, channelID string) bool {
+	info, err := os.Stat(s.channelShardDir(teamID, channelID))
+	return err == nil && info.IsDir()
+}
+
 func (s *Store) channelsConfigPath(teamID string) string {
 	return filepath.Join(s.root, NormalizeTeamID(teamID), "channels.json")
 }
 
 func (s *Store) teamLockPath(teamID string) string {
 	return filepath.Join(s.root, NormalizeTeamID(teamID), ".lock")
+}
+
+func (s *Store) webhookConfigPath(teamID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), "webhooks.json")
 }
 
 func (s *Store) withTeamLock(teamID string, fn func() error) error {
@@ -1681,6 +2529,633 @@ func (s *Store) withTeamLock(teamID string, fn func() error) error {
 		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 	}()
 	return fn()
+}
+
+func (s *Store) taskIndexPath(teamID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), "tasks.index.json")
+}
+
+func (s *Store) taskDataPath(teamID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), "tasks.data.jsonl")
+}
+
+func (s *Store) artifactIndexPath(teamID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), "artifacts.index.json")
+}
+
+func (s *Store) artifactDataPath(teamID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), "artifacts.data.jsonl")
+}
+
+func (s *Store) hasTaskIndex(teamID string) bool {
+	_, errIndex := os.Stat(s.taskIndexPath(teamID))
+	_, errData := os.Stat(s.taskDataPath(teamID))
+	return errIndex == nil && errData == nil
+}
+
+func (s *Store) hasArtifactIndex(teamID string) bool {
+	_, errIndex := os.Stat(s.artifactIndexPath(teamID))
+	_, errData := os.Stat(s.artifactDataPath(teamID))
+	return errIndex == nil && errData == nil
+}
+
+func (s *Store) loadTaskIndex(teamID string) ([]TaskIndexEntry, error) {
+	data, err := os.ReadFile(s.taskIndexPath(teamID))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var entries []TaskIndexEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func (s *Store) saveTaskIndex(teamID string, entries []TaskIndexEntry) error {
+	path := s.taskIndexPath(teamID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+	return os.WriteFile(path, body, 0o644)
+}
+
+func (s *Store) loadArtifactIndex(teamID string) ([]ArtifactIndexEntry, error) {
+	data, err := os.ReadFile(s.artifactIndexPath(teamID))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var entries []ArtifactIndexEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func (s *Store) saveArtifactIndex(teamID string, entries []ArtifactIndexEntry) error {
+	path := s.artifactIndexPath(teamID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+	return os.WriteFile(path, body, 0o644)
+}
+
+func appendJSONLRecord(path string, value any) (int64, int, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return 0, 0, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer file.Close()
+	offset, err := file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return 0, 0, err
+	}
+	body, err := json.Marshal(value)
+	if err != nil {
+		return 0, 0, err
+	}
+	body = append(body, '\n')
+	if _, err := file.Write(body); err != nil {
+		return 0, 0, err
+	}
+	return offset, len(body), nil
+}
+
+func readJSONRecordAt(path string, offset int64, length int, dest any) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	buf := make([]byte, length)
+	if _, err := file.ReadAt(buf, offset); err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(strings.TrimSpace(string(buf))), dest)
+}
+
+func activeTaskIndexEntries(entries []TaskIndexEntry) []TaskIndexEntry {
+	out := make([]TaskIndexEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Deleted || strings.TrimSpace(entry.TaskID) == "" {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func activeArtifactIndexEntries(entries []ArtifactIndexEntry) []ArtifactIndexEntry {
+	out := make([]ArtifactIndexEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Deleted || strings.TrimSpace(entry.ArtifactID) == "" {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func taskIndexEntryFromTask(task Task, offset int64, length int) TaskIndexEntry {
+	return TaskIndexEntry{
+		TaskID:    task.TaskID,
+		Offset:    offset,
+		Length:    length,
+		CreatedAt: task.CreatedAt,
+		UpdatedAt: task.UpdatedAt,
+		ChannelID: task.ChannelID,
+		ContextID: task.ContextID,
+		Status:    task.Status,
+		Priority:  task.Priority,
+	}
+}
+
+func artifactIndexEntryFromArtifact(artifact Artifact, offset int64, length int) ArtifactIndexEntry {
+	return ArtifactIndexEntry{
+		ArtifactID: artifact.ArtifactID,
+		Offset:     offset,
+		Length:     length,
+		CreatedAt:  artifact.CreatedAt,
+		UpdatedAt:  artifact.UpdatedAt,
+		ChannelID:  artifact.ChannelID,
+		TaskID:     artifact.TaskID,
+		Kind:       artifact.Kind,
+	}
+}
+
+func (s *Store) appendTaskIndexedLocked(teamID string, task Task) error {
+	offset, length, err := appendJSONLRecord(s.taskDataPath(teamID), task)
+	if err != nil {
+		return err
+	}
+	entries, err := s.loadTaskIndex(teamID)
+	if err != nil {
+		return err
+	}
+	entry := taskIndexEntryFromTask(task, offset, length)
+	updated := false
+	for i := range entries {
+		if entries[i].TaskID == task.TaskID {
+			entries[i] = entry
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		entries = append(entries, entry)
+	}
+	return s.saveTaskIndex(teamID, entries)
+}
+
+func (s *Store) appendArtifactIndexedLocked(teamID string, artifact Artifact) error {
+	offset, length, err := appendJSONLRecord(s.artifactDataPath(teamID), artifact)
+	if err != nil {
+		return err
+	}
+	entries, err := s.loadArtifactIndex(teamID)
+	if err != nil {
+		return err
+	}
+	entry := artifactIndexEntryFromArtifact(artifact, offset, length)
+	updated := false
+	for i := range entries {
+		if entries[i].ArtifactID == artifact.ArtifactID {
+			entries[i] = entry
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		entries = append(entries, entry)
+	}
+	return s.saveArtifactIndex(teamID, entries)
+}
+
+func (s *Store) loadTasksFromIndex(teamID string, limit int) ([]Task, error) {
+	entries, err := s.loadTaskIndex(teamID)
+	if err != nil {
+		return nil, err
+	}
+	entries = activeTaskIndexEntries(entries)
+	sort.SliceStable(entries, func(i, j int) bool {
+		if !entries[i].UpdatedAt.Equal(entries[j].UpdatedAt) {
+			return entries[i].UpdatedAt.After(entries[j].UpdatedAt)
+		}
+		return entries[i].TaskID > entries[j].TaskID
+	})
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+	out := make([]Task, 0, len(entries))
+	for _, entry := range entries {
+		var task Task
+		if err := readJSONRecordAt(s.taskDataPath(teamID), entry.Offset, entry.Length, &task); err != nil {
+			return nil, err
+		}
+		out = append(out, task)
+	}
+	return out, nil
+}
+
+func (s *Store) loadTaskFromIndex(teamID, taskID string) (Task, error) {
+	entries, err := s.loadTaskIndex(teamID)
+	if err != nil {
+		return Task{}, err
+	}
+	for _, entry := range entries {
+		if entry.Deleted || entry.TaskID != taskID {
+			continue
+		}
+		var task Task
+		if err := readJSONRecordAt(s.taskDataPath(teamID), entry.Offset, entry.Length, &task); err != nil {
+			return Task{}, err
+		}
+		return task, nil
+	}
+	return Task{}, os.ErrNotExist
+}
+
+func (s *Store) loadArtifactsFromIndex(teamID string, limit int) ([]Artifact, error) {
+	entries, err := s.loadArtifactIndex(teamID)
+	if err != nil {
+		return nil, err
+	}
+	entries = activeArtifactIndexEntries(entries)
+	sort.SliceStable(entries, func(i, j int) bool {
+		if !entries[i].UpdatedAt.Equal(entries[j].UpdatedAt) {
+			return entries[i].UpdatedAt.After(entries[j].UpdatedAt)
+		}
+		return entries[i].ArtifactID > entries[j].ArtifactID
+	})
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+	out := make([]Artifact, 0, len(entries))
+	for _, entry := range entries {
+		var artifact Artifact
+		if err := readJSONRecordAt(s.artifactDataPath(teamID), entry.Offset, entry.Length, &artifact); err != nil {
+			return nil, err
+		}
+		out = append(out, artifact)
+	}
+	return out, nil
+}
+
+func (s *Store) loadArtifactFromIndex(teamID, artifactID string) (Artifact, error) {
+	entries, err := s.loadArtifactIndex(teamID)
+	if err != nil {
+		return Artifact{}, err
+	}
+	for _, entry := range entries {
+		if entry.Deleted || entry.ArtifactID != artifactID {
+			continue
+		}
+		var artifact Artifact
+		if err := readJSONRecordAt(s.artifactDataPath(teamID), entry.Offset, entry.Length, &artifact); err != nil {
+			return Artifact{}, err
+		}
+		return artifact, nil
+	}
+	return Artifact{}, os.ErrNotExist
+}
+
+func (s *Store) saveTaskIndexedLocked(teamID string, task Task, policy Policy) error {
+	current, err := s.loadTaskFromIndex(teamID, task.TaskID)
+	if err != nil {
+		return err
+	}
+	task.TeamID = teamID
+	task.TaskID = strings.TrimSpace(task.TaskID)
+	task.Title = strings.TrimSpace(task.Title)
+	if task.Title == "" {
+		return errors.New("empty team task title")
+	}
+	task.Status = normalizeTaskStatus(task.Status)
+	if task.Status == "" {
+		task.Status = current.Status
+		if task.Status == "" {
+			task.Status = "open"
+		}
+	}
+	if !IsValidTransitionWithPolicy(current.Status, task.Status, policy) {
+		return fmt.Errorf("invalid task status transition %q -> %q", normalizeTaskStatus(current.Status), task.Status)
+	}
+	task.Priority = normalizeTaskPriority(task.Priority)
+	task.ChannelID = normalizeChannelID(task.ChannelID)
+	task.ContextID = normalizeContextID(task.ContextID)
+	if task.ContextID == "" {
+		task.ContextID = normalizeContextID(current.ContextID)
+	}
+	task.Description = strings.TrimSpace(task.Description)
+	task.CreatedBy = strings.TrimSpace(task.CreatedBy)
+	task.Assignees = normalizeNonEmptyStrings(task.Assignees)
+	task.Labels = normalizeNonEmptyStrings(task.Labels)
+	if task.CreatedAt.IsZero() {
+		task.CreatedAt = current.CreatedAt
+	}
+	if task.UpdatedAt.IsZero() {
+		task.UpdatedAt = time.Now().UTC()
+	}
+	if IsTerminalState(task.Status) {
+		if task.ClosedAt.IsZero() {
+			task.ClosedAt = task.UpdatedAt
+		}
+	} else {
+		task.ClosedAt = time.Time{}
+	}
+	offset, length, err := appendJSONLRecord(s.taskDataPath(teamID), task)
+	if err != nil {
+		return err
+	}
+	entries, err := s.loadTaskIndex(teamID)
+	if err != nil {
+		return err
+	}
+	entry := taskIndexEntryFromTask(task, offset, length)
+	for i := range entries {
+		if entries[i].TaskID == task.TaskID {
+			entries[i] = entry
+			return s.saveTaskIndex(teamID, entries)
+		}
+	}
+	return os.ErrNotExist
+}
+
+func (s *Store) deleteTaskIndexedLocked(teamID, taskID string) error {
+	entries, err := s.loadTaskIndex(teamID)
+	if err != nil {
+		return err
+	}
+	removed := false
+	for i := range entries {
+		if entries[i].TaskID == taskID && !entries[i].Deleted {
+			entries[i].Deleted = true
+			removed = true
+		}
+	}
+	if !removed {
+		return os.ErrNotExist
+	}
+	return s.saveTaskIndex(teamID, entries)
+}
+
+func (s *Store) saveArtifactIndexedLocked(teamID string, artifact Artifact) error {
+	current, err := s.loadArtifactFromIndex(teamID, artifact.ArtifactID)
+	if err != nil {
+		return err
+	}
+	artifact.TeamID = teamID
+	artifact.ArtifactID = strings.TrimSpace(artifact.ArtifactID)
+	artifact.Title = strings.TrimSpace(artifact.Title)
+	if artifact.Title == "" {
+		return errors.New("empty team artifact title")
+	}
+	artifact.Kind = normalizeArtifactKind(artifact.Kind)
+	artifact.ChannelID = normalizeChannelID(artifact.ChannelID)
+	artifact.TaskID = strings.TrimSpace(artifact.TaskID)
+	artifact.Summary = strings.TrimSpace(artifact.Summary)
+	artifact.Content = strings.TrimSpace(artifact.Content)
+	artifact.LinkURL = strings.TrimSpace(artifact.LinkURL)
+	if artifact.CreatedAt.IsZero() {
+		artifact.CreatedAt = current.CreatedAt
+	}
+	if artifact.UpdatedAt.IsZero() {
+		artifact.UpdatedAt = time.Now().UTC()
+	}
+	offset, length, err := appendJSONLRecord(s.artifactDataPath(teamID), artifact)
+	if err != nil {
+		return err
+	}
+	entries, err := s.loadArtifactIndex(teamID)
+	if err != nil {
+		return err
+	}
+	entry := artifactIndexEntryFromArtifact(artifact, offset, length)
+	for i := range entries {
+		if entries[i].ArtifactID == artifact.ArtifactID {
+			entries[i] = entry
+			return s.saveArtifactIndex(teamID, entries)
+		}
+	}
+	return os.ErrNotExist
+}
+
+func (s *Store) deleteArtifactIndexedLocked(teamID, artifactID string) error {
+	entries, err := s.loadArtifactIndex(teamID)
+	if err != nil {
+		return err
+	}
+	removed := false
+	for i := range entries {
+		if entries[i].ArtifactID == artifactID && !entries[i].Deleted {
+			entries[i].Deleted = true
+			removed = true
+		}
+	}
+	if !removed {
+		return os.ErrNotExist
+	}
+	return s.saveArtifactIndex(teamID, entries)
+}
+
+func (s *Store) rewriteTaskIndexLocked(teamID string, tasks []Task) error {
+	path := s.taskDataPath(teamID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	items := append([]Task(nil), tasks...)
+	sort.SliceStable(items, func(i, j int) bool {
+		if !items[i].UpdatedAt.Equal(items[j].UpdatedAt) {
+			return items[i].UpdatedAt.Before(items[j].UpdatedAt)
+		}
+		return items[i].TaskID < items[j].TaskID
+	})
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	index := make([]TaskIndexEntry, 0, len(items))
+	var offset int64
+	for _, task := range items {
+		body, err := json.Marshal(task)
+		if err != nil {
+			_ = tmp.Close()
+			return err
+		}
+		body = append(body, '\n')
+		if _, err := tmp.Write(body); err != nil {
+			_ = tmp.Close()
+			return err
+		}
+		index = append(index, taskIndexEntryFromTask(task, offset, len(body)))
+		offset += int64(len(body))
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return s.saveTaskIndex(teamID, index)
+}
+
+func (s *Store) rewriteArtifactIndexLocked(teamID string, artifacts []Artifact) error {
+	path := s.artifactDataPath(teamID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	items := append([]Artifact(nil), artifacts...)
+	sort.SliceStable(items, func(i, j int) bool {
+		if !items[i].UpdatedAt.Equal(items[j].UpdatedAt) {
+			return items[i].UpdatedAt.Before(items[j].UpdatedAt)
+		}
+		return items[i].ArtifactID < items[j].ArtifactID
+	})
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	index := make([]ArtifactIndexEntry, 0, len(items))
+	var offset int64
+	for _, artifact := range items {
+		body, err := json.Marshal(artifact)
+		if err != nil {
+			_ = tmp.Close()
+			return err
+		}
+		body = append(body, '\n')
+		if _, err := tmp.Write(body); err != nil {
+			_ = tmp.Close()
+			return err
+		}
+		index = append(index, artifactIndexEntryFromArtifact(artifact, offset, len(body)))
+		offset += int64(len(body))
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return s.saveArtifactIndex(teamID, index)
+}
+
+func (s *Store) MigrateTasksToIndex(teamID string) error {
+	if s == nil {
+		return errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return errors.New("empty team id")
+	}
+	return s.withTeamLock(teamID, func() error {
+		if s.hasTaskIndex(teamID) {
+			return nil
+		}
+		tasks, err := s.loadLegacyTasks(teamID)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return s.rewriteTaskIndexLocked(teamID, tasks)
+	})
+}
+
+func (s *Store) MigrateArtifactsToIndex(teamID string) error {
+	if s == nil {
+		return errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return errors.New("empty team id")
+	}
+	return s.withTeamLock(teamID, func() error {
+		if s.hasArtifactIndex(teamID) {
+			return nil
+		}
+		artifacts, err := s.loadLegacyArtifacts(teamID)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return s.rewriteArtifactIndexLocked(teamID, artifacts)
+	})
+}
+
+func (s *Store) CompactTasks(teamID string) error {
+	if s == nil {
+		return errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return errors.New("empty team id")
+	}
+	return s.withTeamLock(teamID, func() error {
+		if !s.hasTaskIndex(teamID) {
+			tasks, err := s.loadLegacyTasks(teamID)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			return s.rewriteTaskIndexLocked(teamID, tasks)
+		}
+		tasks, err := s.loadTasksFromIndex(teamID, 0)
+		if err != nil {
+			return err
+		}
+		return s.rewriteTaskIndexLocked(teamID, tasks)
+	})
+}
+
+func (s *Store) CompactArtifacts(teamID string) error {
+	if s == nil {
+		return errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return errors.New("empty team id")
+	}
+	return s.withTeamLock(teamID, func() error {
+		if !s.hasArtifactIndex(teamID) {
+			artifacts, err := s.loadLegacyArtifacts(teamID)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			return s.rewriteArtifactIndexLocked(teamID, artifacts)
+		}
+		artifacts, err := s.loadArtifactsFromIndex(teamID, 0)
+		if err != nil {
+			return err
+		}
+		return s.rewriteArtifactIndexLocked(teamID, artifacts)
+	})
 }
 
 func buildMessageID(msg Message) string {

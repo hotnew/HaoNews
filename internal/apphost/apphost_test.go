@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -124,6 +125,62 @@ func TestRegistryBuildsCompositeSite(t *testing.T) {
 	}
 }
 
+func TestRegistryCompositeSiteSupportsStreamingHandlers(t *testing.T) {
+	registry := NewRegistry()
+	registry.MustRegisterTheme(themeWithManifest{
+		manifest: ThemeManifest{
+			ID:               "test-theme",
+			Name:             "Test Theme",
+			SupportedPlugins: []string{"first-plugin", "second-plugin"},
+		},
+	})
+	registry.MustRegisterPlugin(namedTestPlugin("first-plugin", func(context.Context, Config, WebTheme) (*Site, error) {
+		return &Site{
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.NotFound(w, r)
+			}),
+		}, nil
+	}))
+	registry.MustRegisterPlugin(namedTestPlugin("second-plugin", func(context.Context, Config, WebTheme) (*Site, error) {
+		return &Site{
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/stream" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				flusher, ok := w.(http.Flusher)
+				if !ok {
+					t.Fatalf("composite recorder did not expose http.Flusher")
+				}
+				_, _ = w.Write([]byte(": hello\n\n"))
+				flusher.Flush()
+				_, _ = w.Write([]byte("event: team\ndata: ok\n\n"))
+			}),
+		}, nil
+	}))
+
+	site, err := registry.Build(context.Background(), Config{
+		Plugins: []string{"first-plugin", "second-plugin"},
+		Theme:   "test-theme",
+	})
+	if err != nil {
+		t.Fatalf("build composite site: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "event: team") {
+		t.Fatalf("body = %q, want SSE payload", rec.Body.String())
+	}
+}
+
 func TestRegistryScopesRuntimePathsPerPlugin(t *testing.T) {
 	registry := NewRegistry()
 	registry.MustRegisterTheme(themeWithManifest{
@@ -164,11 +221,23 @@ func TestRegistryScopesRuntimePathsPerPlugin(t *testing.T) {
 	if secondCfg.RuntimeRoot != "/tmp/runtime/plugins/second-plugin" {
 		t.Fatalf("second runtime root = %q", secondCfg.RuntimeRoot)
 	}
-	if firstCfg.StoreRoot != "/tmp/store/first-plugin" || secondCfg.StoreRoot != "/tmp/store/second-plugin" {
+	if firstCfg.StoreRoot != "/tmp/store" || secondCfg.StoreRoot != "/tmp/store" {
 		t.Fatalf("store roots = %q / %q", firstCfg.StoreRoot, secondCfg.StoreRoot)
 	}
-	if firstCfg.RulesPath != "/tmp/config/first-plugin/subscriptions.json" || secondCfg.RulesPath != "/tmp/config/second-plugin/subscriptions.json" {
+	if firstCfg.ArchiveRoot != "/tmp/archive" || secondCfg.ArchiveRoot != "/tmp/archive" {
+		t.Fatalf("archive roots = %q / %q", firstCfg.ArchiveRoot, secondCfg.ArchiveRoot)
+	}
+	if firstCfg.RulesPath != "/tmp/config/subscriptions.json" || secondCfg.RulesPath != "/tmp/config/subscriptions.json" {
 		t.Fatalf("rules paths = %q / %q", firstCfg.RulesPath, secondCfg.RulesPath)
+	}
+	if firstCfg.WriterPolicyPath != "/tmp/config/writer_policy.json" || secondCfg.WriterPolicyPath != "/tmp/config/writer_policy.json" {
+		t.Fatalf("writer policy paths = %q / %q", firstCfg.WriterPolicyPath, secondCfg.WriterPolicyPath)
+	}
+	if firstCfg.NetPath != "/tmp/config/haonews_net.inf" || secondCfg.NetPath != "/tmp/config/haonews_net.inf" {
+		t.Fatalf("net paths = %q / %q", firstCfg.NetPath, secondCfg.NetPath)
+	}
+	if firstCfg.TrackerPath != "/tmp/config/Trackerlist.inf" || secondCfg.TrackerPath != "/tmp/config/Trackerlist.inf" {
+		t.Fatalf("tracker paths = %q / %q", firstCfg.TrackerPath, secondCfg.TrackerPath)
 	}
 }
 

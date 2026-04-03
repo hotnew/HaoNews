@@ -1,7 +1,9 @@
 package haonewsteam
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -130,6 +132,461 @@ func TestPluginBuildCreatesTeamArchiveFromWorkspaceRoutes(t *testing.T) {
 	body := apiRec.Body.String()
 	if !strings.Contains(body, `"scope": "team-archive-create"`) || !strings.Contains(body, `"team_id": "archive-create-project"`) || !strings.Contains(body, `"archive_id": "manual-`) {
 		t.Fatalf("api archive create body = %s", body)
+	}
+}
+
+func TestPluginBuildRejectsUnsignedMessageWhenTeamPolicyRequiresSignature(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	teamRoot := filepath.Join(root, "store", "team", "signed-policy-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"signed-policy-team","title":"Signed Policy Team"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-alpha","role":"member","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+
+	policyReq := httptest.NewRequest(http.MethodPost, "/api/teams/signed-policy-team/policy", strings.NewReader(`{
+  "require_signature": true,
+  "message_roles": ["owner","maintainer","member"],
+  "task_roles": ["owner","maintainer","member"],
+  "system_note_roles": ["owner","maintainer"]
+}`))
+	policyReq.RemoteAddr = "127.0.0.1:12345"
+	policyRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(policyRec, policyReq)
+	if policyRec.Code != http.StatusOK {
+		t.Fatalf("policy update status = %d, body = %s", policyRec.Code, policyRec.Body.String())
+	}
+
+	msgReq := httptest.NewRequest(http.MethodPost, "/api/teams/signed-policy-team/channels/main/messages", strings.NewReader(`{
+  "author_agent_id": "agent://pc75/live-alpha",
+  "message_type": "chat",
+  "content": "unsigned message should fail"
+}`))
+	msgReq.RemoteAddr = "127.0.0.1:12345"
+	msgRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(msgRec, msgReq)
+	if msgRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for unsigned message, got %d body=%s", msgRec.Code, msgRec.Body.String())
+	}
+	if !strings.Contains(msgRec.Body.String(), "signature verification failed") {
+		t.Fatalf("expected signature verification failure body, got %q", msgRec.Body.String())
+	}
+}
+
+func TestPluginBuildEnforcesTeamActionPermissions(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	teamRoot := filepath.Join(root, "store", "team", "permission-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
+  "team_id":"permission-team",
+  "title":"Permission Team",
+  "owner_agent_id":"agent://pc75/live-bravo"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-bravo","role":"owner","status":"active"},
+  {"agent_id":"agent://pc75/live-charlie","role":"observer","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+
+	policyReq := httptest.NewRequest(http.MethodPost, "/api/teams/permission-team/policy", strings.NewReader(`{
+  "actor_agent_id": "agent://pc75/live-bravo",
+  "permissions": {
+    "message.send": ["owner"],
+    "policy.update": ["owner"]
+  }
+}`))
+	policyReq.RemoteAddr = "127.0.0.1:12345"
+	policyRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(policyRec, policyReq)
+	if policyRec.Code != http.StatusOK {
+		t.Fatalf("policy update status = %d, body = %s", policyRec.Code, policyRec.Body.String())
+	}
+
+	msgReq := httptest.NewRequest(http.MethodPost, "/api/teams/permission-team/channels/main/messages", strings.NewReader(`{
+  "author_agent_id": "agent://pc75/live-charlie",
+  "message_type": "chat",
+  "content": "observer should be denied"
+}`))
+	msgReq.RemoteAddr = "127.0.0.1:12345"
+	msgRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(msgRec, msgReq)
+	if msgRec.Code != http.StatusForbidden {
+		t.Fatalf("expected forbidden for message.send, got %d body=%s", msgRec.Code, msgRec.Body.String())
+	}
+	if !strings.Contains(msgRec.Body.String(), "policy denied action") {
+		t.Fatalf("expected policy denied action body, got %q", msgRec.Body.String())
+	}
+
+	memberPolicyReq := httptest.NewRequest(http.MethodPost, "/api/teams/permission-team/policy", strings.NewReader(`{
+  "actor_agent_id": "agent://pc75/live-charlie",
+  "permissions": {
+    "message.send": ["owner"],
+    "policy.update": ["owner"]
+  }
+}`))
+	memberPolicyReq.RemoteAddr = "127.0.0.1:12345"
+	memberPolicyRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(memberPolicyRec, memberPolicyReq)
+	if memberPolicyRec.Code != http.StatusForbidden {
+		t.Fatalf("expected forbidden for policy.update, got %d body=%s", memberPolicyRec.Code, memberPolicyRec.Body.String())
+	}
+}
+
+func TestPluginBuildTeamAgentCardAPI(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	teamRoot := filepath.Join(root, "store", "team", "agent-api-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
+  "team_id":"agent-api-team",
+  "title":"Agent API Team",
+  "owner_agent_id":"agent://pc75/live-bravo"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-bravo","role":"owner","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "tasks.jsonl"), []byte("{\"task_id\":\"task-agent-match\",\"team_id\":\"agent-api-team\",\"title\":\"Task Agent Match\",\"labels\":[\"coding\"],\"status\":\"open\",\"created_at\":\"2026-04-03T00:00:00Z\",\"updated_at\":\"2026-04-03T00:00:00Z\"}\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(tasks.jsonl) error = %v", err)
+	}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/teams/agent-api-team/agents", strings.NewReader(`{
+  "actor_agent_id": "agent://pc75/live-bravo",
+  "card": {
+    "agent_id": "agent://pc75/coder",
+    "name": "Code Agent",
+    "skills": [
+      {"id":"code-write","name":"Code Writing","tags":["coding","implementation"]}
+    ]
+  }
+}`))
+	createReq.RemoteAddr = "127.0.0.1:12345"
+	createRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("agent create status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/teams/agent-api-team/agents?task=task-agent-match", nil)
+	listRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("agent list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	if !strings.Contains(listRec.Body.String(), "\"scope\": \"team-agents\"") || !strings.Contains(listRec.Body.String(), "\"matched_count\": 1") || !strings.Contains(listRec.Body.String(), "agent://pc75/coder") {
+		t.Fatalf("expected team agents body, got %q", listRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/teams/agent-api-team/agents/agent:%2F%2Fpc75%2Fcoder", nil)
+	getRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("agent get status = %d, body = %s", getRec.Code, getRec.Body.String())
+	}
+	if !strings.Contains(getRec.Body.String(), "\"scope\": \"team-agent-card\"") || !strings.Contains(getRec.Body.String(), "\"name\": \"Code Agent\"") {
+		t.Fatalf("expected team agent card body, got %q", getRec.Body.String())
+	}
+}
+
+func TestPluginBuildStreamsTeamEvents(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	teamRoot := filepath.Join(root, "store", "team", "sse-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
+  "team_id":"sse-team",
+  "title":"SSE Team",
+  "owner_agent_id":"agent://pc75/live-bravo"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-bravo","role":"owner","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+
+	server := httptest.NewServer(site.Handler)
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/teams/sse-team/events", nil)
+	if err != nil {
+		t.Fatalf("NewRequest error = %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("stream request error = %v", err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("Content-Type = %q", got)
+	}
+
+	eventCh := make(chan teamcore.TeamEvent, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		reader := bufio.NewReader(resp.Body)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var event teamcore.TeamEvent
+			if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data: "))), &event); err != nil {
+				errCh <- err
+				return
+			}
+			eventCh <- event
+			return
+		}
+	}()
+
+	postReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/teams/sse-team/channels/main/messages", strings.NewReader(`{
+  "author_agent_id":"agent://pc75/live-bravo",
+  "message_type":"chat",
+  "content":"hello from sse"
+}`))
+	if err != nil {
+		t.Fatalf("NewRequest(post) error = %v", err)
+	}
+	postReq.Header.Set("Content-Type", "application/json")
+	postResp, err := server.Client().Do(postReq)
+	if err != nil {
+		t.Fatalf("post message error = %v", err)
+	}
+	defer postResp.Body.Close()
+	if postResp.StatusCode != http.StatusCreated {
+		t.Fatalf("post status = %d", postResp.StatusCode)
+	}
+
+	select {
+	case event := <-eventCh:
+		if event.TeamID != "sse-team" || event.Kind != "message" || event.Action != "create" {
+			t.Fatalf("unexpected event: %#v", event)
+		}
+		if event.ChannelID != "main" {
+			t.Fatalf("event.ChannelID = %q", event.ChannelID)
+		}
+	case err := <-errCh:
+		t.Fatalf("stream read error = %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for sse event")
+	}
+}
+
+func TestPluginBuildServesA2ABridge(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	store, err := teamcore.OpenStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	teamRoot := filepath.Join(root, "store", "team", "a2a-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
+  "team_id":"a2a-team",
+  "title":"A2A Team",
+  "owner_agent_id":"agent://pc75/live-bravo"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-bravo","role":"owner","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+	if err := store.SaveAgentCard("a2a-team", teamcore.AgentCard{
+		AgentID: "agent://pc75/coder",
+		Name:    "Code Agent",
+		Skills:  []teamcore.AgentSkill{{ID: "code-write", Name: "Code Writing"}},
+		Capabilities: teamcore.AgentCaps{
+			Streaming: true,
+		},
+	}); err != nil {
+		t.Fatalf("SaveAgentCard error = %v", err)
+	}
+	if err := store.AppendTask("a2a-team", teamcore.Task{
+		TaskID:    "a2a-task-1",
+		CreatedBy: "agent://pc75/live-bravo",
+		Title:     "Bridge Task",
+		Status:    "doing",
+		Priority:  "high",
+		CreatedAt: time.Date(2026, 4, 3, 15, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 4, 3, 15, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendTask error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/agent.json", nil)
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("well-known status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"agent_count": 1`) || !strings.Contains(rec.Body.String(), "agent://pc75/coder") || !strings.Contains(rec.Body.String(), `"streaming": true`) {
+		t.Fatalf("unexpected well-known body: %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/a2a/teams/a2a-team/tasks", nil)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a2a tasks status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"scope": "a2a-tasks"`) || !strings.Contains(rec.Body.String(), `"status": "working"`) {
+		t.Fatalf("unexpected a2a tasks body: %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/a2a/teams/a2a-team/tasks/a2a-task-1", nil)
+	rec = httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a2a task detail status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"scope": "a2a-task"`) || !strings.Contains(rec.Body.String(), `"id": "a2a-task-1"`) {
+		t.Fatalf("unexpected a2a task detail body: %q", rec.Body.String())
+	}
+
+	msgReq := httptest.NewRequest(http.MethodPost, "/a2a/teams/a2a-team/message:send", strings.NewReader(`{
+  "author_agent_id":"agent://pc75/live-bravo",
+  "message_type":"chat",
+  "content":"hello from a2a bridge"
+}`))
+	msgReq.RemoteAddr = "127.0.0.1:12345"
+	msgReq.Header.Set("Content-Type", "application/json")
+	msgRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(msgRec, msgReq)
+	if msgRec.Code != http.StatusCreated {
+		t.Fatalf("a2a message send status = %d, body = %s", msgRec.Code, msgRec.Body.String())
+	}
+	if !strings.Contains(msgRec.Body.String(), `"scope": "a2a-message"`) || !strings.Contains(msgRec.Body.String(), "hello from a2a bridge") {
+		t.Fatalf("unexpected a2a message body: %q", msgRec.Body.String())
+	}
+
+	cancelReq := httptest.NewRequest(http.MethodPost, "/a2a/teams/a2a-team/tasks/a2a-task-1:cancel", strings.NewReader(`{
+  "actor_agent_id":"agent://pc75/live-bravo"
+}`))
+	cancelReq.RemoteAddr = "127.0.0.1:12345"
+	cancelReq.Header.Set("Content-Type", "application/json")
+	cancelRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(cancelRec, cancelReq)
+	if cancelRec.Code != http.StatusOK {
+		t.Fatalf("a2a task cancel status = %d, body = %s", cancelRec.Code, cancelRec.Body.String())
+	}
+	if !strings.Contains(cancelRec.Body.String(), `"status": "canceled"`) {
+		t.Fatalf("unexpected a2a cancel body: %q", cancelRec.Body.String())
+	}
+
+	server := httptest.NewServer(site.Handler)
+	defer server.Close()
+	streamReq, err := http.NewRequest(http.MethodGet, server.URL+"/a2a/teams/a2a-team/message:stream", nil)
+	if err != nil {
+		t.Fatalf("NewRequest(stream) error = %v", err)
+	}
+	streamResp, err := server.Client().Do(streamReq)
+	if err != nil {
+		t.Fatalf("stream request error = %v", err)
+	}
+	defer streamResp.Body.Close()
+	if got := streamResp.Header.Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("stream Content-Type = %q", got)
+	}
+}
+
+func TestPluginBuildConfiguresAndFiresTeamWebhook(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	teamRoot := filepath.Join(root, "store", "team", "webhook-api-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
+  "team_id":"webhook-api-team",
+  "title":"Webhook API Team",
+  "owner_agent_id":"agent://pc75/live-bravo"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-bravo","role":"owner","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+
+	received := make(chan string, 1)
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer hook.Close()
+
+	configReq := httptest.NewRequest(http.MethodPost, "/api/teams/webhook-api-team/webhooks", strings.NewReader(`{
+  "actor_agent_id":"agent://pc75/live-bravo",
+  "webhooks":[{"webhook_id":"hook-api","url":"`+hook.URL+`","token":"token-api","events":["message.create"]}]
+}`))
+	configReq.RemoteAddr = "127.0.0.1:12345"
+	configReq.Header.Set("Content-Type", "application/json")
+	configRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(configRec, configReq)
+	if configRec.Code != http.StatusOK {
+		t.Fatalf("webhook config status = %d, body = %s", configRec.Code, configRec.Body.String())
+	}
+	if !strings.Contains(configRec.Body.String(), `"scope": "team-webhooks"`) {
+		t.Fatalf("unexpected webhook config body: %q", configRec.Body.String())
+	}
+
+	msgReq := httptest.NewRequest(http.MethodPost, "/api/teams/webhook-api-team/channels/main/messages", strings.NewReader(`{
+  "author_agent_id":"agent://pc75/live-bravo",
+  "message_type":"chat",
+  "content":"hello webhook api"
+}`))
+	msgReq.RemoteAddr = "127.0.0.1:12345"
+	msgReq.Header.Set("Content-Type", "application/json")
+	msgRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(msgRec, msgReq)
+	if msgRec.Code != http.StatusCreated {
+		t.Fatalf("message create status = %d, body = %s", msgRec.Code, msgRec.Body.String())
+	}
+
+	select {
+	case auth := <-received:
+		if auth != "Bearer token-api" {
+			t.Fatalf("Authorization = %q", auth)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for webhook api delivery")
 	}
 }
 
@@ -272,6 +729,20 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	}
 	if !strings.Contains(taskPageRec.Body.String(), "Task comments stay inside TeamMessage, not Live.") || !strings.Contains(taskPageRec.Body.String(), "team-task-implement-teamtask") {
 		t.Fatalf("expected team task page body, got %q", taskPageRec.Body.String())
+	}
+
+	contextTask, err := store.LoadTask("project-beta", "team-task-implement-teamtask")
+	if err != nil {
+		t.Fatalf("LoadTask(context) error = %v", err)
+	}
+	contextReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/contexts/"+url.PathEscape(contextTask.ContextID), nil)
+	contextRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(contextRec, contextReq)
+	if contextRec.Code != http.StatusOK {
+		t.Fatalf("context api status = %d, body = %s", contextRec.Code, contextRec.Body.String())
+	}
+	if !strings.Contains(contextRec.Body.String(), `"scope": "team-context"`) || !strings.Contains(contextRec.Body.String(), `"task_count": 1`) || !strings.Contains(contextRec.Body.String(), contextTask.ContextID) {
+		t.Fatalf("expected team context api body, got %q", contextRec.Body.String())
 	}
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta", nil)
@@ -442,7 +913,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if historyAPIRec.Code != http.StatusOK {
 		t.Fatalf("history api status = %d, body = %s", historyAPIRec.Code, historyAPIRec.Body.String())
 	}
-	if !strings.Contains(historyAPIRec.Body.String(), "\"scope\": \"team-history\"") || !strings.Contains(historyAPIRec.Body.String(), "更新 Team Policy") || !strings.Contains(historyAPIRec.Body.String(), "\"source\": \"api\"") || !strings.Contains(historyAPIRec.Body.String(), "\"message_roles_before\"") || !strings.Contains(historyAPIRec.Body.String(), "消息角色/任务角色/系统说明角色已更新") {
+	if !strings.Contains(historyAPIRec.Body.String(), "\"scope\": \"team-history\"") || !strings.Contains(historyAPIRec.Body.String(), "更新 Team Policy") || !strings.Contains(historyAPIRec.Body.String(), "\"source\": \"api\"") || !strings.Contains(historyAPIRec.Body.String(), "\"message_roles_before\"") || !strings.Contains(historyAPIRec.Body.String(), "\"diff\":") || !strings.Contains(historyAPIRec.Body.String(), "\"message_roles\"") || !strings.Contains(historyAPIRec.Body.String(), "消息角色/任务角色/系统说明角色已更新") {
 		t.Fatalf("expected history api body, got %q", historyAPIRec.Body.String())
 	}
 
@@ -452,7 +923,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if historyPageRec.Code != http.StatusOK {
 		t.Fatalf("history page status = %d, body = %s", historyPageRec.Code, historyPageRec.Body.String())
 	}
-	if !strings.Contains(historyPageRec.Body.String(), "全部变更") || !strings.Contains(historyPageRec.Body.String(), ">api<") || !strings.Contains(historyPageRec.Body.String(), "更新 Team Policy") || !strings.Contains(historyPageRec.Body.String(), "应用筛选") {
+	if !strings.Contains(historyPageRec.Body.String(), "全部变更") || !strings.Contains(historyPageRec.Body.String(), ">api<") || !strings.Contains(historyPageRec.Body.String(), "更新 Team Policy") || !strings.Contains(historyPageRec.Body.String(), "消息角色") || !strings.Contains(historyPageRec.Body.String(), "应用筛选") {
 		t.Fatalf("expected history page body, got %q", historyPageRec.Body.String())
 	}
 
@@ -515,7 +986,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	}
 
 	channelMessageCreateReq := httptest.NewRequest(http.MethodPost, "/api/teams/project-beta/channels/research/messages", strings.NewReader(`{
-  "author_agent_id": "agent://pc75/live-alpha",
+  "author_agent_id": "agent://pc75/live-bravo",
   "origin_public_key": "`+strings.Repeat("c", 64)+`",
   "parent_public_key": "`+strings.Repeat("d", 64)+`",
   "message_type": "note",
@@ -695,7 +1166,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	}
 
 	taskCommentPageReq := httptest.NewRequest(http.MethodPost, "/teams/project-beta/tasks/team-task-implement-teamtask/comment", strings.NewReader(
-		"author_agent_id=agent%3A%2F%2Fpc75%2Flive-charlie&channel_id=main&message_type=comment&content=Page+task+comment+stays+inside+Team",
+		"author_agent_id=agent%3A%2F%2Fpc75%2Flive-bravo&channel_id=main&message_type=comment&content=Page+task+comment+stays+inside+Team",
 	))
 	taskCommentPageReq.RemoteAddr = "127.0.0.1:12345"
 	taskCommentPageReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -898,6 +1369,7 @@ func TestPluginBuildHandlesTeamTaskFormWrites(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
   "team_id": "project-forms",
   "title": "Project Forms",
+  "owner_agent_id": "agent://pc75/live-alpha",
   "channels": ["main"]
 }`), 0o644); err != nil {
 		t.Fatalf("WriteFile(team.json) error = %v", err)
@@ -938,7 +1410,7 @@ func TestPluginBuildHandlesTeamTaskFormWrites(t *testing.T) {
 	}
 
 	updateReq := httptest.NewRequest(http.MethodPost, "/teams/project-forms/tasks/form-task-1/update", strings.NewReader(
-		"title=Updated+via+form&status=done&priority=high&assignees=agent%3A%2F%2Fpc75%2Flive-charlie&labels=weekly%2Cdone&description=form+update",
+		"title=Updated+via+form&status=done&priority=high&assignees=agent%3A%2F%2Fpc75%2Flive-charlie&labels=weekly%2Cdone&description=form+update&actor_agent_id=agent%3A%2F%2Fpc75%2Flive-alpha",
 	))
 	updateReq.RemoteAddr = "127.0.0.1:23456"
 	updateReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -956,8 +1428,11 @@ func TestPluginBuildHandlesTeamTaskFormWrites(t *testing.T) {
 		t.Fatalf("unexpected updated form task: %#v", updatedTask)
 	}
 
-	deleteReq := httptest.NewRequest(http.MethodPost, "/teams/project-forms/tasks/form-task-1/delete", nil)
+	deleteReq := httptest.NewRequest(http.MethodPost, "/teams/project-forms/tasks/form-task-1/delete", strings.NewReader(
+		"actor_agent_id=agent%3A%2F%2Fpc75%2Flive-alpha",
+	))
 	deleteReq.RemoteAddr = "127.0.0.1:23456"
+	deleteReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	deleteRec := httptest.NewRecorder()
 	site.Handler.ServeHTTP(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusSeeOther {

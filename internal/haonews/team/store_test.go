@@ -1,8 +1,13 @@
 package team
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,6 +126,172 @@ func TestStoreLoadPolicyDefaultsAndNormalize(t *testing.T) {
 	}
 	if strings.Join(policy.SystemNoteRoles, ",") != "owner,maintainer" {
 		t.Fatalf("unexpected normalized system note roles: %#v", policy.SystemNoteRoles)
+	}
+}
+
+func TestPolicyAllowsUsesLegacyAndExplicitPermissions(t *testing.T) {
+	t.Parallel()
+
+	policy := normalizePolicy(Policy{})
+	if !policy.Allows("message.send", "member") {
+		t.Fatalf("expected default legacy policy to allow member message.send")
+	}
+	if policy.Allows("policy.update", "member") {
+		t.Fatalf("expected default legacy policy to deny member policy.update")
+	}
+
+	policy = normalizePolicy(Policy{
+		Permissions: map[string][]string{
+			"message.send":  {"owner"},
+			"policy.update": {"owner"},
+		},
+	})
+	if policy.Allows("message.send", "member") {
+		t.Fatalf("expected explicit permissions to override legacy message.send")
+	}
+	if !policy.Allows("message.send", "owner") {
+		t.Fatalf("expected explicit permissions to allow owner message.send")
+	}
+	if !policy.Allows("task.create", "member") {
+		t.Fatalf("expected unspecified action to fall back to legacy task.create")
+	}
+}
+
+func TestAgentCardCRUDAndMatchAgentsForTask(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "agent-test")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"agent-test","title":"Agent Test"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+
+	card := AgentCard{
+		AgentID:     "agent://pc75/coder",
+		Name:        "Code Agent",
+		Description: "Writes and reviews code",
+		Skills: []AgentSkill{
+			{ID: "code-review", Name: "Code Review", Tags: []string{"review", "code"}},
+			{ID: "code-write", Name: "Code Writing", Tags: []string{"coding", "implementation"}},
+		},
+	}
+	if err := store.SaveAgentCard("agent-test", card); err != nil {
+		t.Fatalf("SaveAgentCard error = %v", err)
+	}
+
+	loaded, err := store.LoadAgentCard("agent-test", "agent://pc75/coder")
+	if err != nil {
+		t.Fatalf("LoadAgentCard error = %v", err)
+	}
+	if loaded.Name != "Code Agent" {
+		t.Fatalf("loaded.Name = %q", loaded.Name)
+	}
+
+	cards, err := store.ListAgentCards("agent-test")
+	if err != nil {
+		t.Fatalf("ListAgentCards error = %v", err)
+	}
+	if len(cards) != 1 {
+		t.Fatalf("ListAgentCards = %d, want 1", len(cards))
+	}
+
+	matched := MatchAgentsForTask(cards, Task{Labels: []string{"implementation"}})
+	if len(matched) != 1 || matched[0].AgentID != "agent://pc75/coder" {
+		t.Fatalf("MatchAgentsForTask = %#v", matched)
+	}
+}
+
+func TestStoreSubscribePublishesMessageEvent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "event-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	events, unsubscribe, err := store.Subscribe("event-team")
+	if err != nil {
+		t.Fatalf("Subscribe error = %v", err)
+	}
+	defer unsubscribe()
+
+	if err := store.AppendMessage("event-team", Message{
+		ChannelID:     "main",
+		AuthorAgentID: "agent://pc75/live-alpha",
+		MessageType:   "chat",
+		Content:       "hello sse",
+		CreatedAt:     time.Date(2026, 4, 3, 13, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendMessage error = %v", err)
+	}
+
+	select {
+	case event := <-events:
+		if event.TeamID != "event-team" || event.Kind != "message" || event.Action != "create" {
+			t.Fatalf("unexpected event: %#v", event)
+		}
+		if event.ChannelID != "main" {
+			t.Fatalf("event.ChannelID = %q", event.ChannelID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for team event")
+	}
+}
+
+func TestStoreWebhookReceivesPublishedEvent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "webhook-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	received := make(chan *http.Request, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- r
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	if err := store.SaveWebhookConfigs("webhook-team", []PushNotificationConfig{{
+		WebhookID: "hook-1",
+		URL:       server.URL,
+		Token:     "secret-token",
+		Events:    []string{"message.create"},
+	}}); err != nil {
+		t.Fatalf("SaveWebhookConfigs error = %v", err)
+	}
+	if err := store.AppendMessage("webhook-team", Message{
+		ChannelID:     "main",
+		AuthorAgentID: "agent://pc75/live-alpha",
+		MessageType:   "chat",
+		Content:       "hello webhook",
+		CreatedAt:     time.Date(2026, 4, 3, 16, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendMessage error = %v", err)
+	}
+	select {
+	case req := <-received:
+		if got := req.Header.Get("Authorization"); got != "Bearer secret-token" {
+			t.Fatalf("Authorization = %q", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for webhook delivery")
 	}
 }
 
@@ -251,6 +422,120 @@ func TestStoreLoadMessagesLimitReadsLatestMessages(t *testing.T) {
 	}
 	if messages[0].Content != "message-5" || messages[1].Content != "message-4" {
 		t.Fatalf("unexpected limited message order: %#v", messages)
+	}
+}
+
+func TestStoreMigrateChannelToShardsKeepsMessagesReadable(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-shards")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-shards","title":"Project Shards"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	firstAt := time.Date(2026, 3, 31, 10, 0, 0, 0, time.UTC)
+	secondAt := time.Date(2026, 4, 8, 10, 0, 0, 0, time.UTC)
+	if err := store.AppendMessage("project-shards", Message{
+		ChannelID:     "research",
+		AuthorAgentID: "agent://pc75/live-alpha",
+		Content:       "week one",
+		CreatedAt:     firstAt,
+	}); err != nil {
+		t.Fatalf("AppendMessage(first) error = %v", err)
+	}
+	if err := store.AppendMessage("project-shards", Message{
+		ChannelID:     "research",
+		AuthorAgentID: "agent://pc75/live-bravo",
+		Content:       "week two",
+		CreatedAt:     secondAt,
+	}); err != nil {
+		t.Fatalf("AppendMessage(second) error = %v", err)
+	}
+
+	before, err := store.LoadMessages("project-shards", "research", 0)
+	if err != nil {
+		t.Fatalf("LoadMessages(before migrate) error = %v", err)
+	}
+	if len(before) != 2 || before[0].Content != "week two" || before[1].Content != "week one" {
+		t.Fatalf("unexpected messages before migrate: %#v", before)
+	}
+	if err := store.MigrateChannelToShards("project-shards", "research"); err != nil {
+		t.Fatalf("MigrateChannelToShards error = %v", err)
+	}
+
+	if _, err := os.Stat(store.channelLegacyBackupPath("project-shards", "research")); err != nil {
+		t.Fatalf("expected legacy backup to exist, got %v", err)
+	}
+	if !store.isShardedChannel("project-shards", "research") {
+		t.Fatalf("expected research channel to be sharded after migration")
+	}
+
+	after, err := store.LoadMessages("project-shards", "research", 0)
+	if err != nil {
+		t.Fatalf("LoadMessages(after migrate) error = %v", err)
+	}
+	if len(after) != 2 || after[0].Content != "week two" || after[1].Content != "week one" {
+		t.Fatalf("unexpected messages after migrate: %#v", after)
+	}
+}
+
+func TestStoreMigrateChannelToShardsAppendsNewMessagesToLatestShard(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-shard-append")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-shard-append","title":"Project Shard Append"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	legacyAt := time.Date(2026, 4, 1, 9, 0, 0, 0, time.UTC)
+	newAt := time.Date(2026, 4, 15, 9, 0, 0, 0, time.UTC)
+	if err := store.AppendMessage("project-shard-append", Message{
+		ChannelID:     "planning",
+		AuthorAgentID: "agent://pc75/live-alpha",
+		Content:       "legacy planning note",
+		CreatedAt:     legacyAt,
+	}); err != nil {
+		t.Fatalf("AppendMessage(legacy) error = %v", err)
+	}
+	if err := store.MigrateChannelToShards("project-shard-append", "planning"); err != nil {
+		t.Fatalf("MigrateChannelToShards error = %v", err)
+	}
+	if err := store.AppendMessage("project-shard-append", Message{
+		ChannelID:     "planning",
+		AuthorAgentID: "agent://pc75/live-bravo",
+		Content:       "new planning note",
+		CreatedAt:     newAt,
+	}); err != nil {
+		t.Fatalf("AppendMessage(new) error = %v", err)
+	}
+
+	if _, err := os.Stat(store.channelPath("project-shard-append", "planning")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected legacy channel file to stay absent after shard append, got %v", err)
+	}
+	if _, err := os.Stat(store.channelShardPath("project-shard-append", "planning", newAt)); err != nil {
+		t.Fatalf("expected latest shard file to exist, got %v", err)
+	}
+
+	messages, err := store.LoadMessages("project-shard-append", "planning", 10)
+	if err != nil {
+		t.Fatalf("LoadMessages error = %v", err)
+	}
+	if len(messages) != 2 || messages[0].Content != "new planning note" || messages[1].Content != "legacy planning note" {
+		t.Fatalf("unexpected sharded messages: %#v", messages)
 	}
 }
 
@@ -646,6 +931,436 @@ func TestStoreSaveAndDeleteTask(t *testing.T) {
 	}
 }
 
+func TestStoreMigrateTasksToIndexKeepsTasksReadable(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-task-index")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	if err := store.AppendTask("project-task-index", Task{
+		TaskID:    "task-index-1",
+		CreatedBy: "agent://pc75/live-alpha",
+		Title:     "Indexed Task One",
+		Status:    "open",
+		Priority:  "normal",
+		CreatedAt: time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendTask(first) error = %v", err)
+	}
+	if err := store.AppendTask("project-task-index", Task{
+		TaskID:    "task-index-2",
+		CreatedBy: "agent://pc75/live-bravo",
+		Title:     "Indexed Task Two",
+		Status:    "doing",
+		Priority:  "high",
+		CreatedAt: time.Date(2026, 4, 3, 12, 10, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 4, 3, 12, 10, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendTask(second) error = %v", err)
+	}
+	if err := store.MigrateTasksToIndex("project-task-index"); err != nil {
+		t.Fatalf("MigrateTasksToIndex error = %v", err)
+	}
+	if !store.hasTaskIndex("project-task-index") {
+		t.Fatal("expected task index to exist after migration")
+	}
+
+	tasks, err := store.LoadTasks("project-task-index", 2)
+	if err != nil {
+		t.Fatalf("LoadTasks(indexed) error = %v", err)
+	}
+	if len(tasks) != 2 || tasks[0].TaskID != "task-index-2" {
+		t.Fatalf("unexpected indexed tasks: %#v", tasks)
+	}
+
+	task, err := store.LoadTask("project-task-index", "task-index-1")
+	if err != nil {
+		t.Fatalf("LoadTask(indexed) error = %v", err)
+	}
+	if task.Title != "Indexed Task One" {
+		t.Fatalf("task.Title = %q", task.Title)
+	}
+}
+
+func TestStoreIndexedTaskCRUDAndCompact(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-task-compact")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	if err := store.MigrateTasksToIndex("project-task-compact"); err != nil {
+		t.Fatalf("MigrateTasksToIndex(empty) error = %v", err)
+	}
+	if err := store.AppendTask("project-task-compact", Task{
+		TaskID:    "task-compact-1",
+		CreatedBy: "agent://pc75/live-alpha",
+		Title:     "Compact Task",
+		Status:    "open",
+		CreatedAt: time.Date(2026, 4, 3, 13, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 4, 3, 13, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendTask error = %v", err)
+	}
+	if err := store.SaveTask("project-task-compact", Task{
+		TaskID:    "task-compact-1",
+		CreatedBy: "agent://pc75/live-alpha",
+		Title:     "Compact Task Updated",
+		Status:    "doing",
+		Priority:  "high",
+		CreatedAt: time.Date(2026, 4, 3, 13, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 4, 3, 13, 5, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("SaveTask(indexed) error = %v", err)
+	}
+	task, err := store.LoadTask("project-task-compact", "task-compact-1")
+	if err != nil {
+		t.Fatalf("LoadTask error = %v", err)
+	}
+	if task.Status != "doing" || task.Title != "Compact Task Updated" {
+		t.Fatalf("unexpected indexed task after update: %#v", task)
+	}
+	before, err := os.Stat(store.taskDataPath("project-task-compact"))
+	if err != nil {
+		t.Fatalf("Stat(before compact) error = %v", err)
+	}
+	if err := store.CompactTasks("project-task-compact"); err != nil {
+		t.Fatalf("CompactTasks error = %v", err)
+	}
+	after, err := os.Stat(store.taskDataPath("project-task-compact"))
+	if err != nil {
+		t.Fatalf("Stat(after compact) error = %v", err)
+	}
+	if after.Size() >= before.Size() {
+		t.Fatalf("expected compacted task data to shrink: before=%d after=%d", before.Size(), after.Size())
+	}
+	if err := store.DeleteTask("project-task-compact", "task-compact-1"); err != nil {
+		t.Fatalf("DeleteTask(indexed) error = %v", err)
+	}
+	if _, err := store.LoadTask("project-task-compact", "task-compact-1"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("LoadTask after delete error = %v, want not exist", err)
+	}
+}
+
+func TestStoreTaskStateMachineAllowsValidTransitions(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-task-state")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-task-state","title":"Project Task State"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	createdAt := time.Date(2026, 4, 1, 9, 0, 0, 0, time.UTC)
+	if err := store.AppendTask("project-task-state", Task{
+		TaskID:    "task-state-1",
+		Title:     "Track valid transitions",
+		Status:    "open",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
+	}); err != nil {
+		t.Fatalf("AppendTask error = %v", err)
+	}
+	if err := store.SaveTask("project-task-state", Task{
+		TaskID:    "task-state-1",
+		Title:     "Track valid transitions",
+		Status:    "doing",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt.Add(30 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveTask(doing) error = %v", err)
+	}
+	if err := store.SaveTask("project-task-state", Task{
+		TaskID:    "task-state-1",
+		Title:     "Track valid transitions",
+		Status:    "done",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt.Add(60 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveTask(done) error = %v", err)
+	}
+	task, err := store.LoadTask("project-task-state", "task-state-1")
+	if err != nil {
+		t.Fatalf("LoadTask error = %v", err)
+	}
+	if task.Status != TaskStateDone {
+		t.Fatalf("expected done task, got %#v", task)
+	}
+	if task.ClosedAt.IsZero() {
+		t.Fatalf("expected terminal task to have closed_at, got %#v", task)
+	}
+}
+
+func TestStoreTaskStateMachineRejectsInvalidTransition(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-task-invalid")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-task-invalid","title":"Project Task Invalid"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	createdAt := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+	if err := store.AppendTask("project-task-invalid", Task{
+		TaskID:    "task-invalid-1",
+		Title:     "Reject reopen",
+		Status:    "done",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
+	}); err != nil {
+		t.Fatalf("AppendTask error = %v", err)
+	}
+	err = store.SaveTask("project-task-invalid", Task{
+		TaskID:    "task-invalid-1",
+		Title:     "Reject reopen",
+		Status:    "doing",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt.Add(15 * time.Minute),
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid task status transition") {
+		t.Fatalf("expected invalid transition error, got %v", err)
+	}
+}
+
+func TestStoreTaskStateMachineUsesPolicyOverrides(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-task-policy")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-task-policy","title":"Project Task Policy"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	if err := store.SavePolicy("project-task-policy", Policy{
+		TaskTransitions: map[string]TaskTransitionRule{
+			TaskStateOpen: {Allowed: []string{TaskStateReview}},
+		},
+	}); err != nil {
+		t.Fatalf("SavePolicy error = %v", err)
+	}
+	createdAt := time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC)
+	if err := store.AppendTask("project-task-policy", Task{
+		TaskID:    "task-policy-1",
+		Title:     "Policy controlled task",
+		Status:    "open",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
+	}); err != nil {
+		t.Fatalf("AppendTask error = %v", err)
+	}
+	err = store.SaveTask("project-task-policy", Task{
+		TaskID:    "task-policy-1",
+		Title:     "Policy controlled task",
+		Status:    "doing",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt.Add(15 * time.Minute),
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid task status transition") {
+		t.Fatalf("expected policy transition error, got %v", err)
+	}
+	if err := store.SaveTask("project-task-policy", Task{
+		TaskID:    "task-policy-1",
+		Title:     "Policy controlled task",
+		Status:    "review",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt.Add(30 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveTask(review) error = %v", err)
+	}
+}
+
+func TestStoreContextIDAutoGeneratedAndQueryable(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-context")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-context","title":"Project Context"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	createdAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	if err := store.AppendTask("project-context", Task{
+		TaskID:    "task-context-1",
+		Title:     "Link context",
+		ChannelID: "research",
+		Status:    "open",
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
+	}); err != nil {
+		t.Fatalf("AppendTask error = %v", err)
+	}
+	task, err := store.LoadTask("project-context", "task-context-1")
+	if err != nil {
+		t.Fatalf("LoadTask error = %v", err)
+	}
+	if strings.TrimSpace(task.ContextID) == "" {
+		t.Fatalf("expected task context id, got %#v", task)
+	}
+	if err := store.AppendMessage("project-context", Message{
+		ChannelID:     "research",
+		ContextID:     task.ContextID,
+		AuthorAgentID: "agent://pc75/live-alpha",
+		Content:       "context research note",
+		CreatedAt:     createdAt.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatalf("AppendMessage(context field) error = %v", err)
+	}
+	if err := store.AppendMessage("project-context", Message{
+		ChannelID:     "main",
+		AuthorAgentID: "agent://pc75/live-bravo",
+		Content:       "context from structured data",
+		StructuredData: map[string]any{
+			"context_id": task.ContextID,
+		},
+		CreatedAt: createdAt.Add(20 * time.Minute),
+	}); err != nil {
+		t.Fatalf("AppendMessage(context structured data) error = %v", err)
+	}
+
+	tasks, err := store.LoadTasksByContext("project-context", task.ContextID)
+	if err != nil {
+		t.Fatalf("LoadTasksByContext error = %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].TaskID != "task-context-1" {
+		t.Fatalf("unexpected context tasks: %#v", tasks)
+	}
+	messages, err := store.LoadMessagesByContext("project-context", task.ContextID, 10)
+	if err != nil {
+		t.Fatalf("LoadMessagesByContext error = %v", err)
+	}
+	if len(messages) != 2 || messages[0].Content != "context from structured data" || messages[1].Content != "context research note" {
+		t.Fatalf("unexpected context messages: %#v", messages)
+	}
+}
+
+func TestStoreAppendMessageRequireSignature(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-signature")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-signature","title":"Project Signature"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	if err := store.SavePolicy("project-signature", Policy{RequireSignature: true}); err != nil {
+		t.Fatalf("SavePolicy error = %v", err)
+	}
+	msg := Message{
+		ChannelID:       "main",
+		AuthorAgentID:   "agent://pc75/live-alpha",
+		OriginPublicKey: strings.Repeat("a", 64),
+		Content:         "unsigned message",
+		CreatedAt:       time.Date(2026, 4, 1, 13, 0, 0, 0, time.UTC),
+	}
+	err = store.AppendMessage("project-signature", msg)
+	if err == nil || !strings.Contains(err.Error(), "signature verification failed") {
+		t.Fatalf("expected signature verification error, got %v", err)
+	}
+}
+
+func TestStoreAppendMessageAcceptsValidSignatureAndRejectsTamper(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-signed-message")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-signed-message","title":"Project Signed Message"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	if err := store.SavePolicy("project-signed-message", Policy{RequireSignature: true}); err != nil {
+		t.Fatalf("SavePolicy error = %v", err)
+	}
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey error = %v", err)
+	}
+	msg := Message{
+		TeamID:          "project-signed-message",
+		ChannelID:       "research",
+		ContextID:       "ctx-signed",
+		AuthorAgentID:   "agent://pc75/live-alpha",
+		OriginPublicKey: hex.EncodeToString(publicKey),
+		ParentPublicKey: strings.Repeat("b", 64),
+		MessageType:     "decision",
+		Content:         "signed message content",
+		StructuredData: map[string]any{
+			"task_id": "task-1",
+		},
+		Parts:      []MessagePart{{Kind: "text", Text: "signed body"}},
+		References: []Reference{{RefType: "task", TargetID: "task-1"}},
+		CreatedAt:  time.Date(2026, 4, 1, 14, 0, 0, 0, time.UTC),
+	}
+	payload, err := messageSignaturePayload(msg)
+	if err != nil {
+		t.Fatalf("messageSignaturePayload error = %v", err)
+	}
+	msg.Signature = hex.EncodeToString(ed25519.Sign(privateKey, payload))
+	if err := store.AppendMessage("project-signed-message", msg); err != nil {
+		t.Fatalf("AppendMessage(valid signature) error = %v", err)
+	}
+	loaded, err := store.LoadMessages("project-signed-message", "research", 10)
+	if err != nil {
+		t.Fatalf("LoadMessages error = %v", err)
+	}
+	if len(loaded) != 1 || loaded[0].Content != "signed message content" {
+		t.Fatalf("unexpected signed messages: %#v", loaded)
+	}
+
+	msg.Content = "tampered content"
+	err = store.AppendMessage("project-signed-message", msg)
+	if err == nil || !strings.Contains(err.Error(), "signature verification failed") {
+		t.Fatalf("expected tamper signature error, got %v", err)
+	}
+}
+
 func TestStoreListChannels(t *testing.T) {
 	t.Parallel()
 
@@ -871,6 +1586,109 @@ func TestStoreSaveMembersAndLoadArtifacts(t *testing.T) {
 	if len(history) != 1 || history[0].SubjectID != "artifact-iota-1" || history[0].Action != "delete" {
 		t.Fatalf("unexpected history: %#v", history)
 	}
+	if err := store.AppendHistory("project-iota", ChangeEvent{
+		Scope:     "policy",
+		Action:    "update",
+		SubjectID: "policy",
+		Summary:   "更新 Team Policy",
+		Diff: map[string]FieldDiff{
+			"require_signature": {Before: false, After: true},
+			"noop":              {Before: "same", After: "same"},
+		},
+		CreatedAt: time.Date(2026, 4, 1, 7, 45, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendHistory(with diff) error = %v", err)
+	}
+	history, err = store.LoadHistory("project-iota", 10)
+	if err != nil {
+		t.Fatalf("LoadHistory(with diff) error = %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 history entries, got %#v", history)
+	}
+	if _, ok := history[0].Diff["require_signature"]; !ok {
+		t.Fatalf("expected require_signature diff, got %#v", history[0].Diff)
+	}
+	if _, ok := history[0].Diff["noop"]; ok {
+		t.Fatalf("expected identical diff entry to be dropped, got %#v", history[0].Diff)
+	}
+}
+
+func TestStoreMigrateArtifactsToIndexAndCompact(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-artifact-index")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	if err := store.AppendArtifact("project-artifact-index", Artifact{
+		ArtifactID: "artifact-index-1",
+		CreatedBy:  "agent://pc75/live-alpha",
+		Title:      "Artifact One",
+		Kind:       "markdown",
+		CreatedAt:  time.Date(2026, 4, 3, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 4, 3, 14, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendArtifact(first) error = %v", err)
+	}
+	if err := store.AppendArtifact("project-artifact-index", Artifact{
+		ArtifactID: "artifact-index-2",
+		CreatedBy:  "agent://pc75/live-bravo",
+		Title:      "Artifact Two",
+		Kind:       "json",
+		CreatedAt:  time.Date(2026, 4, 3, 14, 10, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 4, 3, 14, 10, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendArtifact(second) error = %v", err)
+	}
+	if err := store.MigrateArtifactsToIndex("project-artifact-index"); err != nil {
+		t.Fatalf("MigrateArtifactsToIndex error = %v", err)
+	}
+	if !store.hasArtifactIndex("project-artifact-index") {
+		t.Fatal("expected artifact index to exist after migration")
+	}
+	artifacts, err := store.LoadArtifacts("project-artifact-index", 2)
+	if err != nil {
+		t.Fatalf("LoadArtifacts(indexed) error = %v", err)
+	}
+	if len(artifacts) != 2 || artifacts[0].ArtifactID != "artifact-index-2" {
+		t.Fatalf("unexpected indexed artifacts: %#v", artifacts)
+	}
+	if err := store.SaveArtifact("project-artifact-index", Artifact{
+		ArtifactID: "artifact-index-1",
+		CreatedBy:  "agent://pc75/live-alpha",
+		Title:      "Artifact One Updated",
+		Kind:       "post",
+		CreatedAt:  time.Date(2026, 4, 3, 14, 0, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 4, 3, 14, 20, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("SaveArtifact(indexed) error = %v", err)
+	}
+	before, err := os.Stat(store.artifactDataPath("project-artifact-index"))
+	if err != nil {
+		t.Fatalf("Stat(before compact) error = %v", err)
+	}
+	if err := store.CompactArtifacts("project-artifact-index"); err != nil {
+		t.Fatalf("CompactArtifacts error = %v", err)
+	}
+	after, err := os.Stat(store.artifactDataPath("project-artifact-index"))
+	if err != nil {
+		t.Fatalf("Stat(after compact) error = %v", err)
+	}
+	if after.Size() >= before.Size() {
+		t.Fatalf("expected compacted artifact data to shrink: before=%d after=%d", before.Size(), after.Size())
+	}
+	if err := store.DeleteArtifact("project-artifact-index", "artifact-index-2"); err != nil {
+		t.Fatalf("DeleteArtifact(indexed) error = %v", err)
+	}
+	if _, err := store.LoadArtifact("project-artifact-index", "artifact-index-2"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("LoadArtifact after delete error = %v, want not exist", err)
+	}
 }
 
 func TestStoreLoadArtifactsAndHistoryLimitReadLatestEntries(t *testing.T) {
@@ -922,6 +1740,106 @@ func TestStoreLoadArtifactsAndHistoryLimitReadLatestEntries(t *testing.T) {
 	}
 	if len(history) != 2 || history[0].Summary != "history-5" || history[1].Summary != "history-4" {
 		t.Fatalf("unexpected limited history: %#v", history)
+	}
+}
+
+func TestStoreApplyReplicatedSyncMessageAndHistoryAreIdempotent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	teamRoot := filepath.Join(root, "team", "project-sync")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-sync","title":"Project Sync"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey error = %v", err)
+	}
+	msg := Message{
+		TeamID:          "project-sync",
+		ChannelID:       "main",
+		ContextID:       "ctx-sync",
+		AuthorAgentID:   "agent://remote/alpha",
+		OriginPublicKey: hex.EncodeToString(publicKey),
+		MessageType:     "note",
+		Content:         "replicated message",
+		CreatedAt:       time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC),
+	}
+	payload, err := MessageSignaturePayload(msg)
+	if err != nil {
+		t.Fatalf("MessageSignaturePayload error = %v", err)
+	}
+	msg.Signature = hex.EncodeToString(ed25519.Sign(privateKey, payload))
+	syncMsg := TeamSyncMessage{
+		Type:    TeamSyncTypeMessage,
+		TeamID:  "project-sync",
+		Message: &msg,
+	}.Normalize()
+
+	applied, err := store.ApplyReplicatedSync(syncMsg)
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(message) error = %v", err)
+	}
+	if !applied {
+		t.Fatalf("expected first replicated message to apply")
+	}
+	applied, err = store.ApplyReplicatedSync(syncMsg)
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(message duplicate) error = %v", err)
+	}
+	if applied {
+		t.Fatalf("expected duplicate replicated message to be skipped")
+	}
+	messages, err := store.LoadMessages("project-sync", "main", 10)
+	if err != nil {
+		t.Fatalf("LoadMessages error = %v", err)
+	}
+	if len(messages) != 1 || messages[0].Content != "replicated message" {
+		t.Fatalf("unexpected replicated messages: %#v", messages)
+	}
+
+	event := ChangeEvent{
+		TeamID:    "project-sync",
+		Scope:     "message",
+		Action:    "create",
+		SubjectID: msg.MessageID,
+		Summary:   "replicated history",
+		Source:    "p2p",
+		CreatedAt: time.Date(2026, 4, 3, 12, 0, 1, 0, time.UTC),
+	}
+	syncHistory := TeamSyncMessage{
+		Type:    TeamSyncTypeHistory,
+		TeamID:  "project-sync",
+		History: &event,
+	}.Normalize()
+	applied, err = store.ApplyReplicatedSync(syncHistory)
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(history) error = %v", err)
+	}
+	if !applied {
+		t.Fatalf("expected first replicated history to apply")
+	}
+	applied, err = store.ApplyReplicatedSync(syncHistory)
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(history duplicate) error = %v", err)
+	}
+	if applied {
+		t.Fatalf("expected duplicate replicated history to be skipped")
+	}
+	history, err := store.LoadHistory("project-sync", 10)
+	if err != nil {
+		t.Fatalf("LoadHistory error = %v", err)
+	}
+	if len(history) != 1 || history[0].Scope != "message" {
+		t.Fatalf("unexpected replicated history: %#v", history)
 	}
 }
 

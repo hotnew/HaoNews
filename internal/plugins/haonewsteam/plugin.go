@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -123,6 +124,23 @@ func filepathBase(path string) string {
 
 func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/agent.json", func(w http.ResponseWriter, r *http.Request) {
+		handleA2AWellKnownAgent(app, store, w, r)
+	})
+	mux.HandleFunc("/a2a/teams/", func(w http.ResponseWriter, r *http.Request) {
+		trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/a2a/teams/"), "/")
+		if trimmed == "" {
+			http.NotFound(w, r)
+			return
+		}
+		parts := strings.Split(trimmed, "/")
+		teamID := teamcore.NormalizeTeamID(parts[0])
+		if teamID == "" || len(parts) < 2 {
+			http.NotFound(w, r)
+			return
+		}
+		handleA2ATeam(app, store, teamID, w, r)
+	})
 	mux.HandleFunc("/archive/team", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/archive/team" {
 			http.NotFound(w, r)
@@ -307,7 +325,7 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 			return
 		}
 		parts := strings.Split(trimmed, "/")
-		if len(parts) > 4 {
+		if len(parts) > 4 && !(len(parts) >= 3 && parts[1] == "agents") {
 			http.NotFound(w, r)
 			return
 		}
@@ -359,6 +377,31 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 		}
 		if len(parts) == 2 && parts[1] == "messages" {
 			handleAPITeamMessages(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "webhooks" {
+			handleAPITeamWebhooks(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "events" {
+			handleAPITeamEvents(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "agents" {
+			handleAPITeamAgents(store, teamID, w, r)
+			return
+		}
+		if len(parts) >= 3 && parts[1] == "agents" {
+			agentID, err := url.PathUnescape(strings.Join(parts[2:], "/"))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			handleAPITeamAgent(store, teamID, agentID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "contexts" {
+			handleAPITeamContext(store, teamID, parts[2], w, r)
 			return
 		}
 		if len(parts) == 2 && parts[1] == "tasks" {

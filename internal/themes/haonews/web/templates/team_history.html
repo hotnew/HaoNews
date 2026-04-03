@@ -220,24 +220,25 @@
                   {{if .ActorOriginPublicKey}}<p class="micro-copy">子公钥：<code>{{printf "%.12s" .ActorOriginPublicKey}}</code></p>{{end}}
                   {{if .ActorParentPublicKey}}<p class="micro-copy">父公钥：<code>{{printf "%.12s" .ActorParentPublicKey}}</code></p>{{end}}
                   {{$diff := index .Metadata "diff_summary"}}{{if $diff}}<p class="micro-copy">摘要：{{$diff}}</p>{{end}}
-                  {{$before := index .Metadata "status_before"}}{{$after := index .Metadata "status_after"}}
-                  {{if or $before $after}}<p class="micro-copy">状态：{{if $before}}{{$before}}{{else}}-{{end}} → {{if $after}}{{$after}}{{else}}-{{end}}</p>{{end}}
-                  {{$roleBefore := index .Metadata "role_before"}}{{$roleAfter := index .Metadata "role_after"}}
-                  {{if or $roleBefore $roleAfter}}<p class="micro-copy">角色：{{if $roleBefore}}{{$roleBefore}}{{else}}-{{end}} → {{if $roleAfter}}{{$roleAfter}}{{else}}-{{end}}</p>{{end}}
-                  {{$titleBefore := index .Metadata "title_before"}}{{$titleAfter := index .Metadata "title_after"}}
-                  {{if or $titleBefore $titleAfter}}<p class="micro-copy">标题：{{if $titleBefore}}{{$titleBefore}}{{else}}-{{end}} → {{if $titleAfter}}{{$titleAfter}}{{else}}-{{end}}</p>{{end}}
-                  {{$priorityBefore := index .Metadata "priority_before"}}{{$priorityAfter := index .Metadata "priority_after"}}
-                  {{if or $priorityBefore $priorityAfter}}<p class="micro-copy">优先级：{{if $priorityBefore}}{{$priorityBefore}}{{else}}-{{end}} → {{if $priorityAfter}}{{$priorityAfter}}{{else}}-{{end}}</p>{{end}}
-                  {{$assigneesBefore := index .Metadata "assignees_before"}}{{$assigneesAfter := index .Metadata "assignees_after"}}
-                  {{if or $assigneesBefore $assigneesAfter}}<p class="micro-copy">负责者：{{if $assigneesBefore}}{{$assigneesBefore}}{{else}}-{{end}} → {{if $assigneesAfter}}{{$assigneesAfter}}{{else}}-{{end}}</p>{{end}}
-                  {{$labelsBefore := index .Metadata "labels_before"}}{{$labelsAfter := index .Metadata "labels_after"}}
-                  {{if or $labelsBefore $labelsAfter}}<p class="micro-copy">标签：{{if $labelsBefore}}{{$labelsBefore}}{{else}}-{{end}} → {{if $labelsAfter}}{{$labelsAfter}}{{else}}-{{end}}</p>{{end}}
-                  {{$channelBefore := index .Metadata "channel_before"}}{{$channelAfter := index .Metadata "channel_after"}}
-                  {{if or $channelBefore $channelAfter}}<p class="micro-copy">频道：{{if $channelBefore}}{{$channelBefore}}{{else}}-{{end}} → {{if $channelAfter}}{{$channelAfter}}{{else}}-{{end}}</p>{{end}}
-                  {{$taskBefore := index .Metadata "task_before"}}{{$taskAfter := index .Metadata "task_after"}}
-                  {{if or $taskBefore $taskAfter}}<p class="micro-copy">任务：{{if $taskBefore}}{{$taskBefore}}{{else}}-{{end}} → {{if $taskAfter}}{{$taskAfter}}{{else}}-{{end}}</p>{{end}}
-                  {{$hiddenBefore := index .Metadata "hidden_before"}}{{$hiddenAfter := index .Metadata "hidden_after"}}
-                  {{if or $hiddenBefore $hiddenAfter}}<p class="micro-copy">隐藏：{{if $hiddenBefore}}{{$hiddenBefore}}{{else}}-{{end}} → {{if $hiddenAfter}}{{$hiddenAfter}}{{else}}-{{end}}</p>{{end}}
+                  {{if .Diff}}
+                    {{$role := index .Diff "role"}}{{if $role}}<p class="micro-copy">角色：{{if $role.Before}}{{$role.Before}}{{else}}-{{end}} → {{if $role.After}}{{$role.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$status := index .Diff "status"}}{{if $status}}<p class="micro-copy">状态：{{if $status.Before}}{{$status.Before}}{{else}}-{{end}} → {{if $status.After}}{{$status.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$origin := index .Diff "origin"}}{{if $origin}}<p class="micro-copy">子公钥：{{if $origin.Before}}{{$origin.Before}}{{else}}-{{end}} → {{if $origin.After}}{{$origin.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$parent := index .Diff "parent"}}{{if $parent}}<p class="micro-copy">父公钥：{{if $parent.Before}}{{$parent.Before}}{{else}}-{{end}} → {{if $parent.After}}{{$parent.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$title := index .Diff "title"}}{{if $title}}<p class="micro-copy">标题：{{if $title.Before}}{{$title.Before}}{{else}}-{{end}} → {{if $title.After}}{{$title.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$priority := index .Diff "priority"}}{{if $priority}}<p class="micro-copy">优先级：{{if $priority.Before}}{{$priority.Before}}{{else}}-{{end}} → {{if $priority.After}}{{$priority.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$assignees := index .Diff "assignees"}}{{if $assignees}}<p class="micro-copy">负责者：{{if $assignees.Before}}{{$assignees.Before}}{{else}}-{{end}} → {{if $assignees.After}}{{$assignees.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$labels := index .Diff "labels"}}{{if $labels}}<p class="micro-copy">标签：{{if $labels.Before}}{{$labels.Before}}{{else}}-{{end}} → {{if $labels.After}}{{$labels.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$channel := index .Diff "channel"}}{{if $channel}}<p class="micro-copy">频道：{{if $channel.Before}}{{$channel.Before}}{{else}}-{{end}} → {{if $channel.After}}{{$channel.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$task := index .Diff "task"}}{{if $task}}<p class="micro-copy">任务：{{if $task.Before}}{{$task.Before}}{{else}}-{{end}} → {{if $task.After}}{{$task.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$kind := index .Diff "kind"}}{{if $kind}}<p class="micro-copy">类型：{{if $kind.Before}}{{$kind.Before}}{{else}}-{{end}} → {{if $kind.After}}{{$kind.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$hidden := index .Diff "hidden"}}{{if $hidden}}<p class="micro-copy">隐藏：{{if $hidden.Before}}{{$hidden.Before}}{{else}}-{{end}} → {{if $hidden.After}}{{$hidden.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$desc := index .Diff "description"}}{{if $desc}}<p class="micro-copy">说明：{{if $desc.Before}}{{$desc.Before}}{{else}}-{{end}} → {{if $desc.After}}{{$desc.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$messageRoles := index .Diff "message_roles"}}{{if $messageRoles}}<p class="micro-copy">消息角色：{{if $messageRoles.Before}}{{$messageRoles.Before}}{{else}}-{{end}} → {{if $messageRoles.After}}{{$messageRoles.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$taskRoles := index .Diff "task_roles"}}{{if $taskRoles}}<p class="micro-copy">任务角色：{{if $taskRoles.Before}}{{$taskRoles.Before}}{{else}}-{{end}} → {{if $taskRoles.After}}{{$taskRoles.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$systemRoles := index .Diff "system_note_roles"}}{{if $systemRoles}}<p class="micro-copy">系统说明角色：{{if $systemRoles.Before}}{{$systemRoles.Before}}{{else}}-{{end}} → {{if $systemRoles.After}}{{$systemRoles.After}}{{else}}-{{end}}</p>{{end}}
+                    {{$requireSignature := index .Diff "require_signature"}}{{if $requireSignature}}<p class="micro-copy">消息签名：{{if $requireSignature.Before}}{{$requireSignature.Before}}{{else}}-{{end}} → {{if $requireSignature.After}}{{$requireSignature.After}}{{else}}-{{end}}</p>{{end}}
+                  {{end}}
                   {{if .SubjectID}}
                     <div class="team-card-links">
                       {{if eq .Scope "task"}}<a href="/teams/{{$.Team.TeamID}}/tasks/{{urlquery .SubjectID}}">打开任务</a>{{end}}

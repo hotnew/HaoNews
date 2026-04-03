@@ -420,6 +420,10 @@ func handleTeamChannelCreate(store *teamcore.Store, teamID string, w http.Respon
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "channel.create"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.SaveChannel(teamID, channel); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -448,6 +452,10 @@ func handleTeamChannelUpdate(store *teamcore.Store, teamID, channelID string, w 
 	updated.Description = strings.TrimSpace(r.FormValue("description"))
 	updated.Hidden = r.FormValue("hidden") == "true" || r.FormValue("hidden") == "on"
 	updated.UpdatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "channel.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.SaveChannel(teamID, updated); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -465,6 +473,10 @@ func handleTeamChannelHide(store *teamcore.Store, teamID, channelID string, w ht
 	before, err := store.LoadChannel(teamID, channelID)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "channel.hide"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	if err := store.HideChannel(teamID, channelID); err != nil {
@@ -653,6 +665,10 @@ func handleTeamTaskCreate(store *teamcore.Store, teamID string, w http.ResponseW
 		CreatedAt:       time.Now().UTC(),
 	}
 	payload.UpdatedAt = payload.CreatedAt
+	if err := requireTeamAction(store, teamID, payload.CreatedBy, "task.create"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.AppendTask(teamID, payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -690,6 +706,10 @@ func handleTeamTaskStatus(store *teamcore.Store, teamID, taskID string, w http.R
 	updated := existing
 	updated.Status = strings.TrimSpace(r.FormValue("status"))
 	updated.UpdatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "task.transition"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.SaveTask(teamID, updated); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -736,6 +756,10 @@ func handleTeamTaskUpdate(store *teamcore.Store, teamID, taskID string, w http.R
 		updated.ClosedAt = time.Time{}
 	}
 	updated.UpdatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "task.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.SaveTask(teamID, updated); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -754,6 +778,19 @@ func handleTeamTaskDelete(store *teamcore.Store, teamID, taskID string, w http.R
 		http.Error(w, "team task update is limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
+	existing, err := store.LoadTask(teamID, taskID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "task.delete"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.DeleteTask(teamID, taskID); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			http.NotFound(w, r)
@@ -762,7 +799,12 @@ func handleTeamTaskDelete(store *teamcore.Store, teamID, taskID string, w http.R
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_ = appendTeamHistory(store, historyActor{Source: "page"}, teamID, "task", "delete", taskID, "删除 Team Task", map[string]any{
+	_ = appendTeamHistory(store, historyActor{
+		AgentID:         existing.CreatedBy,
+		OriginPublicKey: existing.OriginPublicKey,
+		ParentPublicKey: existing.ParentPublicKey,
+		Source:          "page",
+	}, teamID, "task", "delete", taskID, "删除 Team Task", map[string]any{
 		"diff_summary": "删除任务",
 	})
 	http.Redirect(w, r, "/teams/"+teamID+"/tasks", http.StatusSeeOther)
@@ -777,13 +819,14 @@ func handleTeamTaskCommentCreate(store *teamcore.Store, teamID, taskID string, w
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if _, err := store.LoadTask(teamID, taskID); err != nil {
+	task, err := store.LoadTask(teamID, taskID)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	channelID := normalizeTeamChannel(r.FormValue("channel_id"))
 	if channelID == "" {
-		channelID = "main"
+		channelID = preferredTaskCommentChannel(task, nil)
 	}
 	structuredData, err := parseOptionalStructuredData(r.FormValue("structured_data"))
 	if err != nil {
@@ -791,12 +834,16 @@ func handleTeamTaskCommentCreate(store *teamcore.Store, teamID, taskID string, w
 		return
 	}
 	if structuredData == nil {
-		structuredData = make(map[string]any, 1)
+		structuredData = make(map[string]any, 2)
 	}
 	structuredData["task_id"] = taskID
+	if strings.TrimSpace(task.ContextID) != "" {
+		structuredData["context_id"] = task.ContextID
+	}
 	msg := teamcore.Message{
 		TeamID:          teamID,
 		ChannelID:       channelID,
+		ContextID:       strings.TrimSpace(task.ContextID),
 		AuthorAgentID:   strings.TrimSpace(r.FormValue("author_agent_id")),
 		OriginPublicKey: strings.TrimSpace(r.FormValue("origin_public_key")),
 		ParentPublicKey: strings.TrimSpace(r.FormValue("parent_public_key")),
@@ -804,6 +851,10 @@ func handleTeamTaskCommentCreate(store *teamcore.Store, teamID, taskID string, w
 		Content:         strings.TrimSpace(r.FormValue("content")),
 		StructuredData:  structuredData,
 		CreatedAt:       time.Now().UTC(),
+	}
+	if err := requireTeamAction(store, teamID, msg.AuthorAgentID, "message.send"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
 	}
 	if err := store.AppendMessage(teamID, msg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1277,6 +1328,10 @@ func handleTeamArtifactCreate(store *teamcore.Store, teamID string, w http.Respo
 		CreatedAt:       time.Now().UTC(),
 	}
 	payload.UpdatedAt = payload.CreatedAt
+	if err := requireTeamAction(store, teamID, payload.CreatedBy, "artifact.create"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.AppendArtifact(teamID, payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1321,6 +1376,10 @@ func handleTeamArtifactUpdate(store *teamcore.Store, teamID, artifactID string, 
 	updated.LinkURL = strings.TrimSpace(r.FormValue("link_url"))
 	updated.Labels = parseCSVStrings(r.FormValue("labels"))
 	updated.UpdatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "artifact.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.SaveArtifact(teamID, updated); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1339,6 +1398,19 @@ func handleTeamArtifactDelete(store *teamcore.Store, teamID, artifactID string, 
 		http.Error(w, "team artifact update is limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
+	existing, err := store.LoadArtifact(teamID, artifactID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "artifact.delete"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.DeleteArtifact(teamID, artifactID); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			http.NotFound(w, r)
@@ -1347,7 +1419,12 @@ func handleTeamArtifactDelete(store *teamcore.Store, teamID, artifactID string, 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_ = appendTeamHistory(store, historyActor{Source: "page"}, teamID, "artifact", "delete", artifactID, "删除 Team Artifact", map[string]any{
+	_ = appendTeamHistory(store, historyActor{
+		AgentID:         existing.CreatedBy,
+		OriginPublicKey: existing.OriginPublicKey,
+		ParentPublicKey: existing.ParentPublicKey,
+		Source:          "page",
+	}, teamID, "artifact", "delete", artifactID, "删除 Team Artifact", map[string]any{
 		"diff_summary": "删除产物",
 	})
 	http.Redirect(w, r, "/teams/"+teamID+"/artifacts", http.StatusSeeOther)
@@ -1510,6 +1587,209 @@ func handleAPITeamMessages(store *teamcore.Store, teamID string, w http.Response
 	})
 }
 
+func handleAPITeamWebhooks(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		configs, err := store.LoadWebhookConfigs(teamID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+			"scope":    "team-webhooks",
+			"team_id":  teamID,
+			"count":    len(configs),
+			"webhooks": configs,
+		})
+	case http.MethodPost:
+		if !teamRequestTrusted(r) {
+			http.Error(w, "team webhook update is limited to local or LAN requests", http.StatusForbidden)
+			return
+		}
+		var payload struct {
+			ActorAgentID string                            `json:"actor_agent_id"`
+			Webhooks     []teamcore.PushNotificationConfig `json:"webhooks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := requireTeamAction(store, teamID, payload.ActorAgentID, "policy.update"); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if err := store.SaveWebhookConfigs(teamID, payload.Webhooks); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		configs, err := store.LoadWebhookConfigs(teamID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+			"scope":    "team-webhooks",
+			"team_id":  teamID,
+			"count":    len(configs),
+			"webhooks": configs,
+		})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func handleAPITeamEvents(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, err := store.LoadTeam(teamID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	events, unsubscribe, err := store.Subscribe(teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer unsubscribe()
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprint(w, ": team-events\n\n")
+	flusher.Flush()
+	keepalive := time.NewTicker(20 * time.Second)
+	defer keepalive.Stop()
+	writeEvent := func(event teamcore.TeamEvent) error {
+		body, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "event: team\ndata: %s\n\n", body); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event := <-events:
+			if err := writeEvent(event); err != nil {
+				return
+			}
+		case <-keepalive.C:
+			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+func handleAPITeamAgents(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cards, err := store.ListAgentCards(teamID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		taskID := strings.TrimSpace(r.URL.Query().Get("task"))
+		var matched []teamcore.AgentCard
+		if taskID != "" {
+			task, err := store.LoadTask(teamID, taskID)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					http.NotFound(w, r)
+					return
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			matched = teamcore.MatchAgentsForTask(cards, task)
+		}
+		body := map[string]any{
+			"scope":       "team-agents",
+			"team_id":     teamID,
+			"agent_count": len(cards),
+			"agents":      cards,
+		}
+		if taskID != "" {
+			body["task_id"] = taskID
+			body["matched_count"] = len(matched)
+			body["matched_agents"] = matched
+		}
+		newsplugin.WriteJSON(w, http.StatusOK, body)
+	case http.MethodPost:
+		if !teamRequestTrusted(r) {
+			http.Error(w, "team agent card writes are limited to local or LAN requests", http.StatusForbidden)
+			return
+		}
+		var payload struct {
+			Card         teamcore.AgentCard `json:"card"`
+			ActorAgentID string             `json:"actor_agent_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		card := payload.Card
+		if card.AgentID == "" {
+			http.Error(w, "empty agent card", http.StatusBadRequest)
+			return
+		}
+		if err := requireTeamAction(store, teamID, payload.ActorAgentID, "agent_card.register"); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if err := store.SaveAgentCard(teamID, card); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		loaded, err := store.LoadAgentCard(teamID, card.AgentID)
+		if err != nil {
+			loaded = card
+		}
+		newsplugin.WriteJSON(w, http.StatusCreated, map[string]any{
+			"scope":   "team-agent-card",
+			"team_id": teamID,
+			"agent":   loaded,
+		})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func handleAPITeamAgent(store *teamcore.Store, teamID, agentID string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	card, err := store.LoadAgentCard(teamID, agentID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"scope":   "team-agent-card",
+		"team_id": teamID,
+		"agent":   card,
+	})
+}
+
 func handleAPITeamChannels(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		handleAPITeamChannelCreate(store, teamID, w, r)
@@ -1652,6 +1932,10 @@ func handleAPITeamChannelMessageCreate(store *teamcore.Store, teamID, channelID 
 	payload.TeamID = teamID
 	payload.ChannelID = channelID
 	payload.CreatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, payload.AuthorAgentID, "message.send"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.AppendMessage(teamID, payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1679,20 +1963,27 @@ func handleAPITeamChannelCreate(store *teamcore.Store, teamID string, w http.Res
 		http.Error(w, "team channel update is limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
-	var payload teamcore.Channel
+	var payload struct {
+		teamcore.Channel
+		ActorAgentID string `json:"actor_agent_id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	payload.CreatedAt = time.Now().UTC()
-	payload.UpdatedAt = payload.CreatedAt
-	if err := store.SaveChannel(teamID, payload); err != nil {
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "channel.create"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	payload.Channel.CreatedAt = time.Now().UTC()
+	payload.Channel.UpdatedAt = payload.Channel.CreatedAt
+	if err := store.SaveChannel(teamID, payload.Channel); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	channel, err := store.LoadChannel(teamID, payload.ChannelID)
 	if err != nil {
-		channel = payload
+		channel = payload.Channel
 	}
 	_ = appendTeamHistory(store, historyActor{Source: "api"}, teamID, "channel", "create", channel.ChannelID, "创建 Team Channel", channelHistoryMetadata(teamcore.Channel{}, channel))
 	newsplugin.WriteJSON(w, http.StatusCreated, map[string]any{
@@ -1713,12 +2004,17 @@ func handleAPITeamChannelUpdate(store *teamcore.Store, teamID, channelID string,
 		return
 	}
 	var payload struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Hidden      *bool  `json:"hidden"`
+		Title        string `json:"title"`
+		Description  string `json:"description"`
+		Hidden       *bool  `json:"hidden"`
+		ActorAgentID string `json:"actor_agent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "channel.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	channel := before
@@ -1755,6 +2051,14 @@ func handleAPITeamChannelDelete(store *teamcore.Store, teamID, channelID string,
 	before, err := store.LoadChannel(teamID, channelID)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	var payload struct {
+		ActorAgentID string `json:"actor_agent_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&payload)
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "channel.hide"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	if err := store.HideChannel(teamID, channelID); err != nil {
@@ -1850,7 +2154,8 @@ func handleAPITeamTaskCommentCreate(store *teamcore.Store, teamID, taskID string
 		http.Error(w, "team task comment is limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
-	if _, err := store.LoadTask(teamID, taskID); err != nil {
+	task, err := store.LoadTask(teamID, taskID)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -1865,10 +2170,18 @@ func handleAPITeamTaskCommentCreate(store *teamcore.Store, teamID, taskID string
 		payload.ChannelID = "main"
 	}
 	if payload.StructuredData == nil {
-		payload.StructuredData = make(map[string]any, 1)
+		payload.StructuredData = make(map[string]any, 2)
 	}
 	payload.StructuredData["task_id"] = taskID
+	if strings.TrimSpace(task.ContextID) != "" {
+		payload.ContextID = task.ContextID
+		payload.StructuredData["context_id"] = task.ContextID
+	}
 	payload.CreatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, payload.AuthorAgentID, "message.send"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.AppendMessage(teamID, payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1894,6 +2207,38 @@ func handleAPITeamTaskCommentCreate(store *teamcore.Store, teamID, taskID string
 	})
 }
 
+func handleAPITeamContext(store *teamcore.Store, teamID, contextID string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, err := store.LoadTeam(teamID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	limit := clampTeamListLimit(r.URL.Query().Get("limit"), 100, 200)
+	tasks, err := store.LoadTasksByContext(teamID, contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	messages, err := store.LoadMessagesByContext(teamID, contextID, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"scope":         "team-context",
+		"team_id":       teamID,
+		"context_id":    strings.TrimSpace(contextID),
+		"limit":         limit,
+		"task_count":    len(tasks),
+		"message_count": len(messages),
+		"tasks":         tasks,
+		"messages":      messages,
+	})
+}
+
 func handleAPITeamTaskCreate(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
 	if !teamRequestTrusted(r) {
 		http.Error(w, "team task update is limited to local or LAN requests", http.StatusForbidden)
@@ -1907,6 +2252,10 @@ func handleAPITeamTaskCreate(store *teamcore.Store, teamID string, w http.Respon
 	payload.ChannelID = normalizeTeamChannel(payload.ChannelID)
 	payload.CreatedAt = time.Now().UTC()
 	payload.UpdatedAt = payload.CreatedAt
+	if err := requireTeamAction(store, teamID, payload.CreatedBy, "task.create"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.AppendTask(teamID, payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1970,6 +2319,10 @@ func handleAPITeamTaskUpdate(store *teamcore.Store, teamID, taskID string, w htt
 		payload.ClosedAt = time.Time{}
 	}
 	payload.UpdatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, payload.CreatedBy, "task.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.SaveTask(teamID, payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -2006,7 +2359,8 @@ func handleAPITeamTaskStatus(store *teamcore.Store, teamID, taskID string, w htt
 		return
 	}
 	var payload struct {
-		Status string `json:"status"`
+		Status       string `json:"status"`
+		ActorAgentID string `json:"actor_agent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2015,6 +2369,10 @@ func handleAPITeamTaskStatus(store *teamcore.Store, teamID, taskID string, w htt
 	updated := existing
 	updated.Status = payload.Status
 	updated.UpdatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "task.transition"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.SaveTask(teamID, updated); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -2041,6 +2399,23 @@ func handleAPITeamTaskDelete(store *teamcore.Store, teamID, taskID string, w htt
 		http.Error(w, "team task update is limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
+	existing, err := store.LoadTask(teamID, taskID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var payload struct {
+		ActorAgentID string `json:"actor_agent_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&payload)
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "task.delete"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.DeleteTask(teamID, taskID); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			http.NotFound(w, r)
@@ -2049,7 +2424,12 @@ func handleAPITeamTaskDelete(store *teamcore.Store, teamID, taskID string, w htt
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_ = appendTeamHistory(store, historyActor{Source: "api"}, teamID, "task", "delete", taskID, "删除 Team Task", map[string]any{
+	_ = appendTeamHistory(store, historyActor{
+		AgentID:         existing.CreatedBy,
+		OriginPublicKey: existing.OriginPublicKey,
+		ParentPublicKey: existing.ParentPublicKey,
+		Source:          "api",
+	}, teamID, "task", "delete", taskID, "删除 Team Task", map[string]any{
 		"diff_summary": "删除任务",
 	})
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
@@ -2129,16 +2509,23 @@ func handleTeamPolicyUpdate(store *teamcore.Store, teamID string, w http.Respons
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	policy := teamcore.Policy{
-		MessageRoles:    parseCSVStrings(r.FormValue("message_roles")),
-		TaskRoles:       parseCSVStrings(r.FormValue("task_roles")),
-		SystemNoteRoles: parseCSVStrings(r.FormValue("system_note_roles")),
-		UpdatedAt:       time.Now().UTC(),
-	}
 	before, err := store.LoadPolicy(teamID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "policy.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	policy := teamcore.Policy{
+		MessageRoles:     parseCSVStrings(r.FormValue("message_roles")),
+		TaskRoles:        parseCSVStrings(r.FormValue("task_roles")),
+		SystemNoteRoles:  parseCSVStrings(r.FormValue("system_note_roles")),
+		Permissions:      before.Permissions,
+		RequireSignature: teamFormBool(r.FormValue("require_signature")),
+		TaskTransitions:  before.TaskTransitions,
+		UpdatedAt:        time.Now().UTC(),
 	}
 	if err := store.SavePolicy(teamID, policy); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2164,6 +2551,10 @@ func handleTeamMemberUpdate(store *teamcore.Store, teamID string, w http.Respons
 		Role:            strings.TrimSpace(r.FormValue("role")),
 		Status:          strings.TrimSpace(r.FormValue("status")),
 	}
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "member.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	before, _ := loadTeamMember(store, teamID, member.AgentID)
 	if err := upsertTeamMember(store, teamID, member); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2186,6 +2577,10 @@ func handleTeamMemberAction(store *teamcore.Store, teamID string, w http.Respons
 	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "member.transition"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	member, summary, metadata, err := applyTeamMemberAction(store, teamID, strings.TrimSpace(r.FormValue("agent_id")), strings.TrimSpace(r.FormValue("action")))
@@ -2217,6 +2612,10 @@ func handleTeamMemberBulkAction(store *teamcore.Store, teamID string, w http.Res
 	}
 	action := strings.TrimSpace(r.FormValue("action"))
 	agentIDs := parseCSVStrings(r.FormValue("agent_ids"))
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "member.bulk-transition"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if len(agentIDs) == 0 {
 		http.Error(w, "empty agent_ids", http.StatusBadRequest)
 		return
@@ -2247,7 +2646,10 @@ func handleAPITeamPolicyUpdate(store *teamcore.Store, teamID string, w http.Resp
 		http.Error(w, "team policy update is limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
-	var payload teamcore.Policy
+	var payload struct {
+		teamcore.Policy
+		ActorAgentID string `json:"actor_agent_id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -2257,16 +2659,26 @@ func handleAPITeamPolicyUpdate(store *teamcore.Store, teamID string, w http.Resp
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "policy.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if payload.Permissions == nil {
+		payload.Permissions = before.Permissions
+	}
+	if payload.TaskTransitions == nil {
+		payload.TaskTransitions = before.TaskTransitions
+	}
 	payload.UpdatedAt = time.Now().UTC()
-	if err := store.SavePolicy(teamID, payload); err != nil {
+	if err := store.SavePolicy(teamID, payload.Policy); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = appendTeamHistory(store, historyActor{Source: "api"}, teamID, "policy", "update", "team-policy", "更新 Team Policy", policyHistoryMetadata(before, payload))
+	_ = appendTeamHistory(store, historyActor{AgentID: strings.TrimSpace(payload.ActorAgentID), Source: "api"}, teamID, "policy", "update", "team-policy", "更新 Team Policy", policyHistoryMetadata(before, payload.Policy))
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":   "team-policy",
 		"team_id": teamID,
-		"policy":  payload,
+		"policy":  payload.Policy,
 	})
 }
 
@@ -2275,19 +2687,26 @@ func handleAPITeamMemberUpdate(store *teamcore.Store, teamID string, w http.Resp
 		http.Error(w, "team member update is limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
-	var payload teamcore.Member
+	var payload struct {
+		teamcore.Member
+		ActorAgentID string `json:"actor_agent_id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "member.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	before, _ := loadTeamMember(store, teamID, payload.AgentID)
-	if err := upsertTeamMember(store, teamID, payload); err != nil {
+	if err := upsertTeamMember(store, teamID, payload.Member); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	after, _ := loadTeamMember(store, teamID, payload.AgentID)
 	_ = appendTeamHistory(store, historyActor{
-		AgentID:         payload.AgentID,
+		AgentID:         strings.TrimSpace(payload.ActorAgentID),
 		OriginPublicKey: payload.OriginPublicKey,
 		ParentPublicKey: payload.ParentPublicKey,
 		Source:          "api",
@@ -2314,11 +2733,16 @@ func handleAPITeamMemberAction(store *teamcore.Store, teamID string, w http.Resp
 		return
 	}
 	var payload struct {
-		AgentID string `json:"agent_id"`
-		Action  string `json:"action"`
+		AgentID      string `json:"agent_id"`
+		Action       string `json:"action"`
+		ActorAgentID string `json:"actor_agent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "member.transition"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	member, summary, metadata, err := applyTeamMemberAction(store, teamID, payload.AgentID, payload.Action)
@@ -2360,11 +2784,16 @@ func handleAPITeamMemberBulkAction(store *teamcore.Store, teamID string, w http.
 		return
 	}
 	var payload struct {
-		AgentIDs []string `json:"agent_ids"`
-		Action   string   `json:"action"`
+		AgentIDs     []string `json:"agent_ids"`
+		Action       string   `json:"action"`
+		ActorAgentID string   `json:"actor_agent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "member.bulk-transition"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	agentIDs := make([]string, 0, len(payload.AgentIDs))
@@ -2430,6 +2859,10 @@ func handleAPITeamArtifactCreate(store *teamcore.Store, teamID string, w http.Re
 	}
 	payload.CreatedAt = time.Now().UTC()
 	payload.UpdatedAt = payload.CreatedAt
+	if err := requireTeamAction(store, teamID, payload.CreatedBy, "artifact.create"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.AppendArtifact(teamID, payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -2490,6 +2923,10 @@ func handleAPITeamArtifactUpdate(store *teamcore.Store, teamID, artifactID strin
 		payload.CreatedAt = existing.CreatedAt
 	}
 	payload.UpdatedAt = time.Now().UTC()
+	if err := requireTeamAction(store, teamID, payload.CreatedBy, "artifact.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.SaveArtifact(teamID, payload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -2516,6 +2953,23 @@ func handleAPITeamArtifactDelete(store *teamcore.Store, teamID, artifactID strin
 		http.Error(w, "team artifact update is limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
+	existing, err := store.LoadArtifact(teamID, artifactID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var payload struct {
+		ActorAgentID string `json:"actor_agent_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&payload)
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "artifact.delete"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err := store.DeleteArtifact(teamID, artifactID); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			http.NotFound(w, r)
@@ -2524,7 +2978,12 @@ func handleAPITeamArtifactDelete(store *teamcore.Store, teamID, artifactID strin
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_ = appendTeamHistory(store, historyActor{Source: "api"}, teamID, "artifact", "delete", artifactID, "删除 Team Artifact", map[string]any{
+	_ = appendTeamHistory(store, historyActor{
+		AgentID:         existing.CreatedBy,
+		OriginPublicKey: existing.OriginPublicKey,
+		ParentPublicKey: existing.ParentPublicKey,
+		Source:          "api",
+	}, teamID, "artifact", "delete", artifactID, "删除 Team Artifact", map[string]any{
 		"diff_summary": "删除产物",
 	})
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
@@ -2942,6 +3401,9 @@ func containsFolded(values []string, needle string) bool {
 func preferredTaskCommentChannel(task teamcore.Task, channels []teamcore.ChannelSummary) string {
 	taskChannel := normalizeTeamChannel(task.ChannelID)
 	if taskChannel != "" {
+		if len(channels) == 0 {
+			return taskChannel
+		}
 		for _, channel := range channels {
 			if normalizeTeamChannel(channel.ChannelID) == taskChannel {
 				return channel.ChannelID
@@ -2987,6 +3449,15 @@ func parseCSVStrings(raw string) []string {
 	return out
 }
 
+func teamFormBool(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
 func parseOptionalStructuredData(raw string) (map[string]any, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -3024,6 +3495,8 @@ func policyHistoryMetadata(before, after teamcore.Policy) map[string]any {
 		"task_roles_after":         after.TaskRoles,
 		"system_note_roles_before": before.SystemNoteRoles,
 		"system_note_roles_after":  after.SystemNoteRoles,
+		"require_signature_before": before.RequireSignature,
+		"require_signature_after":  after.RequireSignature,
 		"diff_summary":             "消息角色/任务角色/系统说明角色已更新",
 	}
 }
@@ -3292,6 +3765,10 @@ func handleTeamArchiveCreate(store *teamcore.Store, teamID string, w http.Respon
 		http.Error(w, "team archive writes are limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
+	if err := requireTeamAction(store, teamID, strings.TrimSpace(r.FormValue("actor_agent_id")), "archive.create"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	record, err := store.CreateManualArchive(teamID, time.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -3368,6 +3845,14 @@ func handleAPITeamArchiveCreate(store *teamcore.Store, teamID string, w http.Res
 		http.Error(w, "team archive writes are limited to local or LAN requests", http.StatusForbidden)
 		return
 	}
+	var payload struct {
+		ActorAgentID string `json:"actor_agent_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&payload)
+	if err := requireTeamAction(store, teamID, payload.ActorAgentID, "archive.create"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	record, err := store.CreateManualArchive(teamID, time.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -3411,9 +3896,71 @@ func appendTeamHistory(store *teamcore.Store, actor historyActor, teamID, scope,
 		ActorOriginPublicKey: strings.TrimSpace(actor.OriginPublicKey),
 		ActorParentPublicKey: strings.TrimSpace(actor.ParentPublicKey),
 		Source:               strings.TrimSpace(actor.Source),
+		Diff:                 buildTeamHistoryDiff(scope, metadata),
 		Metadata:             metadata,
 		CreatedAt:            time.Now().UTC(),
 	})
+}
+
+func buildTeamHistoryDiff(scope string, metadata map[string]any) map[string]teamcore.FieldDiff {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var pairs map[string][2]string
+	switch strings.TrimSpace(scope) {
+	case "policy":
+		pairs = map[string][2]string{
+			"message_roles":     {"message_roles_before", "message_roles_after"},
+			"task_roles":        {"task_roles_before", "task_roles_after"},
+			"system_note_roles": {"system_note_roles_before", "system_note_roles_after"},
+			"require_signature": {"require_signature_before", "require_signature_after"},
+		}
+	case "member":
+		pairs = map[string][2]string{
+			"role":   {"role_before", "role_after"},
+			"status": {"status_before", "status_after"},
+			"origin": {"origin_before", "origin_after"},
+			"parent": {"parent_before", "parent_after"},
+		}
+	case "task":
+		pairs = map[string][2]string{
+			"channel":   {"channel_before", "channel_after"},
+			"title":     {"title_before", "title_after"},
+			"status":    {"status_before", "status_after"},
+			"priority":  {"priority_before", "priority_after"},
+			"assignees": {"assignees_before", "assignees_after"},
+			"labels":    {"labels_before", "labels_after"},
+		}
+	case "artifact":
+		pairs = map[string][2]string{
+			"title":   {"title_before", "title_after"},
+			"kind":    {"kind_before", "kind_after"},
+			"channel": {"channel_before", "channel_after"},
+			"task":    {"task_before", "task_after"},
+			"labels":  {"labels_before", "labels_after"},
+		}
+	case "channel":
+		pairs = map[string][2]string{
+			"title":       {"title_before", "title_after"},
+			"description": {"description_before", "description_after"},
+			"hidden":      {"hidden_before", "hidden_after"},
+		}
+	default:
+		return nil
+	}
+	diff := make(map[string]teamcore.FieldDiff, len(pairs))
+	for name, pair := range pairs {
+		before, beforeOK := metadata[pair[0]]
+		after, afterOK := metadata[pair[1]]
+		if !beforeOK && !afterOK {
+			continue
+		}
+		diff[name] = teamcore.FieldDiff{Before: before, After: after}
+	}
+	if len(diff) == 0 {
+		return nil
+	}
+	return diff
 }
 
 func teamRequestTrusted(r *http.Request) bool {
@@ -3422,6 +3969,54 @@ func teamRequestTrusted(r *http.Request) bool {
 		return false
 	}
 	return addr.IsLoopback() || addr.IsPrivate()
+}
+
+func requireTeamAction(store *teamcore.Store, teamID, actorAgentID, action string) error {
+	actorAgentID = strings.TrimSpace(actorAgentID)
+	info, err := store.LoadTeam(teamID)
+	if err != nil {
+		return err
+	}
+	fallbackRole := ""
+	if actorAgentID == "" {
+		actorAgentID = strings.TrimSpace(info.OwnerAgentID)
+		if actorAgentID == "" {
+			fallbackRole = "owner"
+		}
+	}
+	role := fallbackRole
+	if actorAgentID != "" {
+		role, err = teamActorRole(store, teamID, actorAgentID, info)
+		if err != nil {
+			return err
+		}
+	}
+	policy, err := store.LoadPolicy(teamID)
+	if err != nil {
+		return err
+	}
+	if !policy.Allows(action, role) {
+		return fmt.Errorf("team policy denied action %q for role %q", action, role)
+	}
+	return nil
+}
+
+func teamActorRole(store *teamcore.Store, teamID, actorAgentID string, info teamcore.Info) (string, error) {
+	actorAgentID = strings.TrimSpace(actorAgentID)
+	if actorAgentID == "" {
+		return "", errors.New("empty actor_agent_id")
+	}
+	member, err := loadTeamMember(store, teamID, actorAgentID)
+	if err == nil {
+		return member.Role, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if actorAgentID == strings.TrimSpace(info.OwnerAgentID) {
+		return "owner", nil
+	}
+	return "", fmt.Errorf("team actor %q not found", actorAgentID)
 }
 
 func teamClientIP(r *http.Request) netip.Addr {

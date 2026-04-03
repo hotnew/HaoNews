@@ -492,8 +492,11 @@ func mergeSites(sites []*Site, manifests []PluginManifest, theme ThemeManifest) 
 func chainHandlers(sites []*Site) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, site := range sites {
-			rec := newBufferedResponseRecorder()
+			rec := newBufferedResponseRecorder(w)
 			site.Handler.ServeHTTP(rec, r)
+			if rec.streaming {
+				return
+			}
 			if rec.statusCode != http.StatusNotFound {
 				rec.writeTo(w)
 				return
@@ -507,31 +510,45 @@ type bufferedResponseRecorder struct {
 	header     http.Header
 	body       bytes.Buffer
 	statusCode int
+	target     http.ResponseWriter
+	streaming  bool
 }
 
-func newBufferedResponseRecorder() *bufferedResponseRecorder {
+func newBufferedResponseRecorder(target http.ResponseWriter) *bufferedResponseRecorder {
 	return &bufferedResponseRecorder{
 		header:     make(http.Header),
 		statusCode: http.StatusOK,
+		target:     target,
 	}
 }
 
 func (r *bufferedResponseRecorder) Header() http.Header {
+	if r.streaming {
+		return r.target.Header()
+	}
 	return r.header
 }
 
 func (r *bufferedResponseRecorder) Write(value []byte) (int, error) {
-	if r.statusCode == 0 {
-		r.statusCode = http.StatusOK
+	if r.streaming {
+		return r.target.Write(value)
 	}
+	r.ensureStatus()
 	return r.body.Write(value)
 }
 
 func (r *bufferedResponseRecorder) WriteHeader(statusCode int) {
+	if r.streaming {
+		r.target.WriteHeader(statusCode)
+		return
+	}
 	r.statusCode = statusCode
 }
 
 func (r *bufferedResponseRecorder) writeTo(w http.ResponseWriter) {
+	if r.streaming {
+		return
+	}
 	for key, values := range r.header {
 		for _, value := range values {
 			w.Header().Add(key, value)
@@ -542,6 +559,36 @@ func (r *bufferedResponseRecorder) writeTo(w http.ResponseWriter) {
 	}
 	w.WriteHeader(r.statusCode)
 	_, _ = w.Write(r.body.Bytes())
+}
+
+func (r *bufferedResponseRecorder) Flush() {
+	if r.streaming {
+		if flusher, ok := r.target.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		return
+	}
+	r.streaming = true
+	for key, values := range r.header {
+		for _, value := range values {
+			r.target.Header().Add(key, value)
+		}
+	}
+	r.ensureStatus()
+	r.target.WriteHeader(r.statusCode)
+	if r.body.Len() > 0 {
+		_, _ = r.target.Write(r.body.Bytes())
+		r.body.Reset()
+	}
+	if flusher, ok := r.target.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (r *bufferedResponseRecorder) ensureStatus() {
+	if r.statusCode == 0 {
+		r.statusCode = http.StatusOK
+	}
 }
 
 func sortedKeys[T any](value map[string]T) []string {
@@ -559,12 +606,6 @@ func scopeConfigForPlugin(cfg Config, manifest PluginManifest) Config {
 		return cfg
 	}
 	cfg.RuntimeRoot = scopeDir(cfg.RuntimeRoot, scope, true)
-	cfg.StoreRoot = scopeDir(cfg.StoreRoot, scope, false)
-	cfg.ArchiveRoot = scopeDir(cfg.ArchiveRoot, scope, false)
-	cfg.RulesPath = scopeFile(cfg.RulesPath, scope)
-	cfg.WriterPolicyPath = scopeFile(cfg.WriterPolicyPath, scope)
-	cfg.NetPath = scopeFile(cfg.NetPath, scope)
-	cfg.TrackerPath = scopeFile(cfg.TrackerPath, scope)
 	return cfg
 }
 
