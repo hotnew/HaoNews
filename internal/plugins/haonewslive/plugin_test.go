@@ -384,6 +384,27 @@ func TestPluginBuildUpdatesLivePublicModerationRules(t *testing.T) {
 	}
 }
 
+func TestPluginBuildRejectsSpoofedForwardedForOnLivePublicModeration(t *testing.T) {
+	t.Parallel()
+
+	site, _ := buildLiveSite(t)
+	form := url.Values{
+		"muted_origin_public_keys": {strings.Repeat("a", 64)},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/live/public/moderation", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.RemoteAddr = "198.51.100.20:23456"
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if location := rec.Header().Get("Location"); !strings.Contains(location, "/live/public/moderation?error=untrusted") {
+		t.Fatalf("unexpected redirect = %q", location)
+	}
+}
+
 func TestPluginBuildPublicLiveRoomAppliesMutedOriginRules(t *testing.T) {
 	t.Parallel()
 

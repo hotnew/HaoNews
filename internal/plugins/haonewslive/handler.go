@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -221,41 +222,11 @@ func handleLiveIndex(app *newsplugin.App, store *live.LocalStore, w http.Respons
 }
 
 func handleLiveArchiveIndex(app *newsplugin.App, store *live.LocalStore, w http.ResponseWriter, r *http.Request) {
-	rooms, err := store.ListRooms()
+	items, totalArchives, err := loadLiveArchiveRoomSummaries(store)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	items := make([]liveArchiveRoomSummary, 0, len(rooms))
-	totalArchives := 0
-	for _, summary := range rooms {
-		historyArchives, err := store.ListHistoryArchives(summary.RoomID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if len(historyArchives) == 0 {
-			continue
-		}
-		totalArchives += len(historyArchives)
-		room, err := loadLiveRoom(store, summary.RoomID)
-		if err != nil {
-			continue
-		}
-		lastArchived := ""
-		if len(historyArchives) > 0 {
-			lastArchived = formatLiveDisplayTime(historyArchives[0].ArchivedAt)
-		}
-		items = append(items, liveArchiveRoomSummary{
-			Room:         room,
-			RoomLinks:    liveRoomLinksFor(summary.RoomID),
-			ArchiveCount: len(historyArchives),
-			LastArchived: lastArchived,
-		})
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		return items[i].LastArchived > items[j].LastArchived
-	})
 	index, err := app.Index()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -314,37 +285,86 @@ func handleAPILiveArchiveNow(store *live.LocalStore, roomID string, w http.Respo
 }
 
 func handleAPILiveArchiveIndex(store *live.LocalStore, w http.ResponseWriter, r *http.Request) {
-	rooms, err := store.ListRooms()
+	summaries, _, err := loadLiveArchiveRoomSummaries(store)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	items := make([]map[string]any, 0, len(rooms))
-	for _, summary := range rooms {
-		historyArchives, err := store.ListHistoryArchives(summary.RoomID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if len(historyArchives) == 0 {
-			continue
-		}
-		room, err := loadLiveRoom(store, summary.RoomID)
-		if err != nil {
-			continue
-		}
+	items := make([]map[string]any, 0, len(summaries))
+	for _, summary := range summaries {
 		items = append(items, map[string]any{
-			"room":            room,
-			"archive_count":   len(historyArchives),
-			"last_archived":   formatLiveDisplayTime(historyArchives[0].ArchivedAt),
-			"history_url":     liveRoomLinksFor(summary.RoomID).HistoryURL,
-			"api_history_url": liveRoomLinksFor(summary.RoomID).APIHistoryURL,
+			"room":            summary.Room,
+			"archive_count":   summary.ArchiveCount,
+			"last_archived":   summary.LastArchived,
+			"history_url":     summary.RoomLinks.HistoryURL,
+			"api_history_url": summary.RoomLinks.APIHistoryURL,
 		})
 	}
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope": "live-archive-index",
 		"rooms": items,
 	})
+}
+
+func loadLiveArchiveRoomSummaries(store *live.LocalStore) ([]liveArchiveRoomSummary, int, error) {
+	rooms, err := store.ListRooms()
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]liveArchiveRoomSummary, 0, len(rooms))
+	totalArchives := 0
+	var (
+		mu        sync.Mutex
+		loadErr   error
+		errOnce   sync.Once
+		wg        sync.WaitGroup
+		limitSema = make(chan struct{}, 8)
+	)
+	for _, summary := range rooms {
+		summary := summary
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			limitSema <- struct{}{}
+			defer func() { <-limitSema }()
+			historyArchives, err := store.ListHistoryArchives(summary.RoomID)
+			if err != nil {
+				errOnce.Do(func() {
+					loadErr = err
+				})
+				return
+			}
+			if len(historyArchives) == 0 {
+				return
+			}
+			room, err := loadLiveRoom(store, summary.RoomID)
+			if err != nil {
+				return
+			}
+			lastArchived := ""
+			if len(historyArchives) > 0 {
+				lastArchived = formatLiveDisplayTime(historyArchives[0].ArchivedAt)
+			}
+			item := liveArchiveRoomSummary{
+				Room:         room,
+				RoomLinks:    liveRoomLinksFor(summary.RoomID),
+				ArchiveCount: len(historyArchives),
+				LastArchived: lastArchived,
+			}
+			mu.Lock()
+			totalArchives += len(historyArchives)
+			items = append(items, item)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	if loadErr != nil {
+		return nil, 0, loadErr
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].LastArchived > items[j].LastArchived
+	})
+	return items, totalArchives, nil
 }
 
 func handleLivePublicModeration(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {
@@ -1176,11 +1196,6 @@ func livePublicRequestTrusted(r *http.Request) bool {
 func livePublicClientIP(r *http.Request) netip.Addr {
 	if r == nil {
 		return netip.Addr{}
-	}
-	if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
-		if addr, err := netip.ParseAddr(strings.TrimSpace(forwarded)); err == nil {
-			return addr.Unmap()
-		}
 	}
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
 	if err == nil {

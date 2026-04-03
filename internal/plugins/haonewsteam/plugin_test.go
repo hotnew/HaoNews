@@ -494,6 +494,15 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if !strings.Contains(messagesRec.Body.String(), "\"scope\": \"team-messages\"") || !strings.Contains(messagesRec.Body.String(), "Team Beta decided to keep Team separate from Live.") {
 		t.Fatalf("expected team messages api body, got %q", messagesRec.Body.String())
 	}
+	limitedMessagesReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/messages?limit=1", nil)
+	limitedMessagesRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(limitedMessagesRec, limitedMessagesReq)
+	if limitedMessagesRec.Code != http.StatusOK {
+		t.Fatalf("limited messages api status = %d, body = %s", limitedMessagesRec.Code, limitedMessagesRec.Body.String())
+	}
+	if !strings.Contains(limitedMessagesRec.Body.String(), "\"limit\": 1") || !strings.Contains(limitedMessagesRec.Body.String(), "\"message_count\": 1") {
+		t.Fatalf("expected clamped team messages api body, got %q", limitedMessagesRec.Body.String())
+	}
 
 	channelMessagesReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/channels/research/messages", nil)
 	channelMessagesRec := httptest.NewRecorder()

@@ -2,9 +2,14 @@ package haonews
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func TestSubscribedAnnouncementTopics(t *testing.T) {
@@ -323,6 +328,106 @@ func TestMatchesAnnouncementFiltersByMaxBundleMB(t *testing.T) {
 	}
 	if !matchesAnnouncement(announcement, SyncSubscriptions{Topics: []string{"all"}, MaxBundleMB: 20}) {
 		t.Fatal("expected announcement within size limit")
+	}
+}
+
+func TestPubSubRuntimeReserveSubscriptionRespectsLimit(t *testing.T) {
+	t.Parallel()
+
+	runtime := &pubsubRuntime{maxSubs: 2}
+	if !runtime.reserveSubscription() {
+		t.Fatal("first reserve should succeed")
+	}
+	if !runtime.reserveSubscription() {
+		t.Fatal("second reserve should succeed")
+	}
+	if runtime.reserveSubscription() {
+		t.Fatal("third reserve should fail")
+	}
+	if got := runtime.subCount.Load(); got != 2 {
+		t.Fatalf("subCount = %d, want 2", got)
+	}
+	runtime.releaseSubscription()
+	if !runtime.reserveSubscription() {
+		t.Fatal("reserve should succeed after release")
+	}
+}
+
+func TestPubSubRuntimeConnectDiscoveredPeersCapsConcurrency(t *testing.T) {
+	t.Parallel()
+
+	runtime := &pubsubRuntime{
+		connSema: make(chan struct{}, 2),
+	}
+	var current atomic.Int32
+	var maxSeen atomic.Int32
+	runtime.connectFn = func(ctx context.Context, info peer.AddrInfo) error {
+		now := current.Add(1)
+		for {
+			seen := maxSeen.Load()
+			if now <= seen || maxSeen.CompareAndSwap(seen, now) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		current.Add(-1)
+		return nil
+	}
+
+	infos := []peer.AddrInfo{
+		{ID: "peer-1"},
+		{ID: "peer-2"},
+		{ID: "peer-3"},
+		{ID: "peer-4"},
+	}
+	runtime.connectDiscoveredPeers(context.Background(), infos, func(peer.ID) bool { return false }, "self")
+
+	if got := maxSeen.Load(); got > 2 {
+		t.Fatalf("max concurrent connects = %d, want <= 2", got)
+	}
+}
+
+func TestPubSubRuntimeConnectDiscoveredPeersRecordsErrors(t *testing.T) {
+	t.Parallel()
+
+	runtime := &pubsubRuntime{
+		connSema: make(chan struct{}, 1),
+		connectFn: func(ctx context.Context, info peer.AddrInfo) error {
+			return fmt.Errorf("boom")
+		},
+	}
+
+	runtime.connectDiscoveredPeers(context.Background(), []peer.AddrInfo{{ID: "peer-1"}}, func(peer.ID) bool { return false }, "self")
+
+	status := runtime.Status()
+	if !strings.Contains(status.LastError, "boom") {
+		t.Fatalf("last error = %q, want connect error", status.LastError)
+	}
+}
+
+func TestPubSubRuntimeConnectDiscoveredPeersSkipsExistingAndSelf(t *testing.T) {
+	t.Parallel()
+
+	runtime := &pubsubRuntime{
+		connSema: make(chan struct{}, 2),
+	}
+	var mu sync.Mutex
+	var seen []peer.ID
+	runtime.connectFn = func(ctx context.Context, info peer.AddrInfo) error {
+		mu.Lock()
+		seen = append(seen, info.ID)
+		mu.Unlock()
+		return nil
+	}
+
+	runtime.connectDiscoveredPeers(context.Background(),
+		[]peer.AddrInfo{{ID: "self"}, {ID: "peer-2"}, {ID: "peer-3"}},
+		func(id peer.ID) bool { return id == "peer-3" },
+		"self",
+	)
+
+	if len(seen) != 1 || seen[0] != peer.ID("peer-2") {
+		t.Fatalf("connected peers = %v, want [peer-2]", seen)
 	}
 }
 

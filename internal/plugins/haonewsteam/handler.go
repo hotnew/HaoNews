@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	teamcore "hao.news/internal/haonews/team"
@@ -56,44 +57,105 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 		http.NotFound(w, r)
 		return
 	}
-	members, err := store.LoadMembers(teamID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	var (
+		members   []teamcore.Member
+		policy    teamcore.Policy
+		messages  []teamcore.Message
+		tasks     []teamcore.Task
+		artifacts []teamcore.Artifact
+		history   []teamcore.ChangeEvent
+		channels  []teamcore.ChannelSummary
+		index     newsplugin.Index
+	)
+	var (
+		loadErr error
+		errOnce sync.Once
+		wg      sync.WaitGroup
+	)
+	captureErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errOnce.Do(func() {
+			loadErr = err
+		})
 	}
-	policy, err := store.LoadPolicy(teamID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	messages, err := store.LoadMessages(teamID, "main", 20)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	tasks, err := store.LoadTasks(teamID, 20)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	artifacts, err := store.LoadArtifacts(teamID, 20)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	history, err := store.LoadHistory(teamID, 20)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	channels, err := store.ListChannels(teamID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	index, err := app.Index()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	wg.Add(8)
+	go func() {
+		defer wg.Done()
+		items, err := store.LoadMembers(teamID)
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		members = items
+	}()
+	go func() {
+		defer wg.Done()
+		value, err := store.LoadPolicy(teamID)
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		policy = value
+	}()
+	go func() {
+		defer wg.Done()
+		items, err := store.LoadMessages(teamID, "main", 20)
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		messages = items
+	}()
+	go func() {
+		defer wg.Done()
+		items, err := store.LoadTasks(teamID, 20)
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		tasks = items
+	}()
+	go func() {
+		defer wg.Done()
+		items, err := store.LoadArtifacts(teamID, 20)
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		artifacts = items
+	}()
+	go func() {
+		defer wg.Done()
+		items, err := store.LoadHistory(teamID, 20)
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		history = items
+	}()
+	go func() {
+		defer wg.Done()
+		items, err := store.ListChannels(teamID)
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		channels = items
+	}()
+	go func() {
+		defer wg.Done()
+		value, err := app.Index()
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		index = value
+	}()
+	wg.Wait()
+	if loadErr != nil {
+		http.Error(w, loadErr.Error(), http.StatusInternalServerError)
 		return
 	}
 	data := teamPageData{
@@ -130,6 +192,20 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 	if err := app.Templates().ExecuteTemplate(w, "team_detail.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func clampTeamListLimit(raw string, fallback, max int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	if value <= 0 {
+		return fallback
+	}
+	if max > 0 && value > max {
+		return max
+	}
+	return value
 }
 
 func handleTeamMembers(app *newsplugin.App, store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
@@ -1415,7 +1491,8 @@ func handleAPITeamMessages(store *teamcore.Store, teamID string, w http.Response
 		return
 	}
 	channelID := strings.TrimSpace(r.URL.Query().Get("channel"))
-	messages, err := store.LoadMessages(teamID, channelID, 50)
+	limit := clampTeamListLimit(r.URL.Query().Get("limit"), 50, 100)
+	messages, err := store.LoadMessages(teamID, channelID, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1427,6 +1504,7 @@ func handleAPITeamMessages(store *teamcore.Store, teamID string, w http.Response
 		"scope":         "team-messages",
 		"team_id":       info.TeamID,
 		"channel_id":    channelID,
+		"limit":         limit,
 		"message_count": len(messages),
 		"messages":      messages,
 	})
@@ -1474,7 +1552,8 @@ func handleAPITeamChannel(store *teamcore.Store, teamID, channelID string, w htt
 		http.NotFound(w, r)
 		return
 	}
-	messages, err := store.LoadMessages(teamID, channelID, 50)
+	limit := clampTeamListLimit(r.URL.Query().Get("limit"), 50, 100)
+	messages, err := store.LoadMessages(teamID, channelID, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1501,7 +1580,8 @@ func handleAPITeamChannelMessages(store *teamcore.Store, teamID, channelID strin
 	if channelID == "" {
 		channelID = "main"
 	}
-	messages, err := store.LoadMessages(teamID, channelID, 50)
+	limit := clampTeamListLimit(r.URL.Query().Get("limit"), 50, 100)
+	messages, err := store.LoadMessages(teamID, channelID, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1510,6 +1590,7 @@ func handleAPITeamChannelMessages(store *teamcore.Store, teamID, channelID strin
 		"scope":         "team-channel-messages",
 		"team_id":       info.TeamID,
 		"channel_id":    channelID,
+		"limit":         limit,
 		"message_count": len(messages),
 		"messages":      messages,
 	})
@@ -1700,7 +1781,8 @@ func handleAPITeamTasks(store *teamcore.Store, teamID string, w http.ResponseWri
 		http.NotFound(w, r)
 		return
 	}
-	tasks, err := store.LoadTasks(teamID, 100)
+	limit := clampTeamListLimit(r.URL.Query().Get("limit"), 100, 200)
+	tasks, err := store.LoadTasks(teamID, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1713,6 +1795,7 @@ func handleAPITeamTasks(store *teamcore.Store, teamID string, w http.ResponseWri
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":      "team-tasks",
 		"team_id":    info.TeamID,
+		"limit":      limit,
 		"task_count": len(tasks),
 		"tasks":      tasks,
 		"applied_filters": map[string]string{
@@ -1987,7 +2070,8 @@ func handleAPITeamArtifacts(store *teamcore.Store, teamID string, w http.Respons
 		http.NotFound(w, r)
 		return
 	}
-	artifacts, err := store.LoadArtifacts(teamID, 100)
+	limit := clampTeamListLimit(r.URL.Query().Get("limit"), 100, 200)
+	artifacts, err := store.LoadArtifacts(teamID, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1999,6 +2083,7 @@ func handleAPITeamArtifacts(store *teamcore.Store, teamID string, w http.Respons
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":          "team-artifacts",
 		"team_id":        info.TeamID,
+		"limit":          limit,
 		"artifact_count": len(artifacts),
 		"artifacts":      artifacts,
 		"applied_filters": map[string]string{

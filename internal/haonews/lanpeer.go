@@ -48,6 +48,7 @@ type lanHistoryManifestResponse struct {
 }
 
 type lanPeerHealthCache struct {
+	mu      sync.RWMutex                  `json:"-"`
 	Entries map[string]lanPeerHealthEntry `json:"entries,omitempty"`
 }
 
@@ -254,13 +255,19 @@ func saveLANPeerHealthCache(cfg NetworkBootstrapConfig, cache *lanPeerHealthCach
 	if path == "" || cache == nil {
 		return nil
 	}
+	cache.mu.Lock()
 	if cache.Entries == nil {
 		cache.Entries = make(map[string]lanPeerHealthEntry)
 	}
+	entries := make(map[string]lanPeerHealthEntry, len(cache.Entries))
+	for key, entry := range cache.Entries {
+		entries[key] = entry
+	}
+	cache.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(cache, "", "  ")
+	data, err := json.MarshalIndent(&lanPeerHealthCache{Entries: entries}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -355,7 +362,12 @@ func buildLANPeerHealthStatus(values []string, cache *lanPeerHealthCache, kind s
 }
 
 func (c *lanPeerHealthCache) entry(kind, value string) lanPeerHealthEntry {
-	if c == nil || c.Entries == nil {
+	if c == nil {
+		return lanPeerHealthEntry{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.Entries == nil {
 		return lanPeerHealthEntry{}
 	}
 	return c.Entries[lanPeerHealthKey(kind, value)]
@@ -365,6 +377,8 @@ func (c *lanPeerHealthCache) recordSuccess(kind, value, observedHost string) {
 	if c == nil {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.Entries == nil {
 		c.Entries = make(map[string]lanPeerHealthEntry)
 	}
@@ -375,7 +389,7 @@ func (c *lanPeerHealthCache) recordSuccess(kind, value, observedHost string) {
 	if observedHost = normalizeObservedPrimaryHost(observedHost); observedHost != "" {
 		entry.ObservedPrimaryHost = observedHost
 		entry.ObservedPrimaryFrom = strings.TrimSpace(kind)
-		c.propagateObservedPrimaryHost(kind, value, observedHost)
+		c.propagateObservedPrimaryHostLocked(kind, value, observedHost)
 	}
 	c.Entries[lanPeerHealthKey(kind, value)] = entry
 }
@@ -384,6 +398,8 @@ func (c *lanPeerHealthCache) recordFailure(kind, value string, err error) {
 	if c == nil {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.Entries == nil {
 		c.Entries = make(map[string]lanPeerHealthEntry)
 	}
@@ -470,6 +486,11 @@ func (c *lanPeerHealthCache) bootstrapTargets(kind, value string) []string {
 	if value == "" {
 		return nil
 	}
+	if c == nil {
+		return []string{value}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	out := make([]string, 0, 3)
 	seen := make(map[string]struct{}, 3)
 	appendTarget := func(target string) {
@@ -483,13 +504,16 @@ func (c *lanPeerHealthCache) bootstrapTargets(kind, value string) []string {
 		seen[target] = struct{}{}
 		out = append(out, target)
 	}
-	entry := c.entry(kind, value)
+	entry := lanPeerHealthEntry{}
+	if c.Entries != nil {
+		entry = c.Entries[lanPeerHealthKey(kind, value)]
+	}
 	appendTarget(entry.ObservedPrimaryHost)
 	out = append(out, value)
 	return out
 }
 
-func (c *lanPeerHealthCache) propagateObservedPrimaryHost(kind, value, observedHost string) {
+func (c *lanPeerHealthCache) propagateObservedPrimaryHostLocked(kind, value, observedHost string) {
 	if c == nil || c.Entries == nil {
 		return
 	}

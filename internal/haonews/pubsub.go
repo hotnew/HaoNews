@@ -9,10 +9,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/discovery"
+	"github.com/libp2p/go-libp2p/core/peer"
 	routingdisc "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	discutil "github.com/libp2p/go-libp2p/p2p/discovery/util"
 
@@ -27,6 +29,8 @@ const (
 	creditProofTopicPrefix     = "haonews/credit/proofs"
 	reservedTopicAll           = "all"
 	pubsubHandlerTimeout       = 5 * time.Second
+	maxPubSubSubscriptions     = 64
+	maxPubSubConnectFanout     = 4
 )
 
 type SyncAnnouncement struct {
@@ -61,6 +65,10 @@ type pubsubRuntime struct {
 	joinedTopics        []string
 	discoveryNamespaces []string
 	status              SyncPubSubStatus
+	subCount            atomic.Int32
+	maxSubs             int32
+	connSema            chan struct{}
+	connectFn           func(context.Context, peer.AddrInfo) error
 }
 
 func startPubSubRuntime(
@@ -88,6 +96,11 @@ func startPubSubRuntime(
 		subscriptions:       make(map[string]*pubsub.Subscription),
 		joinedTopics:        joinedTopics,
 		discoveryNamespaces: discoveryNamespaces(hostRuntime.networkID, hostRuntime.rendezvous, rules),
+		maxSubs:             maxPubSubSubscriptions,
+		connSema:            make(chan struct{}, maxPubSubConnectFanout),
+		connectFn: func(ctx context.Context, info peer.AddrInfo) error {
+			return hostRuntime.host.Connect(ctx, info)
+		},
 		status: SyncPubSubStatus{
 			Enabled:                          true,
 			JoinedTopics:                     append([]string(nil), joinedTopics...),
@@ -249,8 +262,16 @@ func (r *pubsubRuntime) subscribe(ctx context.Context, topicName string, onAnnou
 	r.mu.Lock()
 	r.subscriptions[topicName] = sub
 	r.mu.Unlock()
+	if !r.reserveSubscription() {
+		sub.Cancel()
+		r.mu.Lock()
+		delete(r.subscriptions, topicName)
+		r.mu.Unlock()
+		return fmt.Errorf("pubsub subscription limit exceeded")
+	}
 
 	go func() {
+		defer r.releaseSubscription()
 		for {
 			msg, err := sub.Next(ctx)
 			if err != nil {
@@ -302,8 +323,16 @@ func (r *pubsubRuntime) subscribeCreditProofs(ctx context.Context, topicName str
 	r.joinedTopics = uniqueStrings(append(r.joinedTopics, topicName))
 	r.status.JoinedTopics = append([]string(nil), r.joinedTopics...)
 	r.mu.Unlock()
+	if !r.reserveSubscription() {
+		sub.Cancel()
+		r.mu.Lock()
+		delete(r.subscriptions, topicName)
+		r.mu.Unlock()
+		return fmt.Errorf("pubsub subscription limit exceeded")
+	}
 
 	go func() {
+		defer r.releaseSubscription()
 		for {
 			msg, err := sub.Next(ctx)
 			if err != nil {
@@ -410,20 +439,87 @@ func (r *pubsubRuntime) findPeersOnce(ctx context.Context, namespace string) {
 		r.recordError(fmt.Errorf("find peers for %s: %w", namespace, err))
 		return
 	}
-	for _, info := range peers {
-		if info.ID == "" || info.ID == r.host.host.ID() {
-			continue
-		}
-		if len(r.host.host.Network().ConnsToPeer(info.ID)) > 0 {
-			continue
-		}
-		connectCtx, connectCancel := context.WithTimeout(ctx, 8*time.Second)
-		err := r.host.host.Connect(connectCtx, info)
-		connectCancel()
-		if err != nil {
-			r.recordError(fmt.Errorf("connect discovered peer %s: %w", info.ID, err))
-		}
+	r.connectDiscoveredPeers(ctx, peers, func(id peer.ID) bool {
+		return len(r.host.host.Network().ConnsToPeer(id)) > 0
+	}, r.host.host.ID())
+}
+
+func (r *pubsubRuntime) reserveSubscription() bool {
+	maxSubs := r.maxSubs
+	if maxSubs <= 0 {
+		maxSubs = maxPubSubSubscriptions
 	}
+	if r.subCount.Add(1) <= maxSubs {
+		return true
+	}
+	r.subCount.Add(-1)
+	return false
+}
+
+func (r *pubsubRuntime) releaseSubscription() {
+	if r == nil {
+		return
+	}
+	r.subCount.Add(-1)
+}
+
+func (r *pubsubRuntime) acquireConnectSlot(ctx context.Context) bool {
+	if r == nil || r.connSema == nil {
+		return true
+	}
+	select {
+	case r.connSema <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (r *pubsubRuntime) releaseConnectSlot() {
+	if r == nil || r.connSema == nil {
+		return
+	}
+	select {
+	case <-r.connSema:
+	default:
+	}
+}
+
+func (r *pubsubRuntime) connectPeer(ctx context.Context, info peer.AddrInfo) error {
+	if r != nil && r.connectFn != nil {
+		return r.connectFn(ctx, info)
+	}
+	if r == nil || r.host == nil || r.host.host == nil {
+		return fmt.Errorf("libp2p host unavailable")
+	}
+	return r.host.host.Connect(ctx, info)
+}
+
+func (r *pubsubRuntime) connectDiscoveredPeers(ctx context.Context, peers []peer.AddrInfo, alreadyConnected func(peer.ID) bool, self peer.ID) {
+	var wg sync.WaitGroup
+	for _, info := range peers {
+		if info.ID == "" || info.ID == self {
+			continue
+		}
+		if alreadyConnected != nil && alreadyConnected(info.ID) {
+			continue
+		}
+		wg.Add(1)
+		go func(info peer.AddrInfo) {
+			defer wg.Done()
+			if !r.acquireConnectSlot(ctx) {
+				return
+			}
+			defer r.releaseConnectSlot()
+			connectCtx, connectCancel := context.WithTimeout(ctx, 8*time.Second)
+			err := r.connectPeer(connectCtx, info)
+			connectCancel()
+			if err != nil {
+				r.recordError(fmt.Errorf("connect discovered peer %s: %w", info.ID, err))
+			}
+		}(info)
+	}
+	wg.Wait()
 }
 
 func (r *pubsubRuntime) recordPublished(topicName, infoHash string) {

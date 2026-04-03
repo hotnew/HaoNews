@@ -3,6 +3,7 @@ package haonews
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -217,5 +218,44 @@ func TestCollectWitnessesFromCandidatesStopsAfterLimit(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed >= 250*time.Millisecond {
 		t.Fatalf("collectWitnessesFromCandidates took too long: %s", elapsed)
+	}
+}
+
+func TestCollectWitnessesFromCandidatesCapsConcurrency(t *testing.T) {
+	var current atomic.Int32
+	var maxSeen atomic.Int32
+	customRequestFn := func(ctx context.Context, _ host.Host, target peer.ID, _ OnlineProof, role string) (*ProofWitness, error) {
+		now := current.Add(1)
+		for {
+			seen := maxSeen.Load()
+			if now <= seen || maxSeen.CompareAndSwap(seen, now) {
+				break
+			}
+		}
+		defer current.Add(-1)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(40 * time.Millisecond):
+		}
+		return &ProofWitness{Author: "agent://" + target.String(), Role: role}, nil
+	}
+
+	candidates := make([]witnessCandidate, 0, maxWitnessConcurrency+3)
+	for idx := 0; idx < maxWitnessConcurrency+3; idx++ {
+		candidates = append(candidates, witnessCandidate{
+			PeerID: peer.ID("p" + string(rune('a'+idx))),
+			Role:   "random_check",
+		})
+	}
+	witnesses, err := collectWitnessesWithRequester(context.Background(), nil, OnlineProof{}, candidates, len(candidates), customRequestFn)
+	if err != nil {
+		t.Fatalf("collectWitnessesWithRequester error = %v", err)
+	}
+	if len(witnesses) != len(candidates) {
+		t.Fatalf("witnesses = %d, want %d", len(witnesses), len(candidates))
+	}
+	if got := maxSeen.Load(); got > maxWitnessConcurrency {
+		t.Fatalf("max concurrency = %d, want <= %d", got, maxWitnessConcurrency)
 	}
 }

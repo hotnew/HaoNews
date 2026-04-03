@@ -25,6 +25,7 @@ const (
 	creditWitnessRequestTTL = 2 * time.Minute
 	DHTNeighborCount        = 3
 	RandomCheckCount        = 2
+	maxWitnessConcurrency   = 4
 )
 
 type CreditWitnessRequest struct {
@@ -189,8 +190,11 @@ func collectWitnessesWithRequester(ctx context.Context, h host.Host, proof Onlin
 	defer cancel()
 
 	results := make(chan witnessResult, len(candidates))
+	sema := make(chan struct{}, maxWitnessConcurrency)
 	for index, candidate := range candidates {
 		go func(index int, candidate witnessCandidate) {
+			sema <- struct{}{}
+			defer func() { <-sema }()
 			witness, err := requestFn(reqCtx, h, candidate.PeerID, proof, candidate.Role)
 			results <- witnessResult{index: index, witness: witness, err: err}
 		}(index, candidate)

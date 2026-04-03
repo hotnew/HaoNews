@@ -644,6 +644,13 @@ func (s *LocalStore) cacheArchiveKey(roomID string) string {
 	return s.redis.Key("live", "room", strings.TrimSpace(roomID), "archive")
 }
 
+func (s *LocalStore) cacheHistoryArchivesKey(roomID string) string {
+	if s == nil || s.redis == nil {
+		return ""
+	}
+	return s.redis.Key("live", "room", strings.TrimSpace(roomID), "history", "list")
+}
+
 func (s *LocalStore) cacheRoomsKey() string {
 	if s == nil || s.redis == nil {
 		return ""
@@ -828,6 +835,7 @@ func (s *LocalStore) saveHistoryArchiveRecord(roomID string, record RoomHistoryA
 		if err := writeFileAtomic(path, body, 0o644); err != nil {
 			return err
 		}
+		s.redisDelete(s.cacheHistoryArchivesKey(roomID))
 		returnRecord = record
 		return nil
 	})
@@ -840,6 +848,10 @@ func (s *LocalStore) saveHistoryArchiveRecord(roomID string, record RoomHistoryA
 func (s *LocalStore) ListHistoryArchives(roomID string) ([]RoomHistoryArchive, error) {
 	if s == nil {
 		return nil, fmt.Errorf("local store is required")
+	}
+	var cached []RoomHistoryArchive
+	if ok, err := s.redisGetJSON(s.cacheHistoryArchivesKey(roomID), &cached); err == nil && ok {
+		return cached, nil
 	}
 	entries, err := os.ReadDir(s.historyDir(roomID))
 	if err != nil {
@@ -867,6 +879,7 @@ func (s *LocalStore) ListHistoryArchives(roomID string) ([]RoomHistoryArchive, e
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ArchivedAt > out[j].ArchivedAt
 	})
+	s.redisSetJSON(s.cacheHistoryArchivesKey(roomID), out, s.redisShortTTL())
 	return out, nil
 }
 

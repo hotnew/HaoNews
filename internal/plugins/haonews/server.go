@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -55,6 +56,8 @@ type App struct {
 	directoryCache  map[string]cachedDirectoryState
 	nodeStatusMu    sync.Mutex
 	nodeStatusCache cachedNodeStatusState
+	rulesMu         sync.Mutex
+	rulesCache      cachedSubscriptionRulesState
 }
 
 type AppOptions struct {
@@ -125,6 +128,14 @@ type cachedNodeStatusState struct {
 	status    NodeStatus
 	expiresAt time.Time
 	ready     bool
+}
+
+type cachedSubscriptionRulesState struct {
+	rules   SubscriptionRules
+	modTime time.Time
+	size    int64
+	exists  bool
+	ready   bool
 }
 
 type NavItem struct {
@@ -691,5 +702,41 @@ func (a *App) subscriptionRules() (SubscriptionRules, error) {
 	if a.loadRules == nil {
 		return SubscriptionRules{}, nil
 	}
-	return a.loadRules(a.rulesPath)
+	path := strings.TrimSpace(a.rulesPath)
+	info, statErr := os.Stat(path)
+	exists := statErr == nil
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return SubscriptionRules{}, statErr
+	}
+	var modTime time.Time
+	var size int64
+	if exists {
+		modTime = info.ModTime()
+		size = info.Size()
+	}
+
+	a.rulesMu.Lock()
+	if a.rulesCache.ready && a.rulesCache.exists == exists {
+		if !exists || (a.rulesCache.size == size && a.rulesCache.modTime.Equal(modTime)) {
+			rules := a.rulesCache.rules
+			a.rulesMu.Unlock()
+			return rules, nil
+		}
+	}
+	a.rulesMu.Unlock()
+
+	rules, err := a.loadRules(path)
+	if err != nil {
+		return SubscriptionRules{}, err
+	}
+	a.rulesMu.Lock()
+	a.rulesCache = cachedSubscriptionRulesState{
+		rules:   rules,
+		modTime: modTime,
+		size:    size,
+		exists:  exists,
+		ready:   true,
+	}
+	a.rulesMu.Unlock()
+	return rules, nil
 }

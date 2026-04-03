@@ -6,6 +6,60 @@ import (
 	"time"
 )
 
+func TestAppSubscriptionRulesCachesUntilFileChanges(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := root + "/subscriptions.json"
+	if err := os.WriteFile(path, []byte(`{"topics":["world"]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	loads := 0
+	app := &App{
+		rulesPath: path,
+		loadRules: func(path string) (SubscriptionRules, error) {
+			loads++
+			return LoadSubscriptionRules(path)
+		},
+	}
+
+	first, err := app.subscriptionRules()
+	if err != nil {
+		t.Fatalf("first subscriptionRules() error = %v", err)
+	}
+	second, err := app.subscriptionRules()
+	if err != nil {
+		t.Fatalf("second subscriptionRules() error = %v", err)
+	}
+	if loads != 1 {
+		t.Fatalf("load count = %d, want 1", loads)
+	}
+	if len(first.Topics) != 1 || first.Topics[0] != "world" {
+		t.Fatalf("first topics = %v", first.Topics)
+	}
+	if len(second.Topics) != 1 || second.Topics[0] != "world" {
+		t.Fatalf("second topics = %v", second.Topics)
+	}
+
+	nextMod := time.Now().Add(2 * time.Second)
+	if err := os.WriteFile(path, []byte(`{"topics":["futures"]}`), 0o644); err != nil {
+		t.Fatalf("rewrite subscriptions error = %v", err)
+	}
+	if err := os.Chtimes(path, nextMod, nextMod); err != nil {
+		t.Fatalf("Chtimes() error = %v", err)
+	}
+	updated, err := app.subscriptionRules()
+	if err != nil {
+		t.Fatalf("updated subscriptionRules() error = %v", err)
+	}
+	if loads != 2 {
+		t.Fatalf("load count after file change = %d, want 2", loads)
+	}
+	if len(updated.Topics) != 1 || updated.Topics[0] != "futures" {
+		t.Fatalf("updated topics = %v", updated.Topics)
+	}
+}
+
 func TestApplySubscriptionRulesFiltersByTopicAndCarriesReplies(t *testing.T) {
 	t.Parallel()
 

@@ -266,6 +266,9 @@ func (a *App) invalidateIndexCache() {
 	a.nodeStatusMu.Lock()
 	a.nodeStatusCache = cachedNodeStatusState{}
 	a.nodeStatusMu.Unlock()
+	a.rulesMu.Lock()
+	a.rulesCache = cachedSubscriptionRulesState{}
+	a.rulesMu.Unlock()
 }
 
 func (a *App) cachedIndexSignature() (string, bool) {
