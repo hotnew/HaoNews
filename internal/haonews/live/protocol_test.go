@@ -686,6 +686,85 @@ func TestCreateManualAndDailyHistoryArchives(t *testing.T) {
 	}
 }
 
+func TestHistoryArchivesKeepAllVisibleEventsBeyondDisplayWindow(t *testing.T) {
+	store, err := OpenLocalStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	room := RoomInfo{
+		RoomID:    "room-archive-full-visible",
+		Title:     "Archive Full Visible",
+		Creator:   "agent://pc75/openclaw01",
+		CreatedAt: "2026-04-01T00:00:00Z",
+		Channel:   "hao.news/live",
+	}
+	if err := store.SaveRoom(room); err != nil {
+		t.Fatalf("SaveRoom error = %v", err)
+	}
+	for idx := 0; idx < 105; idx++ {
+		event := LiveMessage{
+			Protocol:     ProtocolVersion,
+			Type:         TypeMessage,
+			RoomID:       room.RoomID,
+			Sender:       room.Creator,
+			SenderPubKey: strings.Repeat("a", 64),
+			Seq:          uint64(idx + 1),
+			Timestamp:    fmt.Sprintf("2026-04-02T%02d:%02d:00Z", idx/60, idx%60),
+			Payload:      LivePayload{Content: fmt.Sprintf("archive-event-%03d", idx)},
+			Signature:    fmt.Sprintf("%0128d", idx+1),
+		}
+		if err := store.AppendEvent(room.RoomID, event); err != nil {
+			t.Fatalf("AppendEvent %d error = %v", idx, err)
+		}
+	}
+	for hb := 0; hb < 30; hb++ {
+		event := LiveMessage{
+			Protocol:     ProtocolVersion,
+			Type:         TypeHeartbeat,
+			RoomID:       room.RoomID,
+			Sender:       room.Creator,
+			SenderPubKey: strings.Repeat("a", 64),
+			Seq:          uint64(1000 + hb),
+			Timestamp:    fmt.Sprintf("2026-04-02T02:%02d:30Z", hb%60),
+			Signature:    fmt.Sprintf("%0128d", 2000+hb),
+		}
+		if err := store.AppendEvent(room.RoomID, event); err != nil {
+			t.Fatalf("AppendEvent heartbeat %d error = %v", hb, err)
+		}
+	}
+
+	events, err := store.ReadEvents(room.RoomID)
+	if err != nil {
+		t.Fatalf("ReadEvents error = %v", err)
+	}
+	visible := archiveDisplayEvents(events)
+	if got := len(visible); got != 105 {
+		t.Fatalf("len(archiveDisplayEvents(ReadEvents)) = %d, want 105", got)
+	}
+
+	manual, err := store.CreateManualHistoryArchive(room.RoomID, time.Date(2026, 4, 2, 13, 6, 0, 0, time.FixedZone("CST", 8*60*60)))
+	if err != nil {
+		t.Fatalf("CreateManualHistoryArchive error = %v", err)
+	}
+	if manual == nil {
+		t.Fatal("manual archive = nil, want record")
+	}
+	if manual.EventCount != 105 || len(manual.Events) != 105 || manual.MessageCount != 105 {
+		t.Fatalf("manual archive counts = %#v, want 105 visible events", manual)
+	}
+
+	created, err := store.EnsureDailyHistoryArchives(room.RoomID, time.Date(2026, 4, 3, 6, 0, 0, 0, time.FixedZone("CST", 8*60*60)))
+	if err != nil {
+		t.Fatalf("EnsureDailyHistoryArchives error = %v", err)
+	}
+	if len(created) != 1 {
+		t.Fatalf("len(created) = %d, want 1", len(created))
+	}
+	if created[0].EventCount != 105 || len(created[0].Events) != 105 || created[0].MessageCount != 105 {
+		t.Fatalf("daily archive counts = %#v, want 105 visible events", created[0])
+	}
+}
+
 func TestAnnouncementWatcherHandleArchiveNotice(t *testing.T) {
 	root := t.TempDir()
 	store, err := OpenLocalStore(root)

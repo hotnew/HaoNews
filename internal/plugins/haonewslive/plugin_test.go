@@ -120,7 +120,8 @@ func TestPluginBuildLimitsVisibleLiveEventsButCanShowAll(t *testing.T) {
 	if strings.Contains(body, "window-event-000") {
 		t.Fatalf("expected oldest event hidden by default, got %q", body)
 	}
-	if !strings.Contains(body, "window-event-104") {
+	expectedNewest := fmt.Sprintf("window-event-%03d", live.LiveRoomDisplayNonHeartbeatEvents+4)
+	if !strings.Contains(body, expectedNewest) {
 		t.Fatalf("expected newest event visible, got %q", body)
 	}
 
@@ -130,7 +131,8 @@ func TestPluginBuildLimitsVisibleLiveEventsButCanShowAll(t *testing.T) {
 	if allRec.Code != http.StatusOK {
 		t.Fatalf("show all api status = %d, body = %s", allRec.Code, allRec.Body.String())
 	}
-	if !strings.Contains(allRec.Body.String(), "\"show_all\": true") || !strings.Contains(allRec.Body.String(), "\"total_event_count\": 105") || !strings.Contains(allRec.Body.String(), "window-event-000") {
+	expectedTotal := live.LiveRoomDisplayNonHeartbeatEvents + 5
+	if !strings.Contains(allRec.Body.String(), "\"show_all\": true") || !strings.Contains(allRec.Body.String(), fmt.Sprintf("\"total_event_count\": %d", expectedTotal)) || !strings.Contains(allRec.Body.String(), "window-event-000") {
 		t.Fatalf("expected full event stream in show_all api, got %q", allRec.Body.String())
 	}
 }

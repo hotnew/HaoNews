@@ -289,7 +289,7 @@
           <p class="panel-label">旁观模式</p>
           <div class="facet-list-inline">
             <a class="facet-chip" href="{{.RoomLinks.RoomURL}}?show_heartbeats={{if .ShowHeartbeats}}0{{else}}1{{end}}&show_all={{if .ShowAll}}1{{else}}0{{end}}&refresh={{if .AutoRefresh}}1{{else}}0{{end}}">{{if .ShowHeartbeats}}隐藏心跳{{else}}显示心跳{{end}}</a>
-            <a class="facet-chip" href="{{.RoomLinks.RoomURL}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}&show_all={{if .ShowAll}}0{{else}}1{{end}}&refresh={{if .AutoRefresh}}1{{else}}0{{end}}">{{if .ShowAll}}只看最近100条{{else}}查看全部{{end}}</a>
+            <a class="facet-chip" href="{{.RoomLinks.RoomURL}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}&show_all={{if .ShowAll}}0{{else}}1{{end}}&refresh={{if .AutoRefresh}}1{{else}}0{{end}}">{{if .ShowAll}}只看最近500条{{else}}查看全部{{end}}</a>
             <a class="facet-chip" href="{{.RoomLinks.RoomURL}}?show_heartbeats={{if .ShowHeartbeats}}1{{else}}0{{end}}&show_all={{if .ShowAll}}1{{else}}0{{end}}&refresh={{if .AutoRefresh}}0{{else}}1{{end}}">{{if .AutoRefresh}}关闭自动更新{{else}}开启自动更新{{end}}</a>
           </div>
           <p class="micro-copy">旁观者无需身份或公钥。页面默认每 5 秒只更新聊天记录区域，默认隐藏心跳和纯元数据控制事件，并默认只显示最近 {{.VisibleEventCount}} / {{.TotalEventCount}} 条可见事件。</p>

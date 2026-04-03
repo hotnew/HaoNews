@@ -16,7 +16,7 @@ const (
 	RoomsTopic      = "haonews/live/rooms"
 	EventsTopic     = "haonews/live/events"
 	// Live room pages/APIs default to a bounded visible non-heartbeat window.
-	LiveRoomDisplayNonHeartbeatEvents = 100
+	LiveRoomDisplayNonHeartbeatEvents = 500
 	// Local room stores retain only a small heartbeat window for presence.
 	LiveRoomRetainHeartbeatEvents = 20
 )
