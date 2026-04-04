@@ -3,7 +3,6 @@ package team
 import (
 	"bufio"
 	"encoding/json"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -92,7 +91,7 @@ func latestMessageTimestampFromJSONL(path string) (time.Time, error) {
 	}
 	var msg Message
 	if err := json.Unmarshal([]byte(lines[0]), &msg); err != nil {
-		log.Printf("[team] corrupt JSONL line in %s (skipping): %v", path, err)
+		logTeamEvent("corrupt_jsonl_line", "path", path, "error", err)
 		return time.Time{}, nil
 	}
 	return msg.CreatedAt, nil

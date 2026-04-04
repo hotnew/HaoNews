@@ -1883,11 +1883,20 @@ func TestBuildTeamSyncConflictViewsExplainsSuggestions(t *testing.T) {
 	if views[0].SuggestedAction != "keep_local" || !strings.Contains(views[0].ReasonLabel, "本地") || !strings.Contains(views[0].ActionHint, "保留本地") {
 		t.Fatalf("unexpected local_newer view: %#v", views[0])
 	}
+	if views[0].ConflictClass != "safe-local" || !views[0].AllowKeepLocal || views[0].SubjectLabel != "Task / task-1" {
+		t.Fatalf("unexpected local_newer metadata: %#v", views[0])
+	}
 	if views[1].SuggestedAction != "accept_remote" || !strings.Contains(views[1].ReasonLabel, "分叉") || !strings.Contains(views[1].ActionHint, "接收远端") {
 		t.Fatalf("unexpected same_version_diverged view: %#v", views[1])
 	}
+	if views[1].ConflictClass != "diverged" || !views[1].AllowAcceptRemote || len(views[1].Actions) < 3 {
+		t.Fatalf("unexpected diverged actions: %#v", views[1])
+	}
 	if views[2].SuggestedAction != "dismiss" || !strings.Contains(views[2].ReasonLabel, "签名") || !strings.Contains(views[2].ActionHint, "驳回") {
 		t.Fatalf("unexpected signature_rejected view: %#v", views[2])
+	}
+	if views[2].ConflictClass != "rejected" || views[2].AllowAcceptRemote {
+		t.Fatalf("unexpected signature_rejected metadata: %#v", views[2])
 	}
 }
 
@@ -1945,7 +1954,7 @@ func TestPluginBuildServesTeamSyncHealthPageAndAPI(t *testing.T) {
 	if pageRec.Code != http.StatusOK {
 		t.Fatalf("team sync page status = %d, body = %s", pageRec.Code, pageRec.Body.String())
 	}
-	if !strings.Contains(pageRec.Body.String(), "Team Sync 健康") || !strings.Contains(pageRec.Body.String(), "pending ack") || !strings.Contains(pageRec.Body.String(), "最近复制冲突") {
+	if !strings.Contains(pageRec.Body.String(), "Team Sync 健康") || !strings.Contains(pageRec.Body.String(), "pending ack") || !strings.Contains(pageRec.Body.String(), "最近复制冲突") || !strings.Contains(pageRec.Body.String(), "Webhook 投递") {
 		t.Fatalf("expected sync health page content, got %q", pageRec.Body.String())
 	}
 
@@ -1955,7 +1964,7 @@ func TestPluginBuildServesTeamSyncHealthPageAndAPI(t *testing.T) {
 	if apiRec.Code != http.StatusOK {
 		t.Fatalf("team sync api status = %d, body = %s", apiRec.Code, apiRec.Body.String())
 	}
-	if !strings.Contains(apiRec.Body.String(), `"scope": "team-sync-health"`) || !strings.Contains(apiRec.Body.String(), `"pending_acks": 3`) || !strings.Contains(apiRec.Body.String(), `"conflict_count": 1`) || !strings.Contains(apiRec.Body.String(), `"allow_accept_remote": true`) {
+	if !strings.Contains(apiRec.Body.String(), `"scope": "team-sync-health"`) || !strings.Contains(apiRec.Body.String(), `"pending_acks": 3`) || !strings.Contains(apiRec.Body.String(), `"conflict_count": 1`) || !strings.Contains(apiRec.Body.String(), `"allow_accept_remote": true`) || !strings.Contains(apiRec.Body.String(), `"webhook_status":`) {
 		t.Fatalf("expected sync health api body, got %q", apiRec.Body.String())
 	}
 

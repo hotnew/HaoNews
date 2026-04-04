@@ -93,9 +93,31 @@ type teamHistoryPageData struct {
 type teamSyncConflictView struct {
 	Record            corehaonews.TeamSyncConflictRecord `json:"record"`
 	AllowAcceptRemote bool                               `json:"allow_accept_remote"`
+	AllowKeepLocal    bool                               `json:"allow_keep_local"`
 	SuggestedAction   string                             `json:"suggested_action,omitempty"`
 	ReasonLabel       string                             `json:"reason_label,omitempty"`
 	ActionHint        string                             `json:"action_hint,omitempty"`
+	SubjectLabel      string                             `json:"subject_label,omitempty"`
+	ConflictClass     string                             `json:"conflict_class,omitempty"`
+	Actions           []teamSyncConflictActionView       `json:"actions,omitempty"`
+}
+
+type teamSyncConflictActionView struct {
+	Value   string `json:"value"`
+	Label   string `json:"label"`
+	Primary bool   `json:"primary,omitempty"`
+}
+
+type teamSyncMetricValue struct {
+	Label string
+	Value string
+}
+
+type teamSyncStatusGroup struct {
+	Title    string
+	Subtitle string
+	Metrics  []teamSyncMetricValue
+	Details  []string
 }
 
 type teamSyncPageData struct {
@@ -107,8 +129,10 @@ type teamSyncPageData struct {
 	Team            teamcore.Info
 	SyncNotice      string
 	SyncStatus      corehaonews.SyncTeamSyncStatus
+	WebhookStatus   teamcore.WebhookDeliveryStatus
 	RecentConflicts []corehaonews.TeamSyncConflictRecord
 	ConflictViews   []teamSyncConflictView
+	StatusGroups    []teamSyncStatusGroup
 	SummaryStats    []newsplugin.SummaryStat
 }
 

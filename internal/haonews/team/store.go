@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -579,7 +578,7 @@ func (s *Store) loadMessagesNoCtx(teamID, channelID string, limit int) ([]Messag
 		for _, line := range lines {
 			var msg Message
 			if err := json.Unmarshal([]byte(line), &msg); err != nil {
-				log.Printf("[team] corrupt JSONL line in %s (skipping): %v", path, err)
+				logTeamEvent("corrupt_jsonl_line", "path", path, "error", err)
 				continue
 			}
 			out = append(out, msg)
@@ -593,7 +592,7 @@ func (s *Store) loadMessagesNoCtx(teamID, channelID string, limit int) ([]Messag
 			}
 			var msg Message
 			if err := json.Unmarshal([]byte(line), &msg); err != nil {
-				log.Printf("[team] corrupt JSONL line in %s (skipping): %v", path, err)
+				logTeamEvent("corrupt_jsonl_line", "path", path, "error", err)
 				continue
 			}
 			out = append(out, msg)
@@ -644,7 +643,7 @@ func (s *Store) loadMessagesFromShards(teamID, channelID string, limit int) ([]M
 		for _, line := range lines {
 			var msg Message
 			if err := json.Unmarshal([]byte(line), &msg); err != nil {
-				log.Printf("[team] corrupt JSONL line in %s (skipping): %v", path, err)
+				logTeamEvent("corrupt_jsonl_line", "path", path, "error", err)
 				continue
 			}
 			out = append(out, msg)
@@ -1542,7 +1541,7 @@ func (s *Store) sendWebhook(cfg PushNotificationConfig, event TeamEvent) {
 func (s *Store) sendWebhookWithRecord(cfg PushNotificationConfig, event TeamEvent, deliveryID, replayedFrom string) {
 	body, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("[team] webhook marshal error: %v", err)
+		logTeamEvent("webhook_marshal_failed", "team", event.TeamID, "webhook_id", cfg.WebhookID, "error", err)
 		return
 	}
 	client := s.webhookClient
@@ -1573,7 +1572,7 @@ func (s *Store) sendWebhookWithRecord(cfg PushNotificationConfig, event TeamEven
 		record.UpdatedAt = now
 		req, err := http.NewRequest(http.MethodPost, cfg.URL, bytes.NewReader(body))
 		if err != nil {
-			log.Printf("[team] webhook request error: %v", err)
+			logTeamEvent("webhook_request_failed", "team", event.TeamID, "webhook_id", cfg.WebhookID, "delivery_id", record.DeliveryID, "error", err)
 			record.Status = webhookDeliveryStatusFailed
 			record.Error = err.Error()
 			_ = s.withTeamLock(event.TeamID, func() error {
@@ -1587,13 +1586,14 @@ func (s *Store) sendWebhookWithRecord(cfg PushNotificationConfig, event TeamEven
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("[team] webhook attempt %d failed: %v", attempt, err)
+			logTeamEvent("webhook_delivery_retrying", "team", event.TeamID, "webhook_id", cfg.WebhookID, "delivery_id", record.DeliveryID, "attempt", attempt, "error", err)
 			record.Status = webhookDeliveryStatusRetrying
 			record.Error = err.Error()
 			record.StatusCode = 0
 		} else {
 			_ = resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				logTeamEvent("webhook_delivered", "team", event.TeamID, "webhook_id", cfg.WebhookID, "delivery_id", record.DeliveryID, "attempt", attempt, "status", resp.StatusCode)
 				record.Status = webhookDeliveryStatusDelivered
 				record.StatusCode = resp.StatusCode
 				record.Error = ""
@@ -1604,7 +1604,7 @@ func (s *Store) sendWebhookWithRecord(cfg PushNotificationConfig, event TeamEven
 				})
 				return
 			}
-			log.Printf("[team] webhook attempt %d got status %d for %s", attempt, resp.StatusCode, cfg.URL)
+			logTeamEvent("webhook_http_status", "team", event.TeamID, "webhook_id", cfg.WebhookID, "delivery_id", record.DeliveryID, "attempt", attempt, "status", resp.StatusCode, "url", cfg.URL)
 			record.StatusCode = resp.StatusCode
 			record.Error = http.StatusText(resp.StatusCode)
 			if !isWebhookRetriableStatus(resp.StatusCode) {
@@ -1628,6 +1628,7 @@ func (s *Store) sendWebhookWithRecord(cfg PushNotificationConfig, event TeamEven
 	record.Status = webhookDeliveryStatusDeadLetter
 	record.NextRetryAt = time.Time{}
 	record.UpdatedAt = time.Now().UTC()
+	logTeamEvent("webhook_dead_letter", "team", event.TeamID, "webhook_id", cfg.WebhookID, "delivery_id", record.DeliveryID, "attempt", record.Attempt, "status", record.StatusCode, "error", record.Error)
 	_ = s.withTeamLock(event.TeamID, func() error {
 		return s.updateWebhookDeliveryLocked(event.TeamID, record)
 	})

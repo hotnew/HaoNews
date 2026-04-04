@@ -20,6 +20,11 @@ func handleTeamSync(app *newsplugin.App, store *teamcore.Store, teamID string, w
 		http.NotFound(w, r)
 		return
 	}
+	webhookStatus, err := store.LoadWebhookDeliveryStatusCtx(r.Context(), teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	conflicts, err := corehaonews.LoadTeamSyncConflicts(app.StoreRoot(), teamID, corehaonews.TeamSyncConflictFilter{Limit: 10})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -44,8 +49,10 @@ func handleTeamSync(app *newsplugin.App, store *teamcore.Store, teamID string, w
 		Team:            info,
 		SyncNotice:      strings.TrimSpace(r.URL.Query().Get("resolved")),
 		SyncStatus:      status.TeamSync,
+		WebhookStatus:   webhookStatus,
 		RecentConflicts: conflicts,
 		ConflictViews:   buildTeamSyncConflictViews(conflicts),
+		StatusGroups:    buildTeamSyncStatusGroups(status.TeamSync, webhookStatus),
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "已订阅 Team", Value: formatTeamCount(status.TeamSync.SubscribedTeams)},
 			{Label: "pending ack", Value: formatTeamCount(status.TeamSync.PendingAcks)},
@@ -53,6 +60,7 @@ func handleTeamSync(app *newsplugin.App, store *teamcore.Store, teamID string, w
 			{Label: "冲突", Value: formatTeamCount(status.TeamSync.Conflicts)},
 			{Label: "已处理冲突", Value: formatTeamCount(status.TeamSync.ResolvedConflicts)},
 			{Label: "冲突清理", Value: formatTeamCount(status.TeamSync.ConflictPrunes)},
+			{Label: "webhook dead-letter", Value: formatTeamCount(webhookStatus.DeadLetterCount)},
 			{Label: "最近 publish", Value: formatTeamTimePtr(status.TeamSync.LastPublishedAt)},
 			{Label: "最近 apply", Value: formatTeamTimePtr(status.TeamSync.LastAppliedAt)},
 		},
@@ -98,6 +106,11 @@ func handleAPITeamSync(app *newsplugin.App, store *teamcore.Store, teamID string
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	webhookStatus, err := store.LoadWebhookDeliveryStatusCtx(r.Context(), teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	limit := clampTeamListLimit(r.URL.Query().Get("limit"), 10, 100)
 	conflicts, err := corehaonews.LoadTeamSyncConflicts(app.StoreRoot(), teamID, corehaonews.TeamSyncConflictFilter{Limit: limit})
 	if err != nil {
@@ -108,6 +121,7 @@ func handleAPITeamSync(app *newsplugin.App, store *teamcore.Store, teamID string
 		"scope":            "team-sync-health",
 		"team_id":          info.TeamID,
 		"team_sync":        status.TeamSync,
+		"webhook_status":   webhookStatus,
 		"conflict_count":   len(conflicts),
 		"recent_conflicts": conflicts,
 		"conflict_views":   buildTeamSyncConflictViews(conflicts),
@@ -195,15 +209,174 @@ func buildTeamSyncConflictViews(records []corehaonews.TeamSyncConflictRecord) []
 			syncType = strings.TrimSpace(record.Type)
 		}
 		reasonLabel, actionHint, suggestedAction := describeTeamSyncConflict(record, supportsAcceptRemoteConflict(syncType))
+		allowKeepLocal, allowAcceptRemote := conflictActionPermissions(record, supportsAcceptRemoteConflict(syncType))
 		views = append(views, teamSyncConflictView{
 			Record:            record,
-			AllowAcceptRemote: supportsAcceptRemoteConflict(syncType),
+			AllowAcceptRemote: allowAcceptRemote,
+			AllowKeepLocal:    allowKeepLocal,
 			SuggestedAction:   suggestedAction,
 			ReasonLabel:       reasonLabel,
 			ActionHint:        actionHint,
+			SubjectLabel:      describeTeamSyncConflictSubject(record),
+			ConflictClass:     classifyTeamSyncConflict(record),
+			Actions:           buildTeamSyncConflictActions(record, allowKeepLocal, allowAcceptRemote, suggestedAction),
 		})
 	}
 	return views
+}
+
+func conflictActionPermissions(record corehaonews.TeamSyncConflictRecord, allowAcceptRemote bool) (bool, bool) {
+	if strings.TrimSpace(record.Resolution) != "" {
+		return false, false
+	}
+	switch strings.TrimSpace(record.Reason) {
+	case "signature_rejected", "policy_rejected":
+		return false, false
+	default:
+		return true, allowAcceptRemote
+	}
+}
+
+func buildTeamSyncConflictActions(record corehaonews.TeamSyncConflictRecord, allowKeepLocal, allowAcceptRemote bool, suggestedAction string) []teamSyncConflictActionView {
+	if strings.TrimSpace(record.Resolution) != "" {
+		return nil
+	}
+	actions := []teamSyncConflictActionView{
+		{Value: "dismiss", Label: "dismiss", Primary: suggestedAction == "dismiss"},
+	}
+	if allowKeepLocal {
+		actions = append(actions, teamSyncConflictActionView{
+			Value:   "keep_local",
+			Label:   "keep_local",
+			Primary: suggestedAction == "keep_local",
+		})
+	}
+	if allowAcceptRemote {
+		actions = append(actions, teamSyncConflictActionView{
+			Value:   "accept_remote",
+			Label:   "accept_remote",
+			Primary: suggestedAction == "accept_remote" || suggestedAction == "review_accept_remote",
+		})
+	}
+	return actions
+}
+
+func describeTeamSyncConflictSubject(record corehaonews.TeamSyncConflictRecord) string {
+	subject := strings.TrimSpace(record.SubjectID)
+	if subject == "" {
+		subject = strings.TrimSpace(record.Key)
+	}
+	if subject == "" {
+		subject = strings.TrimSpace(record.TeamID)
+	}
+	switch strings.TrimSpace(record.SyncType) {
+	case "task":
+		return "Task / " + subject
+	case "artifact":
+		return "Artifact / " + subject
+	case "member":
+		return "Member / " + subject
+	case "policy":
+		return "Policy / " + subject
+	case "channel":
+		return "Channel / " + subject
+	default:
+		if strings.TrimSpace(record.Type) != "" {
+			return titleSyncKind(strings.TrimSpace(record.Type)) + " / " + subject
+		}
+		return subject
+	}
+}
+
+func titleSyncKind(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
+}
+
+func classifyTeamSyncConflict(record corehaonews.TeamSyncConflictRecord) string {
+	switch strings.TrimSpace(record.Reason) {
+	case "remote_newer":
+		return "safe-remote"
+	case "local_newer":
+		return "safe-local"
+	case "same_version_diverged":
+		return "diverged"
+	case "signature_rejected", "policy_rejected":
+		return "rejected"
+	default:
+		return "review"
+	}
+}
+
+func buildTeamSyncStatusGroups(status corehaonews.SyncTeamSyncStatus, webhook teamcore.WebhookDeliveryStatus) []teamSyncStatusGroup {
+	return []teamSyncStatusGroup{
+		{
+			Title:    "订阅与游标",
+			Subtitle: "看 team 订阅、cursor 和 state 是否稳定前进。",
+			Metrics: []teamSyncMetricValue{
+				{Label: "subscribed teams", Value: formatTeamCount(status.SubscribedTeams)},
+				{Label: "persisted cursors", Value: formatTeamCount(status.PersistedCursors)},
+				{Label: "ack peers", Value: formatTeamCount(status.AckPeers)},
+			},
+			Details: []string{
+				"persisted peer acks：" + formatTeamCount(status.PersistedPeerAcks),
+				"primed channels：" + formatTeamCount(status.PrimedChannels) + " · primed history：" + formatTeamCount(status.PrimedHistoryTeams),
+				"last subscription：" + emptyIfZero(status.LastSubscriptionTeam, "暂无") + " / " + formatTeamTimePtr(status.LastSubscriptionAt),
+			},
+		},
+		{
+			Title:    "主线吞吐",
+			Subtitle: "看 publish / receive / apply 是否一致前进。",
+			Metrics: []teamSyncMetricValue{
+				{Label: "published", Value: formatTeamCount(status.PublishedMessages + status.PublishedHistory + status.PublishedTasks + status.PublishedArtifacts + status.PublishedMembers + status.PublishedPolicies + status.PublishedConfigChannels)},
+				{Label: "received", Value: formatTeamCount(status.ReceivedMessages + status.ReceivedHistory + status.ReceivedTasks + status.ReceivedArtifacts + status.ReceivedMembers + status.ReceivedPolicies + status.ReceivedConfigChannels)},
+				{Label: "applied", Value: formatTeamCount(status.AppliedMessages + status.AppliedHistory + status.AppliedTasks + status.AppliedArtifacts + status.AppliedMembers + status.AppliedPolicies + status.AppliedConfigChannels)},
+			},
+			Details: []string{
+				"message/history：" + formatTeamCount(status.PublishedMessages) + " / " + formatTeamCount(status.AppliedMessages) + " · " + formatTeamCount(status.PublishedHistory) + " / " + formatTeamCount(status.AppliedHistory),
+				"task/artifact：" + formatTeamCount(status.PublishedTasks) + " / " + formatTeamCount(status.AppliedTasks) + " · " + formatTeamCount(status.PublishedArtifacts) + " / " + formatTeamCount(status.AppliedArtifacts),
+				"member/policy/channel：" + formatTeamCount(status.PublishedMembers) + " / " + formatTeamCount(status.AppliedMembers) + " · " + formatTeamCount(status.PublishedPolicies) + " / " + formatTeamCount(status.AppliedPolicies) + " · " + formatTeamCount(status.PublishedConfigChannels) + " / " + formatTeamCount(status.AppliedConfigChannels),
+			},
+		},
+		{
+			Title:    "Ack 与重试",
+			Subtitle: "看 pending、retry 和压缩是否失控。",
+			Metrics: []teamSyncMetricValue{
+				{Label: "pending", Value: formatTeamCount(status.PendingAcks)},
+				{Label: "retried", Value: formatTeamCount(status.RetriedPublishes)},
+				{Label: "expired", Value: formatTeamCount(status.ExpiredPending)},
+			},
+			Details: []string{
+				"published / received / applied acks：" + formatTeamCount(status.PublishedAcks) + " / " + formatTeamCount(status.ReceivedAcks) + " / " + formatTeamCount(status.AppliedAcks),
+				"superseded pending：" + formatTeamCount(status.SupersededPending),
+				"last acked key：" + emptyIfZero(status.LastAckedKey, "暂无"),
+			},
+		},
+		{
+			Title:    "Webhook 投递",
+			Subtitle: "直接看 delivered / failed / dead-letter，不再只靠日志猜。",
+			Metrics: []teamSyncMetricValue{
+				{Label: "delivered", Value: formatTeamCount(webhook.DeliveredCount)},
+				{Label: "failed", Value: formatTeamCount(webhook.FailedCount)},
+				{Label: "dead_letter", Value: formatTeamCount(webhook.DeadLetterCount)},
+			},
+			Details: []string{
+				"retrying：" + formatTeamCount(webhook.RetryingCount),
+				"recent delivered：" + formatTeamCount(len(webhook.RecentDelivered)),
+				"recent dead letters：" + formatTeamCount(len(webhook.RecentDead)),
+			},
+		},
+	}
+}
+
+func emptyIfZero(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func supportsAcceptRemoteConflict(syncType string) bool {

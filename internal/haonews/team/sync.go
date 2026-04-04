@@ -20,6 +20,10 @@ const (
 	TeamSyncTypeAck      = "ack"
 )
 
+func normalizeTeamSyncType(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 type TeamSyncAck struct {
 	AckedKey   string    `json:"acked_key"`
 	AckedBy    string    `json:"acked_by,omitempty"`
@@ -56,7 +60,7 @@ type TeamSyncMessage struct {
 }
 
 func (m TeamSyncMessage) Normalize() TeamSyncMessage {
-	m.Type = strings.ToLower(strings.TrimSpace(m.Type))
+	m.Type = normalizeTeamSyncType(m.Type)
 	m.TeamID = NormalizeTeamID(m.TeamID)
 	m.SourceNode = strings.TrimSpace(m.SourceNode)
 	if m.CreatedAt.IsZero() {
@@ -126,7 +130,7 @@ func (m TeamSyncMessage) Normalize() TeamSyncMessage {
 }
 
 func (m TeamSyncMessage) Key() string {
-	switch strings.ToLower(strings.TrimSpace(m.Type)) {
+	switch normalizeTeamSyncType(m.Type) {
 	case TeamSyncTypeMessage:
 		if m.Message != nil {
 			return TeamSyncTypeMessage + ":" + strings.TrimSpace(m.Message.MessageID)
