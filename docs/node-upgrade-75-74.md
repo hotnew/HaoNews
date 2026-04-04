@@ -10,7 +10,7 @@
 ## Current Release Baseline
 
 - 当前基线版本：
-  - `v0.5.74`
+  - `v0.5.75`
 - 当前 GitHub 发布节奏：
   1. 先推 `main`
   2. 再打 `tag`
@@ -60,25 +60,32 @@ launchctl kickstart -k gui/501/com.haonews.local
 ### 3. `.74` 升级
 
 ```bash
-sshpass -p 'Grf123987!' scp \
-  -o StrictHostKeyChecking=no \
-  -o PreferredAuthentications=password \
-  -o PubkeyAuthentication=no \
-  -o IdentitiesOnly=yes \
-  /Users/haoniu/go/bin/haonews \
-  haoniu@192.168.102.74:/Users/haoniu/go/bin/haonews
-
 sshpass -p 'Grf123987!' ssh \
   -o StrictHostKeyChecking=no \
   -o PreferredAuthentications=password \
   -o PubkeyAuthentication=no \
   -o IdentitiesOnly=yes \
   haoniu@192.168.102.74 '
-  codesign --remove-signature /Users/haoniu/go/bin/haonews || true
+  set -e
+  git -C /Users/haoniu/sh18/HaoNews fetch --tags haonews >/dev/null 2>&1 || \
+    git -C /Users/haoniu/sh18/HaoNews fetch --tags origin >/dev/null 2>&1
+  git -C /Users/haoniu/sh18/HaoNews worktree prune
+  rm -rf /tmp/HaoNews-upgrade
+  git -C /Users/haoniu/sh18/HaoNews worktree add --detach /tmp/HaoNews-upgrade <tag> >/dev/null
+  cd /tmp/HaoNews-upgrade
+  /usr/local/go/bin/go build -o /Users/haoniu/go/bin/haonews ./cmd/haonews
   cp /Users/haoniu/go/bin/haonews /Users/haoniu/.hao-news/bin/hao-news-syncd
   codesign --force --sign - /Users/haoniu/go/bin/haonews
   codesign --force --sign - /Users/haoniu/.hao-news/bin/hao-news-syncd
-  launchctl kickstart -k gui/501/com.haonews74.local
+  launchctl bootout gui/$(id -u)/com.haonews74.local >/dev/null 2>&1 || true
+  launchctl bootout gui/$(id -u) /Users/haoniu/Library/LaunchAgents/com.haonews74.local.plist >/dev/null 2>&1 || true
+  launchctl bootout gui/$(id -u)/com.haonews.local >/dev/null 2>&1 || true
+  launchctl bootout gui/$(id -u) /Users/haoniu/Library/LaunchAgents/com.haonews.local.plist >/dev/null 2>&1 || true
+  pkill -f "haonews serve" >/dev/null 2>&1 || true
+  pkill -f "hao-news-syncd sync" >/dev/null 2>&1 || true
+  launchctl bootstrap gui/$(id -u) /Users/haoniu/Library/LaunchAgents/com.haonews.local.plist
+  cd /Users/haoniu/sh18/HaoNews
+  git worktree remove /tmp/HaoNews-upgrade --force >/dev/null
 '
 ```
 
@@ -99,7 +106,7 @@ launchctl print gui/501/com.haonews.local | rg 'state = running'
 curl -s http://192.168.102.74:51818/api/network/bootstrap
 curl -s http://192.168.102.74:51818/api/live/status/public-live-time
 curl -s http://192.168.102.74:51818/api/teams
-sshpass -p 'Grf123987!' ssh haoniu@192.168.102.74 'launchctl print gui/501/com.haonews74.local | rg "state = running"'
+sshpass -p 'Grf123987!' ssh haoniu@192.168.102.74 'launchctl print gui/501/com.haonews.local | rg "state = running"'
 ```
 
 ## Full Acceptance
@@ -130,25 +137,32 @@ launchctl kickstart -k gui/501/com.haonews.local
 ### `.74`
 
 ```bash
-sshpass -p 'Grf123987!' scp \
-  -o StrictHostKeyChecking=no \
-  -o PreferredAuthentications=password \
-  -o PubkeyAuthentication=no \
-  -o IdentitiesOnly=yes \
-  /Users/haoniu/go/bin/haonews \
-  haoniu@192.168.102.74:/Users/haoniu/go/bin/haonews
-
 sshpass -p 'Grf123987!' ssh \
   -o StrictHostKeyChecking=no \
   -o PreferredAuthentications=password \
   -o PubkeyAuthentication=no \
   -o IdentitiesOnly=yes \
   haoniu@192.168.102.74 '
-  codesign --remove-signature /Users/haoniu/go/bin/haonews || true
+  set -e
+  git -C /Users/haoniu/sh18/HaoNews fetch --tags haonews >/dev/null 2>&1 || \
+    git -C /Users/haoniu/sh18/HaoNews fetch --tags origin >/dev/null 2>&1
+  git -C /Users/haoniu/sh18/HaoNews worktree prune
+  rm -rf /tmp/HaoNews-upgrade
+  git -C /Users/haoniu/sh18/HaoNews worktree add --detach /tmp/HaoNews-upgrade <old-tag> >/dev/null
+  cd /tmp/HaoNews-upgrade
+  /usr/local/go/bin/go build -o /Users/haoniu/go/bin/haonews ./cmd/haonews
   cp /Users/haoniu/go/bin/haonews /Users/haoniu/.hao-news/bin/hao-news-syncd
   codesign --force --sign - /Users/haoniu/go/bin/haonews
   codesign --force --sign - /Users/haoniu/.hao-news/bin/hao-news-syncd
-  launchctl kickstart -k gui/501/com.haonews74.local
+  launchctl bootout gui/$(id -u)/com.haonews74.local >/dev/null 2>&1 || true
+  launchctl bootout gui/$(id -u) /Users/haoniu/Library/LaunchAgents/com.haonews74.local.plist >/dev/null 2>&1 || true
+  launchctl bootout gui/$(id -u)/com.haonews.local >/dev/null 2>&1 || true
+  launchctl bootout gui/$(id -u) /Users/haoniu/Library/LaunchAgents/com.haonews.local.plist >/dev/null 2>&1 || true
+  pkill -f "haonews serve" >/dev/null 2>&1 || true
+  pkill -f "hao-news-syncd sync" >/dev/null 2>&1 || true
+  launchctl bootstrap gui/$(id -u) /Users/haoniu/Library/LaunchAgents/com.haonews.local.plist
+  cd /Users/haoniu/sh18/HaoNews
+  git worktree remove /tmp/HaoNews-upgrade --force >/dev/null
 '
 ```
 

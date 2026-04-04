@@ -60,19 +60,20 @@ curl -s http://192.168.102.74:51818/api/teams/archive-demo/sync | python3 -m jso
   - `conflict_count`
   - `recent_conflicts`
   - `conflict_views`
+  - `webhook_status`
 
 ## 3. Team Webhook Status
 
-静态状态检查默认看 `archive-demo`：
+静态状态检查默认看 `runtime-webhook-team`：
 
 ```bash
-curl -s http://127.0.0.1:51818/api/teams/archive-demo/webhooks/status | python3 -m json.tool
+curl -s http://127.0.0.1:51818/api/teams/runtime-webhook-team/webhooks/status | python3 -m json.tool
 ```
 
 ### `.74`
 
 ```bash
-curl -s http://192.168.102.74:51818/api/teams/archive-demo/webhooks/status | python3 -m json.tool
+curl -s http://192.168.102.74:51818/api/teams/runtime-webhook-team/webhooks/status | python3 -m json.tool
 ```
 
 通过标准：
@@ -81,8 +82,9 @@ curl -s http://192.168.102.74:51818/api/teams/archive-demo/webhooks/status | pyt
   - `scope = "team-webhook-status"`
   - `failed_count`
   - `delivered_count`
-  - `recent_failed`
+  - `recent_failures`
   - `recent_delivered`
+  - `recent_dead_letters`
 
 ## 4. Team Webhook Replay
 
@@ -155,27 +157,37 @@ curl -s http://192.168.102.74:51818/a2a/teams/archive-demo/tasks | python3 -m js
 
 ## 7. Team SSE
 
-默认在 `.75` 动态验证：
+默认在 `.75` 的 `runtime-webhook-team` 动态验证：
 
 ```bash
 python3 - <<'PY'
-import urllib.request
-req = urllib.request.Request('http://127.0.0.1:51818/api/teams/archive-demo/events')
+import subprocess, time, json, urllib.request
+team='runtime-webhook-team'
+stream = subprocess.Popen(['curl','-N','--max-time','8','-s',f'http://127.0.0.1:51818/api/teams/{team}/events'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+time.sleep(1)
+req = urllib.request.Request(
+    f'http://127.0.0.1:51818/api/teams/{team}/channels/main/messages',
+    data=json.dumps({
+        'author_agent_id':'agent://pc75/openclaw01',
+        'message_type':'chat',
+        'content':'sse runtime validation'
+    }).encode(),
+    headers={'Content-Type':'application/json'},
+    method='POST',
+)
 with urllib.request.urlopen(req, timeout=10) as r:
-    print(r.headers.get('Content-Type'))
-    while True:
-        line = r.readline().decode('utf-8', 'replace')
-        if line.startswith('data: '):
-            print(line.strip())
-            break
+    print(r.read().decode('utf-8', 'replace'))
+out, _ = stream.communicate(timeout=12)
+for line in out.splitlines():
+    if line.startswith('data: '):
+        print(line)
+        break
 PY
 ```
 
-然后触发一个 Team 事件，例如更新 policy。
-
 通过标准：
-- `Content-Type = text/event-stream`
-- 能收到至少一条 `data: {...}` 事件
+- Team message 创建返回 `201`
+- SSE 流能收到至少一条 `data: {...}` 事件
 
 ## 8. public-live-time
 
