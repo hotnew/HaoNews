@@ -65,9 +65,9 @@ func (Plugin) Build(ctx context.Context, cfg apphost.Config, theme apphost.WebTh
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	var watcherMu sync.Mutex
 	var watcher *live.AnnouncementWatcher
-	if !disableLiveAnnouncementWatcher() {
+	if watcherNetPath, ok := liveAnnouncementWatcherNetPath(cfg); ok {
 		go func() {
-			startedWatcher, startErr := live.StartAnnouncementWatcher(watchCtx, cfg.StoreRoot, cfg.NetPath)
+			startedWatcher, startErr := live.StartAnnouncementWatcher(watchCtx, cfg.StoreRoot, watcherNetPath)
 			if startErr != nil {
 				logf("haonews live: announcement watcher disabled: %v", startErr)
 				return
@@ -139,6 +139,29 @@ func disableLiveAnnouncementWatcher() bool {
 	}
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("HAONEWS_DISABLE_LIVE_ANNOUNCEMENT_WATCHER")), "1") ||
 		strings.EqualFold(strings.TrimSpace(os.Getenv("HAONEWS_DISABLE_LIVE_ANNOUNCEMENT_WATCHER")), "true")
+}
+
+func liveAnnouncementWatcherNetPath(cfg apphost.Config) (string, bool) {
+	if disableLiveAnnouncementWatcher() {
+		return "", false
+	}
+	netPath := strings.TrimSpace(cfg.NetPath)
+	switch strings.ToLower(strings.TrimSpace(cfg.SyncMode)) {
+	case "", "managed", "external":
+		liveNetPath := filepath.Join(filepath.Dir(netPath), "hao_news_live_net.inf")
+		if strings.TrimSpace(netPath) != "" && filepath.Clean(liveNetPath) == filepath.Clean(netPath) {
+			return "", false
+		}
+		if _, err := os.Stat(liveNetPath); err != nil {
+			return "", false
+		}
+		return liveNetPath, true
+	default:
+		if netPath == "" {
+			return "", false
+		}
+		return netPath, true
+	}
 }
 
 func disableLiveArchiveLoop() bool {

@@ -45,6 +45,40 @@ func TestPluginBuildServesLiveIndex(t *testing.T) {
 	}
 }
 
+func TestLiveAnnouncementWatcherNetPath(t *testing.T) {
+	t.Parallel()
+	prevWatcherDisabled := liveAnnouncementWatcherDisabledForTests
+	liveAnnouncementWatcherDisabledForTests = false
+	defer func() {
+		liveAnnouncementWatcherDisabledForTests = prevWatcherDisabled
+	}()
+
+	root := t.TempDir()
+	netPath := filepath.Join(root, "haonews_net.inf")
+	if err := os.WriteFile(netPath, []byte("network_mode=lan\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile netPath error = %v", err)
+	}
+	if path, ok := liveAnnouncementWatcherNetPath(apphost.Config{}); ok || path != "" {
+		t.Fatalf("expected default config to keep watcher disabled in managed mode, got %q %v", path, ok)
+	}
+	if path, ok := liveAnnouncementWatcherNetPath(apphost.Config{SyncMode: "managed", NetPath: netPath}); ok || path != "" {
+		t.Fatalf("expected managed sync without live net to disable watcher, got %q %v", path, ok)
+	}
+	if path, ok := liveAnnouncementWatcherNetPath(apphost.Config{SyncMode: "off", NetPath: netPath}); !ok || path != netPath {
+		t.Fatalf("expected non-sync standalone mode to use main net path, got %q %v", path, ok)
+	}
+	liveNetPath := filepath.Join(root, "hao_news_live_net.inf")
+	if err := os.WriteFile(liveNetPath, []byte("network_mode=lan\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile liveNetPath error = %v", err)
+	}
+	if path, ok := liveAnnouncementWatcherNetPath(apphost.Config{SyncMode: "managed", NetPath: netPath}); !ok || path != liveNetPath {
+		t.Fatalf("expected managed sync to use live net path, got %q %v", path, ok)
+	}
+	if path, ok := liveAnnouncementWatcherNetPath(apphost.Config{SyncMode: "external", NetPath: netPath}); !ok || path != liveNetPath {
+		t.Fatalf("expected external sync to use live net path, got %q %v", path, ok)
+	}
+}
+
 func TestPluginBuildServesLiveAPI(t *testing.T) {
 	t.Parallel()
 
