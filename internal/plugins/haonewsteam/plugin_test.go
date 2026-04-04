@@ -1622,6 +1622,113 @@ func TestPluginBuildHandlesTeamTaskStatusAndArtifactTaskRelation(t *testing.T) {
 	}
 }
 
+func TestPluginBuildServesAndResolvesTeamSyncConflicts(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	teamRoot := filepath.Join(root, "store", "team", "sync-conflict-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
+  "team_id":"sync-conflict-team",
+  "title":"Sync Conflict Team",
+  "owner_agent_id":"agent://pc75/live-alpha"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-alpha","role":"owner","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+	writeTeamSyncStateFixture(t, root, map[string]any{
+		"conflicts": map[string]any{
+			"task:task-conflict-1:2026-04-04T15:00:00Z": map[string]any{
+				"key":         "task:task-conflict-1:2026-04-04T15:00:00Z",
+				"type":        "task",
+				"team_id":     "sync-conflict-team",
+				"subject_id":  "task-conflict-1",
+				"source_node": "node-75",
+				"reason":      "local_newer",
+				"sync": map[string]any{
+					"type":        "task",
+					"team_id":     "sync-conflict-team",
+					"source_node": "node-75",
+					"created_at":  "2026-04-04T15:00:00Z",
+					"task": map[string]any{
+						"team_id":    "sync-conflict-team",
+						"task_id":    "task-conflict-1",
+						"title":      "Remote conflicted task",
+						"status":     "doing",
+						"priority":   "high",
+						"created_by": "agent://pc75/live-alpha",
+						"created_at": "2026-04-04T14:59:00Z",
+						"updated_at": "2026-04-04T15:00:00Z",
+						"context_id": "ctx-sync-conflict-1",
+						"channel_id": "main",
+					},
+				},
+				"updated_at": "2026-04-04T15:00:01Z",
+			},
+		},
+	})
+
+	conflictsReq := httptest.NewRequest(http.MethodGet, "/api/teams/sync-conflict-team/sync/conflicts", nil)
+	conflictsRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(conflictsRec, conflictsReq)
+	if conflictsRec.Code != http.StatusOK {
+		t.Fatalf("conflicts api status = %d, body = %s", conflictsRec.Code, conflictsRec.Body.String())
+	}
+	if !strings.Contains(conflictsRec.Body.String(), `"scope": "team-sync-conflicts"`) || !strings.Contains(conflictsRec.Body.String(), `"reason": "local_newer"`) {
+		t.Fatalf("expected conflicts api body, got %q", conflictsRec.Body.String())
+	}
+
+	resolveReq := httptest.NewRequest(http.MethodPost, "/api/teams/sync-conflict-team/sync/conflicts/"+url.PathEscape("task:task-conflict-1:2026-04-04T15:00:00Z")+"/resolve", strings.NewReader(`{
+  "actor_agent_id":"agent://pc75/live-alpha",
+  "action":"dismiss"
+}`))
+	resolveReq.RemoteAddr = "127.0.0.1:12345"
+	resolveRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(resolveRec, resolveReq)
+	if resolveRec.Code != http.StatusOK {
+		t.Fatalf("resolve api status = %d, body = %s", resolveRec.Code, resolveRec.Body.String())
+	}
+	if !strings.Contains(resolveRec.Body.String(), `"scope": "team-sync-conflict-resolve"`) || !strings.Contains(resolveRec.Body.String(), `"resolution": "dismiss"`) {
+		t.Fatalf("expected resolve api body, got %q", resolveRec.Body.String())
+	}
+
+	historyReq := httptest.NewRequest(http.MethodGet, "/api/teams/sync-conflict-team/history?scope=sync-conflict", nil)
+	historyRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(historyRec, historyReq)
+	if historyRec.Code != http.StatusOK {
+		t.Fatalf("history api status = %d, body = %s", historyRec.Code, historyRec.Body.String())
+	}
+	if !strings.Contains(historyRec.Body.String(), `"scope": "team-history"`) || !strings.Contains(historyRec.Body.String(), `"resolution_after": "dismiss"`) {
+		t.Fatalf("expected conflict resolution history body, got %q", historyRec.Body.String())
+	}
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/teams/sync-conflict-team", nil)
+	detailRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("team detail status = %d, body = %s", detailRec.Code, detailRec.Body.String())
+	}
+	if !strings.Contains(detailRec.Body.String(), "最近复制冲突") {
+		t.Fatalf("expected conflict summary on team detail, got %q", detailRec.Body.String())
+	}
+
+	pageReq := httptest.NewRequest(http.MethodGet, "/teams/sync-conflict-team/history", nil)
+	pageRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(pageRec, pageReq)
+	if pageRec.Code != http.StatusOK {
+		t.Fatalf("team history page status = %d, body = %s", pageRec.Code, pageRec.Body.String())
+	}
+	if !strings.Contains(pageRec.Body.String(), "最近复制冲突") || !strings.Contains(pageRec.Body.String(), "冲突 JSON") {
+		t.Fatalf("expected conflict summary on team history page, got %q", pageRec.Body.String())
+	}
+}
+
 func buildTeamSite(t *testing.T) (*apphost.Site, string) {
 	t.Helper()
 
@@ -1641,4 +1748,20 @@ func buildTeamSite(t *testing.T) (*apphost.Site, string) {
 		t.Fatalf("Plugin.Build error = %v", err)
 	}
 	return site, root
+}
+
+func writeTeamSyncStateFixture(t *testing.T, root string, payload map[string]any) {
+	t.Helper()
+
+	syncRoot := filepath.Join(root, "store", "sync")
+	if err := os.MkdirAll(syncRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(syncRoot) error = %v", err)
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent(teamSyncState) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(syncRoot, "team_sync_state.json"), data, 0o644); err != nil {
+		t.Fatalf("WriteFile(team_sync_state.json) error = %v", err)
+	}
 }

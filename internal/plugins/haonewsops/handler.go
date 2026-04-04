@@ -507,6 +507,7 @@ func handleAPINetworkBootstrap(app *newsplugin.App, w http.ResponseWriter, r *ht
 		PrimaryHost:   strings.TrimSpace(advertiseHost),
 		Readiness:     readiness,
 		Redis:         bootstrapRedisStatus(netCfg),
+		TeamSync:      bootstrapTeamSyncStatus(syncStatus),
 		PeerID:        syncStatus.LibP2P.PeerID,
 		ListenAddrs:   append([]string(nil), syncStatus.LibP2P.ListenAddrs...),
 		DialAddrs:     dialAddrs,
@@ -537,6 +538,14 @@ func bootstrapRedisStatus(cfg newsplugin.NetworkBootstrapConfig) *newsplugin.Net
 		}
 	}
 	return status
+}
+
+func bootstrapTeamSyncStatus(status newsplugin.SyncRuntimeStatus) *newsplugin.SyncTeamSyncStatus {
+	if !status.TeamSync.Enabled {
+		return nil
+	}
+	snapshot := status.TeamSync
+	return &snapshot
 }
 
 func handleAPICreditBalance(app *newsplugin.App, w http.ResponseWriter, r *http.Request) {

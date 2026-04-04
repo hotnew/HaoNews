@@ -17,7 +17,28 @@ const (
 	TeamSyncTypeMember   = "member"
 	TeamSyncTypePolicy   = "policy"
 	TeamSyncTypeChannel  = "channel"
+	TeamSyncTypeAck      = "ack"
 )
+
+type TeamSyncAck struct {
+	AckedKey   string    `json:"acked_key"`
+	AckedBy    string    `json:"acked_by,omitempty"`
+	TargetNode string    `json:"target_node,omitempty"`
+	AppliedAt  time.Time `json:"applied_at,omitempty"`
+}
+
+type TeamSyncConflict struct {
+	Type          string    `json:"type"`
+	TeamID        string    `json:"team_id"`
+	SubjectID     string    `json:"subject_id,omitempty"`
+	SourceNode    string    `json:"source_node,omitempty"`
+	Reason        string    `json:"reason,omitempty"`
+	LocalVersion  time.Time `json:"local_version,omitempty"`
+	RemoteVersion time.Time `json:"remote_version,omitempty"`
+	Resolution    string    `json:"resolution,omitempty"`
+	ResolvedBy    string    `json:"resolved_by,omitempty"`
+	ResolvedAt    time.Time `json:"resolved_at,omitempty"`
+}
 
 type TeamSyncMessage struct {
 	Type       string       `json:"type"`
@@ -29,6 +50,7 @@ type TeamSyncMessage struct {
 	Members    []Member     `json:"members,omitempty"`
 	Policy     *Policy      `json:"policy,omitempty"`
 	Channel    *Channel     `json:"channel,omitempty"`
+	Ack        *TeamSyncAck `json:"ack,omitempty"`
 	SourceNode string       `json:"source_node,omitempty"`
 	CreatedAt  time.Time    `json:"created_at,omitempty"`
 }
@@ -90,6 +112,16 @@ func (m TeamSyncMessage) Normalize() TeamSyncMessage {
 		}
 		m.Channel = &channel
 	}
+	if m.Ack != nil {
+		ack := *m.Ack
+		ack.AckedKey = strings.TrimSpace(ack.AckedKey)
+		ack.AckedBy = strings.TrimSpace(ack.AckedBy)
+		ack.TargetNode = strings.TrimSpace(ack.TargetNode)
+		if ack.AppliedAt.IsZero() {
+			ack.AppliedAt = m.CreatedAt
+		}
+		m.Ack = &ack
+	}
 	return m
 }
 
@@ -120,6 +152,14 @@ func (m TeamSyncMessage) Key() string {
 	case TeamSyncTypeChannel:
 		if m.Channel != nil {
 			return teamSyncChannelKey(m.TeamID, *m.Channel)
+		}
+	case TeamSyncTypeAck:
+		if m.Ack != nil && m.Ack.AckedKey != "" {
+			key := TeamSyncTypeAck + ":" + m.Ack.AckedKey
+			if m.Ack.AckedBy != "" {
+				key += ":" + m.Ack.AckedBy
+			}
+			return key
 		}
 	}
 	return ""
@@ -166,8 +206,208 @@ func (s *Store) ApplyReplicatedSync(sync TeamSyncMessage) (bool, error) {
 			return false, errors.New("missing team sync channel payload")
 		}
 		return s.ApplyReplicatedChannel(sync.TeamID, *sync.Channel, sync.CreatedAt)
+	case TeamSyncTypeAck:
+		return false, nil
 	default:
 		return false, errors.New("unsupported team sync type")
+	}
+}
+
+func (s *Store) DetectReplicatedConflict(sync TeamSyncMessage) (TeamSyncConflict, bool, error) {
+	if s == nil {
+		return TeamSyncConflict{}, false, errors.New("nil team store")
+	}
+	sync = sync.Normalize()
+	if sync.TeamID == "" {
+		return TeamSyncConflict{}, false, errors.New("empty team id")
+	}
+	switch sync.Type {
+	case TeamSyncTypeTask:
+		if sync.Task == nil {
+			return TeamSyncConflict{}, false, nil
+		}
+		current, err := s.LoadTask(sync.TeamID, sync.Task.TaskID)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return TeamSyncConflict{}, false, nil
+		case err != nil:
+			return TeamSyncConflict{}, false, err
+		}
+		remote := normalizeReplicatedTask(sync.TeamID, *sync.Task)
+		localVersion := taskVersion(current)
+		remoteVersion := taskVersion(remote)
+		if !replicatedVersionAfter(remoteVersion, localVersion) && !reflect.DeepEqual(current, remote) {
+			reason := "local_newer"
+			if remoteVersion.Equal(localVersion) {
+				reason = "same_version_diverged"
+			}
+			return TeamSyncConflict{
+				Type:          sync.Type,
+				TeamID:        sync.TeamID,
+				SubjectID:     remote.TaskID,
+				SourceNode:    sync.SourceNode,
+				Reason:        reason,
+				LocalVersion:  localVersion,
+				RemoteVersion: remoteVersion,
+			}, true, nil
+		}
+	case TeamSyncTypeArtifact:
+		if sync.Artifact == nil {
+			return TeamSyncConflict{}, false, nil
+		}
+		current, err := s.LoadArtifact(sync.TeamID, sync.Artifact.ArtifactID)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return TeamSyncConflict{}, false, nil
+		case err != nil:
+			return TeamSyncConflict{}, false, err
+		}
+		remote := normalizeReplicatedArtifact(sync.TeamID, *sync.Artifact)
+		localVersion := artifactVersion(current)
+		remoteVersion := artifactVersion(remote)
+		if !replicatedVersionAfter(remoteVersion, localVersion) && !reflect.DeepEqual(current, remote) {
+			reason := "local_newer"
+			if remoteVersion.Equal(localVersion) {
+				reason = "same_version_diverged"
+			}
+			return TeamSyncConflict{
+				Type:          sync.Type,
+				TeamID:        sync.TeamID,
+				SubjectID:     remote.ArtifactID,
+				SourceNode:    sync.SourceNode,
+				Reason:        reason,
+				LocalVersion:  localVersion,
+				RemoteVersion: remoteVersion,
+			}, true, nil
+		}
+	case TeamSyncTypeMember:
+		current, currentVersion, err := s.LoadMembersSnapshot(sync.TeamID)
+		if err != nil {
+			return TeamSyncConflict{}, false, err
+		}
+		remote := normalizeReplicatedMembers(sync.Members)
+		remoteVersion := sync.CreatedAt.UTC()
+		if remoteVersion.IsZero() {
+			remoteVersion = membersSnapshotVersion(remote)
+		}
+		if !replicatedVersionAfter(remoteVersion, currentVersion) && !reflect.DeepEqual(current, remote) {
+			reason := "local_newer"
+			if remoteVersion.Equal(currentVersion) {
+				reason = "same_version_diverged"
+			}
+			return TeamSyncConflict{
+				Type:          sync.Type,
+				TeamID:        sync.TeamID,
+				SubjectID:     sync.TeamID,
+				SourceNode:    sync.SourceNode,
+				Reason:        reason,
+				LocalVersion:  currentVersion,
+				RemoteVersion: remoteVersion,
+			}, true, nil
+		}
+	case TeamSyncTypePolicy:
+		if sync.Policy == nil {
+			return TeamSyncConflict{}, false, nil
+		}
+		current, currentVersion, err := s.LoadPolicySnapshot(sync.TeamID)
+		if err != nil {
+			return TeamSyncConflict{}, false, err
+		}
+		remote := normalizePolicy(*sync.Policy)
+		remoteVersion := sync.CreatedAt.UTC()
+		if remoteVersion.IsZero() {
+			remoteVersion = policySnapshotVersion(remote)
+		}
+		if !replicatedVersionAfter(remoteVersion, currentVersion) && !reflect.DeepEqual(current, remote) {
+			reason := "local_newer"
+			if remoteVersion.Equal(currentVersion) {
+				reason = "same_version_diverged"
+			}
+			return TeamSyncConflict{
+				Type:          sync.Type,
+				TeamID:        sync.TeamID,
+				SubjectID:     sync.TeamID,
+				SourceNode:    sync.SourceNode,
+				Reason:        reason,
+				LocalVersion:  currentVersion,
+				RemoteVersion: remoteVersion,
+			}, true, nil
+		}
+	case TeamSyncTypeChannel:
+		if sync.Channel == nil {
+			return TeamSyncConflict{}, false, nil
+		}
+		current, _, err := s.LoadChannelSnapshot(sync.TeamID, sync.Channel.ChannelID)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return TeamSyncConflict{}, false, nil
+		case err != nil:
+			return TeamSyncConflict{}, false, err
+		}
+		remote := normalizeChannel(*sync.Channel)
+		localVersion := channelSnapshotVersion(current)
+		remoteVersion := sync.CreatedAt.UTC()
+		if remoteVersion.IsZero() {
+			remoteVersion = channelSnapshotVersion(remote)
+		}
+		if !replicatedVersionAfter(remoteVersion, localVersion) && !reflect.DeepEqual(current, remote) {
+			reason := "local_newer"
+			if remoteVersion.Equal(localVersion) {
+				reason = "same_version_diverged"
+			}
+			return TeamSyncConflict{
+				Type:          sync.Type,
+				TeamID:        sync.TeamID,
+				SubjectID:     remote.ChannelID,
+				SourceNode:    sync.SourceNode,
+				Reason:        reason,
+				LocalVersion:  localVersion,
+				RemoteVersion: remoteVersion,
+			}, true, nil
+		}
+	}
+	return TeamSyncConflict{}, false, nil
+}
+
+func (s *Store) ForceApplyReplicatedSync(sync TeamSyncMessage) (bool, error) {
+	if s == nil {
+		return false, errors.New("nil team store")
+	}
+	sync = sync.Normalize()
+	switch sync.Type {
+	case TeamSyncTypeTask:
+		if sync.Task == nil {
+			return false, errors.New("missing task payload")
+		}
+		return true, s.upsertReplicatedTask(sync.TeamID, normalizeReplicatedTask(sync.TeamID, *sync.Task))
+	case TeamSyncTypeArtifact:
+		if sync.Artifact == nil {
+			return false, errors.New("missing artifact payload")
+		}
+		return true, s.upsertReplicatedArtifact(sync.TeamID, normalizeReplicatedArtifact(sync.TeamID, *sync.Artifact))
+	case TeamSyncTypeMember:
+		if err := s.SaveMembers(sync.TeamID, normalizeReplicatedMembers(sync.Members)); err != nil {
+			return false, err
+		}
+		return true, nil
+	case TeamSyncTypePolicy:
+		if sync.Policy == nil {
+			return false, errors.New("missing policy payload")
+		}
+		if err := s.SavePolicy(sync.TeamID, normalizePolicy(*sync.Policy)); err != nil {
+			return false, err
+		}
+		return true, nil
+	case TeamSyncTypeChannel:
+		if sync.Channel == nil {
+			return false, errors.New("missing channel payload")
+		}
+		if err := s.SaveChannel(sync.TeamID, normalizeChannel(*sync.Channel)); err != nil {
+			return false, err
+		}
+		return true, nil
+	default:
+		return false, errors.New("conflict accept_remote unsupported for sync type")
 	}
 }
 

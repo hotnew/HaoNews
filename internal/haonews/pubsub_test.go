@@ -61,6 +61,17 @@ func TestDiscoveryNamespacesIncludeConfiguredFeedsAndTopics(t *testing.T) {
 	}
 }
 
+func TestTeamSyncDiscoveryNamespaceUsesNetworkScopedTeamPath(t *testing.T) {
+	t.Parallel()
+
+	networkID := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	got := teamSyncDiscoveryNamespace(networkID, "Archive-Demo")
+	want := "haonews/discovery/" + networkID + "/team%2Farchive-demo%2Fsync"
+	if got != want {
+		t.Fatalf("teamSyncDiscoveryNamespace = %q, want %q", got, want)
+	}
+}
+
 func TestSubscribedAnnouncementTopicsCanonicalizesDiscoveryFeeds(t *testing.T) {
 	t.Parallel()
 

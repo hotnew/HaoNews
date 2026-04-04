@@ -334,10 +334,11 @@ func dialableLibP2PAddrs(status SyncRuntimeStatus, host string, cfg NetworkBoots
 	host = strings.TrimSpace(host)
 	requestIP := net.ParseIP(host)
 	forceRewrite := shouldForceAdvertiseHostRewrite(host, cfg)
-	values := append([]string(nil), status.LibP2P.ListenAddrs...)
-	if len(values) == 0 {
-		values = append(values, status.LibP2P.ConfiguredListen...)
-	}
+	// Prefer explicitly configured listen ports first so LAN peers do not get
+	// steered toward opportunistic extra listeners before the stable node port.
+	values := make([]string, 0, len(status.LibP2P.ConfiguredListen)+len(status.LibP2P.ListenAddrs))
+	values = append(values, status.LibP2P.ConfiguredListen...)
+	values = append(values, status.LibP2P.ListenAddrs...)
 	out := make([]string, 0, len(values))
 	seen := make(map[string]struct{})
 	for _, value := range values {

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -140,10 +141,11 @@ func TestTeamPubSubRuntimeAppliesInboundReplicatedMessage(t *testing.T) {
 
 	remoteMsg := signedTeamMessage(t, "project-team-sync", "remote", time.Date(2026, 4, 3, 14, 0, 0, 0, time.UTC))
 	applied, err := handler(teamcore.TeamSyncMessage{
-		Type:      teamcore.TeamSyncTypeMessage,
-		TeamID:    "project-team-sync",
-		Message:   &remoteMsg,
-		CreatedAt: remoteMsg.CreatedAt,
+		Type:       teamcore.TeamSyncTypeMessage,
+		TeamID:     "project-team-sync",
+		Message:    &remoteMsg,
+		SourceNode: "node-2",
+		CreatedAt:  remoteMsg.CreatedAt,
 	})
 	if err != nil {
 		t.Fatalf("handler(message) error = %v", err)
@@ -152,10 +154,11 @@ func TestTeamPubSubRuntimeAppliesInboundReplicatedMessage(t *testing.T) {
 		t.Fatalf("expected inbound replicated message to apply")
 	}
 	applied, err = handler(teamcore.TeamSyncMessage{
-		Type:      teamcore.TeamSyncTypeMessage,
-		TeamID:    "project-team-sync",
-		Message:   &remoteMsg,
-		CreatedAt: remoteMsg.CreatedAt,
+		Type:       teamcore.TeamSyncTypeMessage,
+		TeamID:     "project-team-sync",
+		Message:    &remoteMsg,
+		SourceNode: "node-2",
+		CreatedAt:  remoteMsg.CreatedAt,
 	})
 	if err != nil {
 		t.Fatalf("handler(message duplicate) error = %v", err)
@@ -178,6 +181,19 @@ func TestTeamPubSubRuntimeAppliesInboundReplicatedMessage(t *testing.T) {
 	status := runtime.Status()
 	if status.ReceivedMessages != 2 || status.AppliedMessages != 1 || status.SkippedMessages != 1 {
 		t.Fatalf("status = %+v, want receive/apply/skip counters", status)
+	}
+	if status.PublishedAcks != 1 {
+		t.Fatalf("status = %+v, want one published ack", status)
+	}
+	if len(transport.published) == 0 {
+		t.Fatalf("expected ack to be published")
+	}
+	ack := transport.published[len(transport.published)-1]
+	if ack.Type != teamcore.TeamSyncTypeAck || ack.Ack == nil || ack.Ack.AckedKey != teamcore.TeamSyncTypeMessage+":"+remoteMsg.MessageID {
+		t.Fatalf("unexpected ack payload: %#v", ack)
+	}
+	if ack.Ack.TargetNode != "node-2" {
+		t.Fatalf("unexpected ack target: %#v", ack)
 	}
 }
 
@@ -501,6 +517,519 @@ func TestTeamPubSubRuntimeFirstSyncPublishesObjectsCreatedAfterRuntimeStart(t *t
 	status := runtime.Status()
 	if status.PublishedTasks != 1 || status.PublishedArtifacts != 1 {
 		t.Fatalf("status = %+v, want published task/artifact counters", status)
+	}
+}
+
+func TestTeamPubSubRuntimePersistsPublishedCursorAcrossRestart(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-team-sync")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-team-sync","title":"Team Sync"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := teamcore.OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+
+	runtime1, err := startTeamPubSubRuntime(root, &fakeTeamSyncTransport{}, "node-1")
+	if err != nil {
+		t.Fatalf("startTeamPubSubRuntime(runtime1) error = %v", err)
+	}
+	runtime1.startedAt = time.Date(2026, 4, 4, 10, 0, 0, 0, time.UTC)
+
+	firstMsg := signedTeamMessage(t, "project-team-sync", "first persisted", runtime1.startedAt.Add(2*time.Second))
+	if err := store.AppendMessage("project-team-sync", firstMsg); err != nil {
+		t.Fatalf("AppendMessage(first) error = %v", err)
+	}
+	firstEvent := teamcore.ChangeEvent{
+		TeamID:    "project-team-sync",
+		Scope:     "message",
+		Action:    "create",
+		SubjectID: firstMsg.MessageID,
+		Source:    "api",
+		CreatedAt: firstMsg.CreatedAt.Add(time.Second),
+	}
+	if err := store.AppendHistory("project-team-sync", firstEvent); err != nil {
+		t.Fatalf("AppendHistory(first) error = %v", err)
+	}
+	if err := runtime1.SyncOnce(context.Background(), nil); err != nil {
+		t.Fatalf("SyncOnce(runtime1) error = %v", err)
+	}
+	if runtime1.Status().PublishedMessages != 1 || runtime1.Status().PublishedHistory != 1 {
+		t.Fatalf("runtime1 status = %+v, want first publish to persist checkpoints", runtime1.Status())
+	}
+
+	secondMsgTime := time.Date(2026, 4, 4, 10, 0, 8, 0, time.UTC)
+	secondMsg := signedTeamMessage(t, "project-team-sync", "second after restart", secondMsgTime)
+	if err := store.AppendMessage("project-team-sync", secondMsg); err != nil {
+		t.Fatalf("AppendMessage(second) error = %v", err)
+	}
+	secondEvent := teamcore.ChangeEvent{
+		TeamID:    "project-team-sync",
+		Scope:     "message",
+		Action:    "create",
+		SubjectID: secondMsg.MessageID,
+		Source:    "api",
+		CreatedAt: secondMsg.CreatedAt.Add(time.Second),
+	}
+	if err := store.AppendHistory("project-team-sync", secondEvent); err != nil {
+		t.Fatalf("AppendHistory(second) error = %v", err)
+	}
+
+	transport2 := &fakeTeamSyncTransport{}
+	runtime2, err := startTeamPubSubRuntime(root, transport2, "node-1")
+	if err != nil {
+		t.Fatalf("startTeamPubSubRuntime(runtime2) error = %v", err)
+	}
+	runtime2.startedAt = time.Date(2026, 4, 4, 10, 0, 20, 0, time.UTC)
+	if err := runtime2.SyncOnce(context.Background(), nil); err != nil {
+		t.Fatalf("SyncOnce(runtime2) error = %v", err)
+	}
+	if len(transport2.published) != 2 {
+		t.Fatalf("published after restart = %d, want 2", len(transport2.published))
+	}
+	if transport2.published[0].Type != teamcore.TeamSyncTypeMessage || transport2.published[0].Message == nil || transport2.published[0].Message.MessageID != secondMsg.MessageID {
+		t.Fatalf("unexpected first post-restart payload: %#v", transport2.published[0])
+	}
+	if transport2.published[1].Type != teamcore.TeamSyncTypeHistory || transport2.published[1].History == nil || transport2.published[1].History.SubjectID != secondMsg.MessageID {
+		t.Fatalf("unexpected second post-restart payload: %#v", transport2.published[1])
+	}
+	status := runtime2.Status()
+	if !status.StateLoaded || status.PersistedCursors == 0 {
+		t.Fatalf("runtime2 status = %+v, want loaded persisted cursors", status)
+	}
+	if status.PublishedMessages != 1 || status.PublishedHistory != 1 {
+		t.Fatalf("runtime2 status = %+v, want restart publish counters", status)
+	}
+}
+
+func TestTeamPubSubRuntimeRetriesPendingUnackedObjects(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-team-sync")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-team-sync","title":"Team Sync"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := teamcore.OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	transport := &fakeTeamSyncTransport{}
+	runtime, err := startTeamPubSubRuntime(root, transport, "node-1")
+	if err != nil {
+		t.Fatalf("startTeamPubSubRuntime error = %v", err)
+	}
+	runtime.startedAt = time.Date(2026, 4, 4, 13, 0, 0, 0, time.UTC)
+
+	msg := signedTeamMessage(t, "project-team-sync", "retry me", runtime.startedAt.Add(2*time.Second))
+	if err := store.AppendMessage("project-team-sync", msg); err != nil {
+		t.Fatalf("AppendMessage error = %v", err)
+	}
+	event := teamcore.ChangeEvent{
+		TeamID:    "project-team-sync",
+		Scope:     "message",
+		Action:    "create",
+		SubjectID: msg.MessageID,
+		Source:    "api",
+		CreatedAt: msg.CreatedAt.Add(time.Second),
+	}
+	if err := store.AppendHistory("project-team-sync", event); err != nil {
+		t.Fatalf("AppendHistory error = %v", err)
+	}
+
+	if err := runtime.SyncOnce(context.Background(), nil); err != nil {
+		t.Fatalf("SyncOnce(first) error = %v", err)
+	}
+	if len(transport.published) != 2 {
+		t.Fatalf("published first pass = %d, want 2", len(transport.published))
+	}
+	if runtime.Status().PendingAcks != 2 {
+		t.Fatalf("status = %+v, want 2 pending acks after first publish", runtime.Status())
+	}
+
+	runtime.mu.Lock()
+	for key, checkpoint := range runtime.state.Pending {
+		checkpoint.UpdatedAt = time.Now().UTC().Add(-2 * teamSyncAckRetryAfter)
+		runtime.state.Pending[key] = checkpoint
+	}
+	runtime.mu.Unlock()
+
+	if err := runtime.SyncOnce(context.Background(), nil); err != nil {
+		t.Fatalf("SyncOnce(retry) error = %v", err)
+	}
+	if len(transport.published) != 4 {
+		t.Fatalf("published second pass = %d, want 4", len(transport.published))
+	}
+	status := runtime.Status()
+	if status.RetriedPublishes != 2 || status.PendingAcks != 2 {
+		t.Fatalf("status = %+v, want 2 retries and still-pending acks", status)
+	}
+}
+
+func TestTeamPubSubRuntimeAppliesInboundAckForTargetNode(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-team-sync")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-team-sync","title":"Team Sync"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	transport := &fakeTeamSyncTransport{}
+	runtime, err := startTeamPubSubRuntime(root, transport, "node-1")
+	if err != nil {
+		t.Fatalf("startTeamPubSubRuntime error = %v", err)
+	}
+	if err := runtime.SyncOnce(context.Background(), nil); err != nil {
+		t.Fatalf("SyncOnce(prime) error = %v", err)
+	}
+	handler := transport.handlers["project-team-sync"]
+	if handler == nil {
+		t.Fatalf("expected team subscription to be installed")
+	}
+
+	runtime.mu.Lock()
+	runtime.state.Pending["message:project-team-sync:main:agent://pc75/demo"] = teamSyncPendingState{
+		VersionAt:  time.Date(2026, 4, 4, 11, 59, 0, 0, time.UTC),
+		Key:        "message:project-team-sync:main:agent://pc75/demo",
+		StateKey:   "message:project-team-sync:main:agent://pc75/demo",
+		Status:     "pending",
+		UpdatedAt:  time.Date(2026, 4, 4, 11, 59, 30, 0, time.UTC),
+		RetryCount: 0,
+	}
+	runtime.status.PendingAcks = 1
+	runtime.mu.Unlock()
+
+	applied, err := handler(teamcore.TeamSyncMessage{
+		Type:   teamcore.TeamSyncTypeAck,
+		TeamID: "project-team-sync",
+		Ack: &teamcore.TeamSyncAck{
+			AckedKey:   "message:project-team-sync:main:agent://pc75/demo",
+			AckedBy:    "node-2",
+			TargetNode: "node-1",
+			AppliedAt:  time.Date(2026, 4, 4, 12, 0, 0, 0, time.UTC),
+		},
+		SourceNode: "node-2",
+		CreatedAt:  time.Date(2026, 4, 4, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("handler(ack) error = %v", err)
+	}
+	if !applied {
+		t.Fatalf("expected targeted ack to apply")
+	}
+
+	applied, err = handler(teamcore.TeamSyncMessage{
+		Type:   teamcore.TeamSyncTypeAck,
+		TeamID: "project-team-sync",
+		Ack: &teamcore.TeamSyncAck{
+			AckedKey:   "message:project-team-sync:main:agent://pc75/demo",
+			AckedBy:    "node-2",
+			TargetNode: "node-9",
+			AppliedAt:  time.Date(2026, 4, 4, 12, 0, 1, 0, time.UTC),
+		},
+		SourceNode: "node-2",
+		CreatedAt:  time.Date(2026, 4, 4, 12, 0, 1, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("handler(other target ack) error = %v", err)
+	}
+	if applied {
+		t.Fatalf("expected foreign-target ack to be skipped")
+	}
+
+	status := runtime.Status()
+	if status.ReceivedAcks != 2 || status.AppliedAcks != 1 || status.SkippedAcks != 1 {
+		t.Fatalf("status = %+v, want ack receive/apply/skip counters", status)
+	}
+	if status.LastAckedKey != "message:project-team-sync:main:agent://pc75/demo" {
+		t.Fatalf("status = %+v, want last acked key recorded", status)
+	}
+	if status.PendingAcks != 0 {
+		t.Fatalf("status = %+v, want pending ack cleared", status)
+	}
+	if status.PersistedCursors == 0 {
+		t.Fatalf("status = %+v, want persisted cursor write", status)
+	}
+	if status.PersistedPeerAcks != 1 || status.AckPeers != 1 {
+		t.Fatalf("status = %+v, want persisted peer ack ledger", status)
+	}
+	state, err := loadTeamSyncState(runtime.statePath)
+	if err != nil {
+		t.Fatalf("loadTeamSyncState error = %v", err)
+	}
+	entry, ok := state.PeerAcks["node-2"]["message:project-team-sync:main:agent://pc75/demo"]
+	if !ok {
+		t.Fatalf("expected peer ack entry, got %#v", state.PeerAcks)
+	}
+	if entry.AckedBy != "node-2" || entry.AckedKey != "message:project-team-sync:main:agent://pc75/demo" {
+		t.Fatalf("unexpected peer ack entry: %#v", entry)
+	}
+	pending, ok := state.Pending["message:project-team-sync:main:agent://pc75/demo"]
+	if !ok || pending.Status != "acked" {
+		t.Fatalf("expected acked pending entry, got %#v", state.Pending)
+	}
+}
+
+func TestTeamPubSubRuntimeRecordsConflictWhenOlderReplicatedTaskIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-team-sync")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-team-sync","title":"Team Sync"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	store, err := teamcore.OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	localTask := teamcore.Task{
+		TeamID:    "project-team-sync",
+		TaskID:    "task-conflict-1",
+		ChannelID: "main",
+		ContextID: "ctx-conflict-1",
+		Title:     "local newer task",
+		CreatedBy: "agent://pc75/local",
+		Status:    "doing",
+		Priority:  "high",
+		CreatedAt: time.Date(2026, 4, 4, 14, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 4, 4, 14, 5, 0, 0, time.UTC),
+	}
+	if err := store.AppendTask("project-team-sync", localTask); err != nil {
+		t.Fatalf("AppendTask(local) error = %v", err)
+	}
+	transport := &fakeTeamSyncTransport{}
+	runtime, err := startTeamPubSubRuntime(root, transport, "node-1")
+	if err != nil {
+		t.Fatalf("startTeamPubSubRuntime error = %v", err)
+	}
+	if err := runtime.SyncOnce(context.Background(), nil); err != nil {
+		t.Fatalf("SyncOnce(prime) error = %v", err)
+	}
+	handler := transport.handlers["project-team-sync"]
+	if handler == nil {
+		t.Fatalf("expected team subscription to be installed")
+	}
+
+	remoteOlder := localTask
+	remoteOlder.Title = "remote older task"
+	remoteOlder.Status = "review"
+	remoteOlder.UpdatedAt = time.Date(2026, 4, 4, 14, 1, 0, 0, time.UTC)
+
+	applied, err := handler(teamcore.TeamSyncMessage{
+		Type:       teamcore.TeamSyncTypeTask,
+		TeamID:     "project-team-sync",
+		Task:       &remoteOlder,
+		SourceNode: "node-2",
+		CreatedAt:  remoteOlder.UpdatedAt,
+	})
+	if err != nil {
+		t.Fatalf("handler(task conflict) error = %v", err)
+	}
+	if applied {
+		t.Fatalf("expected older replicated task to be skipped")
+	}
+
+	status := runtime.Status()
+	if status.SkippedTasks != 1 || status.Conflicts != 1 {
+		t.Fatalf("status = %+v, want one skipped task conflict", status)
+	}
+	if status.LastConflictReason != "local_newer" {
+		t.Fatalf("status = %+v, want conflict reason recorded", status)
+	}
+	state, err := loadTeamSyncState(runtime.statePath)
+	if err != nil {
+		t.Fatalf("loadTeamSyncState error = %v", err)
+	}
+	conflict, ok := state.Conflicts["task:task-conflict-1:"+remoteOlder.UpdatedAt.Format(time.RFC3339Nano)]
+	if !ok {
+		t.Fatalf("expected conflict entry, got %#v", state.Conflicts)
+	}
+	if conflict.SubjectID != "task-conflict-1" || conflict.SourceNode != "node-2" {
+		t.Fatalf("unexpected conflict entry: %#v", conflict)
+	}
+	if conflict.Reason != "local_newer" {
+		t.Fatalf("unexpected conflict reason: %#v", conflict)
+	}
+}
+
+func TestTeamPubSubRuntimeCompactsPeerAcksAndSupersedesPending(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "project-team-sync")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-team-sync","title":"Team Sync"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	runtime, err := startTeamPubSubRuntime(root, &fakeTeamSyncTransport{}, "node-1")
+	if err != nil {
+		t.Fatalf("startTeamPubSubRuntime error = %v", err)
+	}
+
+	runtime.mu.Lock()
+	runtime.state.PeerAcks["node-2"] = map[string]teamSyncPeerAck{
+		"old-entry": {
+			AckedKey:  "old-entry",
+			AckedBy:   "node-2",
+			AppliedAt: time.Date(2026, 4, 3, 10, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Now().UTC().Add(-teamSyncPeerAckTTL - time.Hour),
+		},
+	}
+	for i := 0; i < teamSyncPeerAckPerPeer+2; i++ {
+		key := "recent-" + strconv.Itoa(i)
+		runtime.state.PeerAcks["node-2"][key] = teamSyncPeerAck{
+			AckedKey:  key,
+			AckedBy:   "node-2",
+			AppliedAt: time.Date(2026, 4, 4, 10, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second),
+			UpdatedAt: time.Now().UTC().Add(-time.Duration(i) * time.Minute),
+		}
+	}
+	runtime.mu.Unlock()
+
+	if err := runtime.persistPeerAck(teamcore.TeamSyncMessage{
+		Type:   teamcore.TeamSyncTypeAck,
+		TeamID: "project-team-sync",
+		Ack: &teamcore.TeamSyncAck{
+			AckedKey:   "fresh-entry",
+			AckedBy:    "node-2",
+			TargetNode: "node-1",
+			AppliedAt:  time.Now().UTC(),
+		},
+		SourceNode: "node-2",
+		CreatedAt:  time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("persistPeerAck error = %v", err)
+	}
+
+	state, err := loadTeamSyncState(runtime.statePath)
+	if err != nil {
+		t.Fatalf("loadTeamSyncState(after ack) error = %v", err)
+	}
+	if len(state.PeerAcks["node-2"]) > teamSyncPeerAckPerPeer {
+		t.Fatalf("peer ack ledger too large: %d", len(state.PeerAcks["node-2"]))
+	}
+	if _, ok := state.PeerAcks["node-2"]["old-entry"]; ok {
+		t.Fatalf("expected old peer ack entry pruned, got %#v", state.PeerAcks["node-2"])
+	}
+
+	firstSync := teamcore.TeamSyncMessage{
+		Type:       teamcore.TeamSyncTypeTask,
+		TeamID:     "project-team-sync",
+		SourceNode: "node-1",
+		CreatedAt:  time.Date(2026, 4, 4, 12, 0, 0, 0, time.UTC),
+		Task: &teamcore.Task{
+			TeamID:    "project-team-sync",
+			TaskID:    "task-sync-1",
+			Title:     "first",
+			Status:    "open",
+			Priority:  "medium",
+			CreatedBy: "agent://pc75/demo",
+			CreatedAt: time.Date(2026, 4, 4, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 4, 4, 12, 1, 0, 0, time.UTC),
+		},
+	}
+	secondSync := firstSync
+	secondSync.Task = &teamcore.Task{
+		TeamID:    "project-team-sync",
+		TaskID:    "task-sync-1",
+		Title:     "second",
+		Status:    "doing",
+		Priority:  "high",
+		CreatedBy: "agent://pc75/demo",
+		CreatedAt: time.Date(2026, 4, 4, 12, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 4, 4, 12, 2, 0, 0, time.UTC),
+	}
+
+	if err := runtime.persistPending(firstSync, firstSync.Task.UpdatedAt); err != nil {
+		t.Fatalf("persistPending(first) error = %v", err)
+	}
+	if err := runtime.persistPending(secondSync, secondSync.Task.UpdatedAt); err != nil {
+		t.Fatalf("persistPending(second) error = %v", err)
+	}
+	state, err = loadTeamSyncState(runtime.statePath)
+	if err != nil {
+		t.Fatalf("loadTeamSyncState(after pending) error = %v", err)
+	}
+	firstPending := state.Pending[firstSync.Key()]
+	secondPending := state.Pending[secondSync.Key()]
+	if firstPending.Status != "superseded" {
+		t.Fatalf("expected first pending to be superseded, got %#v", firstPending)
+	}
+	if secondPending.Status != "pending" {
+		t.Fatalf("expected second pending to remain pending, got %#v", secondPending)
+	}
+}
+
+func TestWriteTeamSyncStatePreservesNewerResolvedConflict(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "sync", "team_sync_state.json")
+	base := newTeamSyncPersistedState()
+	base.Conflicts["message:conflict-1"] = teamSyncConflict{
+		Key:       "message:conflict-1",
+		Type:      "message",
+		TeamID:    "project-team-sync",
+		SubjectID: "conflict-1",
+		Reason:    "signature_rejected",
+		UpdatedAt: time.Date(2026, 4, 4, 12, 0, 0, 0, time.UTC),
+	}
+	if err := writeTeamSyncState(path, base); err != nil {
+		t.Fatalf("writeTeamSyncState(base) error = %v", err)
+	}
+
+	resolved := newTeamSyncPersistedState()
+	resolved.Conflicts["message:conflict-1"] = teamSyncConflict{
+		Key:        "message:conflict-1",
+		Type:       "message",
+		TeamID:     "project-team-sync",
+		SubjectID:  "conflict-1",
+		Reason:     "signature_rejected",
+		Resolution: "dismiss",
+		ResolvedBy: "agent://pc75/openclaw01",
+		ResolvedAt: time.Date(2026, 4, 4, 12, 5, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 4, 4, 12, 5, 0, 0, time.UTC),
+	}
+	if err := writeTeamSyncState(path, resolved); err != nil {
+		t.Fatalf("writeTeamSyncState(resolved) error = %v", err)
+	}
+
+	stale := newTeamSyncPersistedState()
+	stale.Conflicts["message:conflict-1"] = teamSyncConflict{
+		Key:       "message:conflict-1",
+		Type:      "message",
+		TeamID:    "project-team-sync",
+		SubjectID: "conflict-1",
+		Reason:    "signature_rejected",
+		UpdatedAt: time.Date(2026, 4, 4, 12, 0, 0, 0, time.UTC),
+	}
+	if err := writeTeamSyncState(path, stale); err != nil {
+		t.Fatalf("writeTeamSyncState(stale) error = %v", err)
+	}
+
+	state, err := loadTeamSyncState(path)
+	if err != nil {
+		t.Fatalf("loadTeamSyncState error = %v", err)
+	}
+	conflict := state.Conflicts["message:conflict-1"]
+	if conflict.Resolution != "dismiss" || conflict.ResolvedBy != "agent://pc75/openclaw01" {
+		t.Fatalf("expected resolved conflict preserved, got %#v", conflict)
 	}
 }
 

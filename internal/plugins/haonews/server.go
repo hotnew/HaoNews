@@ -445,6 +445,7 @@ type NetworkBootstrapResponse struct {
 	PrimaryHost   string                         `json:"primary_host,omitempty"`
 	Readiness     *ReadinessStatus               `json:"readiness,omitempty"`
 	Redis         *NetworkBootstrapRedisStatus   `json:"redis,omitempty"`
+	TeamSync      *SyncTeamSyncStatus            `json:"team_sync,omitempty"`
 	PeerID        string                         `json:"peer_id"`
 	ListenAddrs   []string                       `json:"listen_addrs"`
 	DialAddrs     []string                       `json:"dial_addrs"`

@@ -58,15 +58,17 @@ type SyncAnnouncement struct {
 }
 
 type pubsubRuntime struct {
-	host      *libp2pRuntime
-	pubsub    *pubsub.PubSub
-	discovery *routingdisc.RoutingDiscovery
+	host       *libp2pRuntime
+	pubsub     *pubsub.PubSub
+	discovery  *routingdisc.RoutingDiscovery
+	runtimeCtx context.Context
 
 	mu                  sync.RWMutex
 	topics              map[string]*pubsub.Topic
 	subscriptions       map[string]*pubsub.Subscription
 	joinedTopics        []string
 	discoveryNamespaces []string
+	discoverySet        map[string]struct{}
 	status              SyncPubSubStatus
 	subCount            atomic.Int32
 	maxSubs             int32
@@ -95,10 +97,12 @@ func startPubSubRuntime(
 	runtime := &pubsubRuntime{
 		host:                hostRuntime,
 		pubsub:              ps,
+		runtimeCtx:          ctx,
 		topics:              make(map[string]*pubsub.Topic),
 		subscriptions:       make(map[string]*pubsub.Subscription),
 		joinedTopics:        joinedTopics,
 		discoveryNamespaces: discoveryNamespaces(hostRuntime.networkID, hostRuntime.rendezvous, rules),
+		discoverySet:        make(map[string]struct{}),
 		maxSubs:             maxPubSubSubscriptions,
 		connSema:            make(chan struct{}, maxPubSubConnectFanout),
 		connectFn: func(ctx context.Context, info peer.AddrInfo) error {
@@ -261,6 +265,7 @@ func (r *pubsubRuntime) PublishTeamSync(ctx context.Context, sync teamcore.TeamS
 	if sync.TeamID == "" || sync.Key() == "" {
 		return fmt.Errorf("team sync requires team_id and payload")
 	}
+	r.ensureDiscoveryNamespace(teamSyncDiscoveryNamespace(r.host.networkID, sync.TeamID))
 	body, err := json.Marshal(sync)
 	if err != nil {
 		return err
@@ -285,6 +290,7 @@ func (r *pubsubRuntime) SubscribeTeamSync(ctx context.Context, teamID string, ha
 	if r == nil {
 		return nil
 	}
+	r.ensureDiscoveryNamespace(teamSyncDiscoveryNamespace(r.host.networkID, teamID))
 	topicName := teamSyncTopic(r.host.networkID, teamID)
 	return r.subscribeTeamSync(ctx, topicName, handler)
 }
@@ -511,9 +517,29 @@ func (r *pubsubRuntime) startDiscoveryLoops(ctx context.Context) {
 		return
 	}
 	for _, namespace := range r.discoveryNamespaces {
-		discutil.Advertise(ctx, r.discovery, namespace)
-		go r.findPeersLoop(ctx, namespace)
+		r.ensureDiscoveryNamespace(namespace)
 	}
+}
+
+func (r *pubsubRuntime) ensureDiscoveryNamespace(namespace string) {
+	if r == nil || r.discovery == nil || r.runtimeCtx == nil {
+		return
+	}
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return
+	}
+	r.mu.Lock()
+	if _, ok := r.discoverySet[namespace]; ok {
+		r.mu.Unlock()
+		return
+	}
+	r.discoverySet[namespace] = struct{}{}
+	r.discoveryNamespaces = uniqueStrings(append(r.discoveryNamespaces, namespace))
+	r.status.DiscoveryNamespaces = append([]string(nil), r.discoveryNamespaces...)
+	r.mu.Unlock()
+	discutil.Advertise(r.runtimeCtx, r.discovery, namespace)
+	go r.findPeersLoop(r.runtimeCtx, namespace)
 }
 
 func (r *pubsubRuntime) findPeersLoop(ctx context.Context, namespace string) {
@@ -793,6 +819,14 @@ func teamSyncTopic(networkID, teamID string) string {
 		return teamSyncTopicPrefix + "/" + url.PathEscape(teamID) + "/sync"
 	}
 	return teamSyncTopicPrefix + "/" + url.PathEscape(networkID) + "/" + url.PathEscape(teamID) + "/sync"
+}
+
+func teamSyncDiscoveryNamespace(networkID, teamID string) string {
+	teamID = strings.TrimSpace(strings.ToLower(teamID))
+	if teamID == "" {
+		return ""
+	}
+	return namespacedDiscoveryNamespace(networkID, "team/"+teamID+"/sync")
 }
 
 func normalizeAnnouncement(announcement SyncAnnouncement) SyncAnnouncement {

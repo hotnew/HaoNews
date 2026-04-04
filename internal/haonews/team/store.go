@@ -2436,6 +2436,8 @@ func (p Policy) legacyAllows(action, role string) bool {
 		return containsRole(p.SystemNoteRoles, role)
 	case action == "policy.update":
 		return containsRole(p.SystemNoteRoles, role)
+	case action == "sync.conflict.resolve":
+		return containsRole(p.SystemNoteRoles, role)
 	case action == "archive.create":
 		return containsRole(p.SystemNoteRoles, role)
 	case action == "agent_card.register":

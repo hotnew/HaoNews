@@ -224,3 +224,29 @@ func TestDialableLibP2PAddrsForConfigPublicDomainRewritesPrivateAddrs(t *testing
 		}
 	}
 }
+
+func TestDialableLibP2PAddrsForConfigSharedModePrefersConfiguredStablePort(t *testing.T) {
+	t.Parallel()
+
+	status := SyncRuntimeStatus{
+		LibP2P: SyncLibP2PStatus{
+			PeerID: "12D3KooWKqit8ESTPbk9mrutVWpJwNPshMfN7tnQtrQVwLzz1L1r",
+			ListenAddrs: []string{
+				"/ip4/192.168.102.75/tcp/25472",
+				"/ip4/192.168.102.75/tcp/50584",
+			},
+			ConfiguredListen: []string{
+				"/ip4/0.0.0.0/tcp/50584",
+				"/ip4/0.0.0.0/udp/50584/quic-v1",
+			},
+		},
+	}
+	cfg := NetworkBootstrapConfig{NetworkMode: "shared"}
+	got := DialableLibP2PAddrsForConfig(status, "192.168.102.75", cfg)
+	if len(got) < 2 {
+		t.Fatalf("DialableLibP2PAddrsForConfig() = %#v, want configured port first", got)
+	}
+	if !strings.Contains(got[0], "/tcp/50584/") {
+		t.Fatalf("DialableLibP2PAddrsForConfig() first addr = %q, want stable configured tcp/50584", got[0])
+	}
+}

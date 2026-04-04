@@ -325,7 +325,7 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 			return
 		}
 		parts := strings.Split(trimmed, "/")
-		if len(parts) > 4 && !(len(parts) >= 3 && parts[1] == "agents") {
+		if len(parts) > 5 && !(len(parts) >= 3 && parts[1] == "agents") {
 			http.NotFound(w, r)
 			return
 		}
@@ -357,6 +357,14 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS) http
 		}
 		if len(parts) == 2 && parts[1] == "history" {
 			handleAPITeamHistory(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "sync" && parts[2] == "conflicts" {
+			handleAPITeamSyncConflicts(app, store, teamID, w, r)
+			return
+		}
+		if len(parts) == 5 && parts[1] == "sync" && parts[2] == "conflicts" && parts[4] == "resolve" {
+			handleAPITeamSyncConflictResolve(app, store, teamID, parts[3], w, r)
 			return
 		}
 		if len(parts) == 2 && parts[1] == "archive" {

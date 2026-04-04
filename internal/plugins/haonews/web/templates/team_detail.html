@@ -528,6 +528,37 @@
         </section>
         <section class="panel panel-inline">
           <div class="panel-head">
+            <p class="panel-label">最近复制冲突</p>
+            <div class="story-links team-interface-links">
+              <a href="/api/teams/{{.Team.TeamID}}/sync/conflicts">冲突 JSON</a>
+              <a href="/teams/{{.Team.TeamID}}/history">去历史页处理</a>
+            </div>
+          </div>
+          {{if .RecentConflicts}}
+            <section class="story-list">
+              {{range .RecentConflicts}}
+                <article class="story-card team-history-item">
+                  <div class="card-meta">
+                    {{if .SyncType}}<span>{{.SyncType}}</span>{{end}}
+                    {{if .Reason}}<span>{{.Reason}}</span>{{end}}
+                    {{if .SourceNode}}<span>{{.SourceNode}}</span>{{end}}
+                    {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2>复制冲突：{{if .SubjectID}}{{.SubjectID}}{{else}}{{.Key}}{{end}}</h2>
+                  {{if .Resolution}}<p class="micro-copy">处理结果：{{.Resolution}}{{if .ResolvedBy}} · {{.ResolvedBy}}{{end}}</p>{{end}}
+                  <div class="team-card-links">
+                    <a href="/api/teams/{{$.Team.TeamID}}/sync/conflicts">查看冲突 JSON</a>
+                    <a href="/teams/{{$.Team.TeamID}}/history">去历史页</a>
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="team-empty-note">当前还没有 Team P2P 复制冲突。后续如果出现版本分叉、签名拒绝或本地版本更新，都会沉淀到这里。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
             <p class="panel-label">最近变更</p>
             <div class="story-links team-interface-links">
               <a href="/teams/{{.Team.TeamID}}/history">查看完整历史</a>

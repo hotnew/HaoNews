@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	corehaonews "hao.news/internal/haonews"
 	teamcore "hao.news/internal/haonews/team"
 	newsplugin "hao.news/internal/plugins/haonews"
 )
@@ -65,6 +66,7 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 		artifacts []teamcore.Artifact
 		history   []teamcore.ChangeEvent
 		channels  []teamcore.ChannelSummary
+		conflicts []corehaonews.TeamSyncConflictRecord
 		index     newsplugin.Index
 	)
 	var (
@@ -80,7 +82,7 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 			loadErr = err
 		})
 	}
-	wg.Add(8)
+	wg.Add(9)
 	go func() {
 		defer wg.Done()
 		items, err := store.LoadMembers(teamID)
@@ -146,6 +148,15 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 	}()
 	go func() {
 		defer wg.Done()
+		items, err := corehaonews.LoadTeamSyncConflicts(app.StoreRoot(), teamID, corehaonews.TeamSyncConflictFilter{Limit: 5})
+		if err != nil {
+			captureErr(err)
+			return
+		}
+		conflicts = items
+	}()
+	go func() {
+		defer wg.Done()
 		value, err := app.Index()
 		if err != nil {
 			captureErr(err)
@@ -179,6 +190,7 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 		Channels:           channels,
 		Artifacts:          artifacts,
 		History:            history,
+		RecentConflicts:    conflicts,
 		TaskStatusCounts:   taskStatusCounts(tasks),
 		ArtifactKindCounts: artifactKindCounts(artifacts),
 		SummaryStats: []newsplugin.SummaryStat{
@@ -281,6 +293,11 @@ func handleTeamHistory(app *newsplugin.App, store *teamcore.Store, teamID string
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	conflicts, err := corehaonews.LoadTeamSyncConflicts(app.StoreRoot(), teamID, corehaonews.TeamSyncConflictFilter{Limit: 8})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	index, err := app.Index()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -310,10 +327,11 @@ func handleTeamHistory(app *newsplugin.App, store *teamcore.Store, teamID string
 			labeledTeamFilter("Source", filterSource),
 			labeledTeamFilter("Actor", filterActor),
 		),
-		Scopes:       scopes,
-		Sources:      sources,
-		ScopeCounts:  scopeCounts,
-		SourceCounts: sourceCounts,
+		Scopes:          scopes,
+		Sources:         sources,
+		RecentConflicts: conflicts,
+		ScopeCounts:     scopeCounts,
+		SourceCounts:    sourceCounts,
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "变更", Value: formatTeamCount(len(history))},
 			{Label: "最近来源", Value: latestHistorySource(history)},
@@ -1536,6 +1554,85 @@ func handleAPITeamHistory(store *teamcore.Store, teamID string, w http.ResponseW
 			"source": filterSource,
 			"actor":  filterActor,
 		},
+	})
+}
+
+func handleAPITeamSyncConflicts(app *newsplugin.App, store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		limit := clampTeamListLimit(r.URL.Query().Get("limit"), 50, 200)
+		filter := corehaonews.TeamSyncConflictFilter{
+			Type:       strings.TrimSpace(r.URL.Query().Get("type")),
+			SubjectID:  strings.TrimSpace(r.URL.Query().Get("subject_id")),
+			SourceNode: strings.TrimSpace(r.URL.Query().Get("source_node")),
+			Limit:      limit,
+		}
+		conflicts, err := corehaonews.LoadTeamSyncConflicts(app.StoreRoot(), teamID, filter)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+			"scope":          "team-sync-conflicts",
+			"team_id":        teamID,
+			"conflict_count": len(conflicts),
+			"conflicts":      conflicts,
+			"applied_filters": map[string]any{
+				"type":        filter.Type,
+				"subject_id":  filter.SubjectID,
+				"source_node": filter.SourceNode,
+				"limit":       limit,
+			},
+		})
+	case http.MethodPost:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func handleAPITeamSyncConflictResolve(app *newsplugin.App, store *teamcore.Store, teamID, conflictKey string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !teamRequestTrusted(r) {
+		http.Error(w, "team sync conflict resolution is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	var payload struct {
+		ActorAgentID string `json:"actor_agent_id"`
+		Action       string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := requireTeamConflictAction(store, teamID, payload.ActorAgentID); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	record, err := corehaonews.ResolveTeamSyncConflict(app.StoreRoot(), teamID, conflictKey, payload.Action, strings.TrimSpace(payload.ActorAgentID))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	_ = appendTeamHistory(store, historyActor{AgentID: strings.TrimSpace(payload.ActorAgentID), Source: "api"}, teamID, "sync-conflict", "resolve", conflictKey, "处理 Team 复制冲突", map[string]any{
+		"diff_summary":      "复制冲突已处理",
+		"reason_before":     record.Reason,
+		"resolution_after":  record.Resolution,
+		"subject_id_after":  record.SubjectID,
+		"source_node_after": record.SourceNode,
+		"sync_type_after":   record.SyncType,
+	})
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"scope":    "team-sync-conflict-resolve",
+		"team_id":  teamID,
+		"conflict": record,
 	})
 }
 
@@ -3999,6 +4096,10 @@ func requireTeamAction(store *teamcore.Store, teamID, actorAgentID, action strin
 		return fmt.Errorf("team policy denied action %q for role %q", action, role)
 	}
 	return nil
+}
+
+func requireTeamConflictAction(store *teamcore.Store, teamID, actorAgentID string) error {
+	return requireTeamAction(store, teamID, actorAgentID, "sync.conflict.resolve")
 }
 
 func teamActorRole(store *teamcore.Store, teamID, actorAgentID string, info teamcore.Info) (string, error) {

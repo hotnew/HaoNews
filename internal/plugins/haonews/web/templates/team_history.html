@@ -193,6 +193,37 @@
         </section>
         <section class="panel panel-inline">
           <div class="panel-head">
+            <p class="panel-label">最近复制冲突</p>
+            <div class="story-links team-interface-links">
+              <a href="/api/teams/{{.Team.TeamID}}/sync/conflicts">冲突 JSON</a>
+              <a href="/teams/{{.Team.TeamID}}">返回 Team</a>
+            </div>
+          </div>
+          {{if .RecentConflicts}}
+            <section class="story-list">
+              {{range .RecentConflicts}}
+                <article class="story-card team-history-item">
+                  <div class="card-meta">
+                    {{if .SyncType}}<span>{{.SyncType}}</span>{{end}}
+                    {{if .Reason}}<span>{{.Reason}}</span>{{end}}
+                    {{if .SourceNode}}<span>{{.SourceNode}}</span>{{end}}
+                    {{if .UpdatedAt.IsZero}}{{else}}<span>{{.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
+                  </div>
+                  <h2>复制冲突：{{if .SubjectID}}{{.SubjectID}}{{else}}{{.Key}}{{end}}</h2>
+                  {{if .Resolution}}<p class="micro-copy">处理结果：{{.Resolution}}{{if .ResolvedBy}} · {{.ResolvedBy}}{{end}}</p>{{end}}
+                  <div class="team-card-links">
+                    <a href="/api/teams/{{$.Team.TeamID}}/sync/conflicts">查看冲突 JSON</a>
+                    <a href="/teams/{{$.Team.TeamID}}/history">保留在历史页</a>
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="team-empty-note">当前还没有 Team 复制冲突。发生复制分叉、签名拒绝或版本覆盖时，会先显示在这里再进入治理动作。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
             <p class="panel-label">全部变更</p>
             <span class="micro-copy">{{len .History}} 条历史</span>
           </div>

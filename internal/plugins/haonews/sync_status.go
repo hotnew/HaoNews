@@ -111,6 +111,15 @@ type SyncPubSubStatus struct {
 type SyncTeamSyncStatus struct {
 	Enabled                 bool       `json:"enabled"`
 	NodeID                  string     `json:"node_id,omitempty"`
+	StateLoaded             bool       `json:"state_loaded,omitempty"`
+	StatePath               string     `json:"state_path,omitempty"`
+	PersistedCursors        int        `json:"persisted_cursors,omitempty"`
+	PersistedPeerAcks       int        `json:"persisted_peer_acks,omitempty"`
+	AckPeers                int        `json:"ack_peers,omitempty"`
+	Conflicts               int        `json:"conflicts,omitempty"`
+	PeerAckPrunes           int        `json:"peer_ack_prunes,omitempty"`
+	ExpiredPending          int        `json:"expired_pending,omitempty"`
+	SupersededPending       int        `json:"superseded_pending,omitempty"`
 	SubscribedTeams         int        `json:"subscribed_teams"`
 	PrimedChannels          int        `json:"primed_channels"`
 	PrimedHistoryTeams      int        `json:"primed_history_teams"`
@@ -133,6 +142,7 @@ type SyncTeamSyncStatus struct {
 	PublishedMembers        int        `json:"published_members"`
 	PublishedPolicies       int        `json:"published_policies"`
 	PublishedConfigChannels int        `json:"published_config_channels"`
+	PublishedAcks           int        `json:"published_acks"`
 	ReceivedMessages        int        `json:"received_messages"`
 	ReceivedHistory         int        `json:"received_history"`
 	ReceivedTasks           int        `json:"received_tasks"`
@@ -140,6 +150,7 @@ type SyncTeamSyncStatus struct {
 	ReceivedMembers         int        `json:"received_members"`
 	ReceivedPolicies        int        `json:"received_policies"`
 	ReceivedConfigChannels  int        `json:"received_config_channels"`
+	ReceivedAcks            int        `json:"received_acks"`
 	AppliedMessages         int        `json:"applied_messages"`
 	AppliedHistory          int        `json:"applied_history"`
 	AppliedTasks            int        `json:"applied_tasks"`
@@ -147,6 +158,9 @@ type SyncTeamSyncStatus struct {
 	AppliedMembers          int        `json:"applied_members"`
 	AppliedPolicies         int        `json:"applied_policies"`
 	AppliedConfigChannels   int        `json:"applied_config_channels"`
+	AppliedAcks             int        `json:"applied_acks"`
+	PendingAcks             int        `json:"pending_acks"`
+	RetriedPublishes        int        `json:"retried_publishes"`
 	SkippedMessages         int        `json:"skipped_messages"`
 	SkippedHistory          int        `json:"skipped_history"`
 	SkippedTasks            int        `json:"skipped_tasks"`
@@ -154,10 +168,17 @@ type SyncTeamSyncStatus struct {
 	SkippedMembers          int        `json:"skipped_members"`
 	SkippedPolicies         int        `json:"skipped_policies"`
 	SkippedConfigChannels   int        `json:"skipped_config_channels"`
+	SkippedAcks             int        `json:"skipped_acks"`
 	LastTeamID              string     `json:"last_team_id,omitempty"`
 	LastPublishedKey        string     `json:"last_published_key,omitempty"`
 	LastReceivedKey         string     `json:"last_received_key,omitempty"`
 	LastAppliedKey          string     `json:"last_applied_key,omitempty"`
+	LastAckedKey            string     `json:"last_acked_key,omitempty"`
+	LastRetriedKey          string     `json:"last_retried_key,omitempty"`
+	LastConflictKey         string     `json:"last_conflict_key,omitempty"`
+	LastConflictReason      string     `json:"last_conflict_reason,omitempty"`
+	LastPrunedAckPeer       string     `json:"last_pruned_ack_peer,omitempty"`
+	LastPrunedAckKey        string     `json:"last_pruned_ack_key,omitempty"`
 	LastScannedChannelID    string     `json:"last_scanned_channel_id,omitempty"`
 	LastScannedMessageID    string     `json:"last_scanned_message_id,omitempty"`
 	LastScannedEventID      string     `json:"last_scanned_event_id,omitempty"`
@@ -169,6 +190,7 @@ type SyncTeamSyncStatus struct {
 	LastScannedAt           *time.Time `json:"last_scanned_at,omitempty"`
 	LastSubscriptionAt      *time.Time `json:"last_subscription_at,omitempty"`
 	LastSubscriptionTeam    string     `json:"last_subscription_team,omitempty"`
+	LastStateWriteAt        *time.Time `json:"last_state_write_at,omitempty"`
 	LastError               string     `json:"last_error,omitempty"`
 }
 

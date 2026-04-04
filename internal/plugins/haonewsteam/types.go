@@ -3,6 +3,7 @@ package haonewsteam
 import (
 	"time"
 
+	corehaonews "hao.news/internal/haonews"
 	teamcore "hao.news/internal/haonews/team"
 	newsplugin "hao.news/internal/plugins/haonews"
 )
@@ -38,6 +39,7 @@ type teamPageData struct {
 	Channels           []teamcore.ChannelSummary
 	Artifacts          []teamcore.Artifact
 	History            []teamcore.ChangeEvent
+	RecentConflicts    []corehaonews.TeamSyncConflictRecord
 	TaskStatusCounts   map[string]int
 	ArtifactKindCounts map[string]int
 	SummaryStats       []newsplugin.SummaryStat
@@ -65,22 +67,23 @@ type teamMembersPageData struct {
 }
 
 type teamHistoryPageData struct {
-	Project        string
-	Version        string
-	PageNav        []newsplugin.NavItem
-	NodeStatus     newsplugin.NodeStatus
-	Now            time.Time
-	Team           teamcore.Info
-	History        []teamcore.ChangeEvent
-	FilterScope    string
-	FilterSource   string
-	FilterActor    string
-	AppliedFilters []string
-	Scopes         []string
-	Sources        []string
-	ScopeCounts    map[string]int
-	SourceCounts   map[string]int
-	SummaryStats   []newsplugin.SummaryStat
+	Project         string
+	Version         string
+	PageNav         []newsplugin.NavItem
+	NodeStatus      newsplugin.NodeStatus
+	Now             time.Time
+	Team            teamcore.Info
+	History         []teamcore.ChangeEvent
+	FilterScope     string
+	FilterSource    string
+	FilterActor     string
+	AppliedFilters  []string
+	Scopes          []string
+	Sources         []string
+	RecentConflicts []corehaonews.TeamSyncConflictRecord
+	ScopeCounts     map[string]int
+	SourceCounts    map[string]int
+	SummaryStats    []newsplugin.SummaryStat
 }
 
 type teamChannelPageData struct {

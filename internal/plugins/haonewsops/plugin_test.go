@@ -211,6 +211,16 @@ lan_peer=192.168.102.75
 			Peers:          nil,
 			ConnectedPeers: 1,
 		},
+		TeamSync: newsplugin.SyncTeamSyncStatus{
+			Enabled:           true,
+			NodeID:            "12D3KooWTeamNode",
+			SubscribedTeams:   1,
+			PublishedMessages: 2,
+			ReceivedMessages:  1,
+			AppliedMessages:   1,
+			LastTeamID:        "archive-demo",
+			LastPublishedKey:  "message:msg-1",
+		},
 	}
 	data, err := json.Marshal(status)
 	if err != nil {
@@ -267,6 +277,12 @@ lan_peer=192.168.102.75
 	}
 	if payload.ExplainDetail.LANLibP2P.ObservedPrimaryFrom != "lan_peer" {
 		t.Fatalf("payload.ExplainDetail.LANLibP2P = %#v, want observed_primary_from", payload.ExplainDetail.LANLibP2P)
+	}
+	if payload.TeamSync == nil || !payload.TeamSync.Enabled {
+		t.Fatalf("payload.TeamSync = %#v, want enabled team sync status", payload.TeamSync)
+	}
+	if payload.TeamSync.LastTeamID != "archive-demo" || payload.TeamSync.PublishedMessages != 2 {
+		t.Fatalf("payload.TeamSync = %#v", payload.TeamSync)
 	}
 }
 

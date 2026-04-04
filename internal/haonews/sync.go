@@ -463,6 +463,9 @@ func (r *syncRuntime) buildStatus(ctx context.Context) SyncRuntimeStatus {
 	}
 	status.LibP2P = r.libp2p.Status(ctx)
 	status.PubSub = r.pubsub.Status()
+	if r.teamSync != nil {
+		status.TeamSync = r.teamSync.Status()
+	}
 	return status
 }
 
