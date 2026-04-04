@@ -14,13 +14,14 @@ import (
 )
 
 const (
-	teamSyncRecentScanLimit = 500
-	teamSyncAckRetryAfter   = 15 * time.Second
-	teamSyncPeerAckTTL      = 24 * time.Hour
-	teamSyncPeerAckPerPeer  = 128
-	teamSyncPendingMaxRetry = 8
-	teamSyncPendingMaxAge   = 6 * time.Hour
-	teamSyncResolvedTTL     = 2 * time.Hour
+	teamSyncRecentScanLimit     = 500
+	teamSyncAckRetryAfter       = 15 * time.Second
+	teamSyncPeerAckTTL          = 24 * time.Hour
+	teamSyncPeerAckPerPeer      = 128
+	teamSyncPendingMaxRetry     = 8
+	teamSyncPendingMaxAge       = 6 * time.Hour
+	teamSyncResolvedTTL         = 2 * time.Hour
+	teamSyncConflictResolvedTTL = 24 * time.Hour
 )
 
 type teamSyncTransport interface {
@@ -139,6 +140,7 @@ func startTeamPubSubRuntime(storeRoot string, transport teamSyncTransport, nodeI
 			PersistedPeerAcks: countPersistedPeerAckEntries(state),
 			AckPeers:          len(state.PeerAcks),
 			Conflicts:         len(state.Conflicts),
+			ResolvedConflicts: countResolvedConflicts(state),
 			PendingAcks:       countPendingStatus(state, "pending"),
 			ExpiredPending:    countPendingStatus(state, "expired"),
 			SupersededPending: countPendingStatus(state, "superseded"),
@@ -151,7 +153,7 @@ func (r *teamPubSubRuntime) SyncOnce(ctx context.Context, logf func(string, ...a
 	if r == nil || r.store == nil || r.transport == nil {
 		return nil
 	}
-	teams, err := r.store.ListTeams()
+	teams, err := r.store.ListTeamsCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -241,7 +243,7 @@ func (r *teamPubSubRuntime) ensureSubscription(ctx context.Context, teamID strin
 }
 
 func (r *teamPubSubRuntime) syncTeamMessages(ctx context.Context, teamID string, logf func(string, ...any)) error {
-	channels, err := r.store.ListChannels(teamID)
+	channels, err := r.store.ListChannelsCtx(ctx, teamID)
 	if err != nil {
 		return err
 	}
@@ -250,7 +252,7 @@ func (r *teamPubSubRuntime) syncTeamMessages(ctx context.Context, teamID string,
 		if channelID == "" {
 			continue
 		}
-		items, err := r.store.LoadMessages(teamID, channelID, teamSyncRecentScanLimit)
+		items, err := r.store.LoadMessagesCtx(ctx, teamID, channelID, teamSyncRecentScanLimit)
 		if err != nil {
 			return err
 		}
@@ -300,7 +302,7 @@ func (r *teamPubSubRuntime) syncTeamMessages(ctx context.Context, teamID string,
 }
 
 func (r *teamPubSubRuntime) syncTeamHistory(ctx context.Context, teamID string, logf func(string, ...any)) error {
-	items, err := r.store.LoadHistory(teamID, teamSyncRecentScanLimit)
+	items, err := r.store.LoadHistoryCtx(ctx, teamID, teamSyncRecentScanLimit)
 	if err != nil {
 		return err
 	}
@@ -351,7 +353,7 @@ func (r *teamPubSubRuntime) syncTeamHistory(ctx context.Context, teamID string, 
 }
 
 func (r *teamPubSubRuntime) syncTeamTasks(ctx context.Context, teamID string, logf func(string, ...any)) error {
-	items, err := r.store.LoadTasks(teamID, teamSyncRecentScanLimit)
+	items, err := r.store.LoadTasksCtx(ctx, teamID, teamSyncRecentScanLimit)
 	if err != nil {
 		return err
 	}
@@ -397,7 +399,7 @@ func (r *teamPubSubRuntime) syncTeamTasks(ctx context.Context, teamID string, lo
 }
 
 func (r *teamPubSubRuntime) syncTeamMembers(ctx context.Context, teamID string, logf func(string, ...any)) error {
-	members, version, err := r.store.LoadMembersSnapshot(teamID)
+	members, version, err := r.store.LoadMembersSnapshotCtx(ctx, teamID)
 	if err != nil {
 		return err
 	}
@@ -444,7 +446,7 @@ func (r *teamPubSubRuntime) syncTeamMembers(ctx context.Context, teamID string, 
 }
 
 func (r *teamPubSubRuntime) syncTeamPolicy(ctx context.Context, teamID string, logf func(string, ...any)) error {
-	policy, version, err := r.store.LoadPolicySnapshot(teamID)
+	policy, version, err := r.store.LoadPolicySnapshotCtx(ctx, teamID)
 	if err != nil {
 		return err
 	}
@@ -491,7 +493,7 @@ func (r *teamPubSubRuntime) syncTeamPolicy(ctx context.Context, teamID string, l
 }
 
 func (r *teamPubSubRuntime) syncTeamChannels(ctx context.Context, teamID string, logf func(string, ...any)) error {
-	items, err := r.store.ListChannels(teamID)
+	items, err := r.store.ListChannelsCtx(ctx, teamID)
 	if err != nil {
 		return err
 	}
@@ -550,7 +552,7 @@ func (r *teamPubSubRuntime) syncTeamChannels(ctx context.Context, teamID string,
 }
 
 func (r *teamPubSubRuntime) syncTeamArtifacts(ctx context.Context, teamID string, logf func(string, ...any)) error {
-	items, err := r.store.LoadArtifacts(teamID, teamSyncRecentScanLimit)
+	items, err := r.store.LoadArtifactsCtx(ctx, teamID, teamSyncRecentScanLimit)
 	if err != nil {
 		return err
 	}
@@ -1334,6 +1336,38 @@ func countPendingStatus(state teamSyncPersistedState, status string) int {
 	return total
 }
 
+func countResolvedConflicts(state teamSyncPersistedState) int {
+	total := 0
+	for _, item := range state.Conflicts {
+		if strings.TrimSpace(item.Resolution) != "" {
+			total++
+		}
+	}
+	return total
+}
+
+func applyTeamSyncCompactionResult(status *SyncTeamSyncStatus, now time.Time, peerPruned int, prunedPeer, prunedKey string, conflictPruned int, conflictPrunedKey string) {
+	if status == nil {
+		return
+	}
+	if peerPruned > 0 {
+		status.PeerAckPrunes += peerPruned
+		if strings.TrimSpace(prunedPeer) != "" {
+			status.LastPrunedAckPeer = strings.TrimSpace(prunedPeer)
+		}
+		if strings.TrimSpace(prunedKey) != "" {
+			status.LastPrunedAckKey = strings.TrimSpace(prunedKey)
+		}
+	}
+	if conflictPruned > 0 {
+		status.ConflictPrunes += conflictPruned
+		if strings.TrimSpace(conflictPrunedKey) != "" {
+			status.LastPrunedConflictKey = strings.TrimSpace(conflictPrunedKey)
+		}
+		status.LastPrunedConflictAt = &now
+	}
+}
+
 func (r *teamPubSubRuntime) publishedCheckpoint(stateKey string) (teamSyncCheckpoint, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1386,10 +1420,11 @@ func (r *teamPubSubRuntime) persistCheckpoint(syncMsg teamcore.TeamSyncMessage, 
 	} else {
 		teamSyncStateBucket(state, stateKey)[stateKey] = checkpoint
 	}
-	_, _, _ = compactTeamSyncState(&state)
+	peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey := compactTeamSyncState(&state)
 	r.state = state
 	now := time.Now().UTC()
 	updateTeamSyncStatusFromState(&r.status, state)
+	applyTeamSyncCompactionResult(&r.status, now, peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey)
 	r.status.LastStateWriteAt = &now
 	r.mu.Unlock()
 	return writeTeamSyncState(r.statePath, state)
@@ -1427,9 +1462,10 @@ func (r *teamPubSubRuntime) persistPending(syncMsg teamcore.TeamSyncMessage, ver
 		item.RetryCount = 0
 	}
 	state.Pending[syncKey] = item
-	_, _, _ = compactTeamSyncState(&state)
+	peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey := compactTeamSyncState(&state)
 	r.state = state
 	updateTeamSyncStatusFromState(&r.status, state)
+	applyTeamSyncCompactionResult(&r.status, now, peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey)
 	r.status.LastStateWriteAt = &now
 	r.mu.Unlock()
 	return writeTeamSyncState(r.statePath, state)
@@ -1456,16 +1492,10 @@ func (r *teamPubSubRuntime) persistPeerAck(syncMsg teamcore.TeamSyncMessage) err
 		AppliedAt: syncMsg.Ack.AppliedAt.UTC(),
 		UpdatedAt: now,
 	}
-	pruned, prunedPeer, prunedKey := compactTeamSyncState(&state)
+	pruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey := compactTeamSyncState(&state)
 	r.state = state
 	updateTeamSyncStatusFromState(&r.status, state)
-	r.status.PeerAckPrunes += pruned
-	if prunedPeer != "" {
-		r.status.LastPrunedAckPeer = prunedPeer
-	}
-	if prunedKey != "" {
-		r.status.LastPrunedAckKey = prunedKey
-	}
+	applyTeamSyncCompactionResult(&r.status, now, pruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey)
 	r.status.LastStateWriteAt = &now
 	r.mu.Unlock()
 	return writeTeamSyncState(r.statePath, state)
@@ -1485,10 +1515,11 @@ func (r *teamPubSubRuntime) clearPending(syncKey string) error {
 	item.Status = "acked"
 	item.UpdatedAt = time.Now().UTC()
 	state.Pending[strings.TrimSpace(syncKey)] = item
-	_, _, _ = compactTeamSyncState(&state)
+	peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey := compactTeamSyncState(&state)
 	r.state = state
 	now := time.Now().UTC()
 	updateTeamSyncStatusFromState(&r.status, state)
+	applyTeamSyncCompactionResult(&r.status, now, peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey)
 	r.status.LastStateWriteAt = &now
 	r.mu.Unlock()
 	return writeTeamSyncState(r.statePath, state)
@@ -1521,9 +1552,10 @@ func (r *teamPubSubRuntime) persistConflict(syncMsg teamcore.TeamSyncMessage, co
 		Sync:          syncMsg,
 		UpdatedAt:     now,
 	}
-	_, _, _ = compactTeamSyncState(&state)
+	peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey := compactTeamSyncState(&state)
 	r.state = state
 	updateTeamSyncStatusFromState(&r.status, state)
+	applyTeamSyncCompactionResult(&r.status, now, peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey)
 	r.status.LastConflictKey = conflictKey
 	r.status.LastConflictReason = strings.TrimSpace(conflict.Reason)
 	r.status.LastStateWriteAt = &now
@@ -1539,20 +1571,23 @@ func updateTeamSyncStatusFromState(status *SyncTeamSyncStatus, state teamSyncPer
 	status.PersistedPeerAcks = countPersistedPeerAckEntries(state)
 	status.AckPeers = len(state.PeerAcks)
 	status.Conflicts = len(state.Conflicts)
+	status.ResolvedConflicts = countResolvedConflicts(state)
 	status.PendingAcks = countPendingStatus(state, "pending")
 	status.ExpiredPending = countPendingStatus(state, "expired")
 	status.SupersededPending = countPendingStatus(state, "superseded")
 }
 
-func compactTeamSyncState(state *teamSyncPersistedState) (int, string, string) {
+func compactTeamSyncState(state *teamSyncPersistedState) (int, string, string, int, string) {
 	if state == nil {
-		return 0, "", ""
+		return 0, "", "", 0, ""
 	}
 	now := time.Now().UTC()
 	stateValue := normalizeTeamSyncState(*state)
 	pruned := 0
 	prunedPeer := ""
 	prunedKey := ""
+	conflictPruned := 0
+	conflictPrunedKey := ""
 	for peerID, entries := range stateValue.PeerAcks {
 		type ackPair struct {
 			key   string
@@ -1599,8 +1634,23 @@ func compactTeamSyncState(state *teamSyncPersistedState) (int, string, string) {
 			delete(stateValue.Pending, key)
 		}
 	}
+	for key, item := range stateValue.Conflicts {
+		if strings.TrimSpace(item.Resolution) == "" {
+			continue
+		}
+		resolvedAt := item.ResolvedAt.UTC()
+		if resolvedAt.IsZero() {
+			resolvedAt = item.UpdatedAt.UTC()
+		}
+		if resolvedAt.IsZero() || resolvedAt.After(now.Add(-teamSyncConflictResolvedTTL)) {
+			continue
+		}
+		delete(stateValue.Conflicts, key)
+		conflictPruned++
+		conflictPrunedKey = key
+	}
 	*state = stateValue
-	return pruned, prunedPeer, prunedKey
+	return pruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey
 }
 
 func (r *teamPubSubRuntime) markPendingStatus(syncKey, status string) error {
@@ -1617,10 +1667,11 @@ func (r *teamPubSubRuntime) markPendingStatus(syncKey, status string) error {
 	item.Status = strings.TrimSpace(status)
 	item.UpdatedAt = time.Now().UTC()
 	state.Pending[strings.TrimSpace(syncKey)] = item
-	_, _, _ = compactTeamSyncState(&state)
+	peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey := compactTeamSyncState(&state)
 	r.state = state
-	updateTeamSyncStatusFromState(&r.status, state)
 	now := time.Now().UTC()
+	updateTeamSyncStatusFromState(&r.status, state)
+	applyTeamSyncCompactionResult(&r.status, now, peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey)
 	r.status.LastStateWriteAt = &now
 	r.mu.Unlock()
 	return writeTeamSyncState(r.statePath, state)
@@ -1641,10 +1692,11 @@ func (r *teamPubSubRuntime) bumpPendingRetry(syncKey string) error {
 	item.RetryCount++
 	item.UpdatedAt = time.Now().UTC()
 	state.Pending[strings.TrimSpace(syncKey)] = item
-	_, _, _ = compactTeamSyncState(&state)
+	peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey := compactTeamSyncState(&state)
 	r.state = state
-	updateTeamSyncStatusFromState(&r.status, state)
 	now := time.Now().UTC()
+	updateTeamSyncStatusFromState(&r.status, state)
+	applyTeamSyncCompactionResult(&r.status, now, peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey)
 	r.status.LastStateWriteAt = &now
 	r.mu.Unlock()
 	return writeTeamSyncState(r.statePath, state)
@@ -1658,6 +1710,7 @@ func writeTeamSyncState(path string, state teamSyncPersistedState) error {
 	if current, err := loadTeamSyncState(path); err == nil {
 		state = mergeTeamSyncState(current, state)
 	}
+	_, _, _, _, _ = compactTeamSyncState(&state)
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err

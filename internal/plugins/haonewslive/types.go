@@ -157,17 +157,87 @@ type liveNetConfigSummary struct {
 	Exists       bool     `json:"exists"`
 	NetworkMode  string   `json:"network_mode,omitempty"`
 	Listen       []string `json:"listen,omitempty"`
+	ListenPort   int      `json:"listen_port,omitempty"`
 	LANPeers     []string `json:"lan_peers,omitempty"`
 	PublicPeers  []string `json:"public_peers,omitempty"`
 	RelayPeers   []string `json:"relay_peers,omitempty"`
 	RedisEnabled bool     `json:"redis_enabled"`
 }
 
+type liveIdentitySummary struct {
+	IdentityFile string `json:"identity_file,omitempty"`
+	AgentID      string `json:"agent_id,omitempty"`
+	Author       string `json:"author,omitempty"`
+	PublicKey    string `json:"public_key,omitempty"`
+	KeyType      string `json:"key_type,omitempty"`
+	Known        bool   `json:"known,omitempty"`
+}
+
+type liveArchiveStats struct {
+	ArchiveCount        int    `json:"archive_count"`
+	LatestArchiveID     string `json:"latest_archive_id,omitempty"`
+	LatestArchiveKind   string `json:"latest_archive_kind,omitempty"`
+	LatestArchiveLabel  string `json:"latest_archive_label,omitempty"`
+	LatestArchiveAt     string `json:"latest_archive_at,omitempty"`
+	LatestArchiveStart  string `json:"latest_archive_start_at,omitempty"`
+	LatestArchiveEnd    string `json:"latest_archive_end_at,omitempty"`
+	LatestArchiveEvents int    `json:"latest_archive_events,omitempty"`
+	LatestArchiveMsgs   int    `json:"latest_archive_message_count,omitempty"`
+	LatestArchiveHBs    int    `json:"latest_archive_heartbeat_count,omitempty"`
+}
+
+type liveRoomStatusView struct {
+	Room                 live.RoomInfo             `json:"room"`
+	RoomLinks            liveRoomLinks             `json:"room_links"`
+	Watcher              *live.BootstrapStatus     `json:"watcher,omitempty"`
+	WatcherPeerID        string                    `json:"watcher_peer_id,omitempty"`
+	WatcherListenPort    int                       `json:"watcher_listen_port,omitempty"`
+	SenderConfig         liveNetConfigSummary      `json:"sender_config"`
+	SenderIdentity       liveIdentitySummary       `json:"sender_identity"`
+	SenderPeerID         string                    `json:"sender_peer_id,omitempty"`
+	SenderListenPort     int                       `json:"sender_listen_port,omitempty"`
+	RoomFilePath         string                    `json:"room_file_path,omitempty"`
+	RoomFileModTime      string                    `json:"room_file_mod_time,omitempty"`
+	EventsFileModTime    string                    `json:"events_file_mod_time,omitempty"`
+	ArchiveFileModTime   string                    `json:"archive_file_mod_time,omitempty"`
+	HistoryDirModTime    string                    `json:"history_dir_mod_time,omitempty"`
+	VisibleEventCount    int                       `json:"visible_event_count"`
+	TotalEventCount      int                       `json:"total_event_count"`
+	LatestEventAt        string                    `json:"latest_event_at,omitempty"`
+	LatestVisibleAt      string                    `json:"latest_visible_at,omitempty"`
+	LatestNonHeartbeatAt string                    `json:"latest_non_heartbeat_at,omitempty"`
+	LatestLocalWriteAt   string                    `json:"latest_local_write_at,omitempty"`
+	LatestCacheRefreshAt string                    `json:"latest_cache_refresh_at,omitempty"`
+	LatestArchiveAt      string                    `json:"latest_archive_at,omitempty"`
+	Archive              *live.ArchiveRecord       `json:"archive,omitempty"`
+	ArchiveStats         liveArchiveStats          `json:"archive_stats"`
+	HistoryArchives      []live.RoomHistoryArchive `json:"history_archives,omitempty"`
+}
+
+type liveRoomStatusPageData struct {
+	Project         string
+	Version         string
+	PageNav         []newsplugin.NavItem
+	NodeStatus      newsplugin.NodeStatus
+	Now             time.Time
+	Status          liveRoomStatusView
+	SummaryStats    []newsplugin.SummaryStat
+	RoomLinks       liveRoomLinks
+	Archive         *live.ArchiveRecord
+	Room            live.RoomInfo
+	HistoryArchives []live.RoomHistoryArchive
+	ShowAll         bool
+	ShowHeartbeats  bool
+	AutoRefresh     bool
+}
+
 type liveArchiveRoomSummary struct {
-	Room         live.RoomInfo
-	RoomLinks    liveRoomLinks
-	ArchiveCount int
-	LastArchived string
+	Room          live.RoomInfo
+	RoomLinks     liveRoomLinks
+	ArchiveCount  int
+	LastArchived  string
+	LatestArchive *live.RoomHistoryArchive
+	ArchiveStats  liveArchiveStats
 }
 
 type liveEventView struct {

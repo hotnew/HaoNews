@@ -97,10 +97,11 @@ func (Plugin) Build(ctx context.Context, cfg apphost.Config, theme apphost.WebTh
 		return watcher.BootstrapStatus()
 	}
 	senderNetPath := liveSenderNetPath(cfg)
+	senderIdentityPath := liveSenderIdentityPath(cfg)
 	return &apphost.Site{
 		Manifest: Plugin{}.Manifest(),
 		Theme:    theme.Manifest(),
-		Handler:  newHandler(app, store, staticFS, watcherStatus, senderNetPath),
+		Handler:  newHandler(app, store, staticFS, watcherStatus, senderNetPath, senderIdentityPath),
 		Close: func(context.Context) error {
 			cancelWatch()
 			watcherMu.Lock()
@@ -189,7 +190,18 @@ func liveSenderNetPath(cfg apphost.Config) string {
 	return filepath.Join(filepath.Dir(netPath), "hao_news_live_sender_net.inf")
 }
 
-func newHandler(app *newsplugin.App, store *live.LocalStore, staticFS fs.FS, watcherStatus func() *live.BootstrapStatus, senderNetPath string) http.Handler {
+func liveSenderIdentityPath(cfg apphost.Config) string {
+	if path := strings.TrimSpace(os.Getenv("HAONEWS_LIVE_SENDER_IDENTITY")); path != "" {
+		return path
+	}
+	netPath := strings.TrimSpace(cfg.NetPath)
+	if netPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(netPath), "identities", "pc75-now-time.json")
+}
+
+func newHandler(app *newsplugin.App, store *live.LocalStore, staticFS fs.FS, watcherStatus func() *live.BootstrapStatus, senderNetPath, senderIdentityPath string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/live/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		status := (*live.BootstrapStatus)(nil)
@@ -208,7 +220,15 @@ func newHandler(app *newsplugin.App, store *live.LocalStore, staticFS fs.FS, wat
 			http.NotFound(w, r)
 			return
 		}
-		handleAPILiveStatus(app, store, roomID, watcherStatus, senderNetPath, w, r)
+		handleAPILiveStatus(app, store, roomID, watcherStatus, senderNetPath, senderIdentityPath, w, r)
+	})
+	mux.HandleFunc("/live/status/", func(w http.ResponseWriter, r *http.Request) {
+		roomID := strings.TrimSpace(newsplugin.PathValue("/live/status/", r.URL.Path))
+		if roomID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		handleLiveStatusPage(app, store, roomID, watcherStatus, senderNetPath, senderIdentityPath, w, r)
 	})
 	mux.HandleFunc("/live", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/live" {

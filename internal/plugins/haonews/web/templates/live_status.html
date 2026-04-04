@@ -1,0 +1,101 @@
+{{define "live_status.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>好牛Ai Live 状态</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b">
+</head>
+<body>
+  <div class="app-shell">
+    {{template "appSidebar" .}}
+    <div class="page-shell">
+      {{template "sidebarToggle" .}}
+      <header class="hero hero-dashboard live-room-hero">
+        <div class="live-room-topline">
+          <a class="back-link" href="{{.RoomLinks.RoomURL}}">返回房间</a>
+          <p class="eyebrow">Live 状态</p>
+        </div>
+        <div class="hero-heading">
+          <div class="live-room-heading-main">
+            <h1>{{if .Room.Title}}{{.Room.Title}}{{else}}{{.Room.RoomID}}{{end}} / Status</h1>
+            <p class="hero-copy">这里直接看 sender、watcher、最近写入和最近归档状态，用来判断 live 不更新究竟卡在发送、接收、缓存还是归档。</p>
+          </div>
+          <div class="hero-actions hero-actions-compact live-room-actions">
+            <a class="button-link" href="/api/live/status/{{.Room.RoomID}}">Status JSON</a>
+            <a class="button-link button-link-muted" href="{{.RoomLinks.APIURL}}">Room JSON</a>
+            <a class="button-link button-link-muted" href="{{.RoomLinks.HistoryURL}}">Live 归档</a>
+          </div>
+        </div>
+        <div class="hero-stats hero-stats-wide">
+          {{range .SummaryStats}}
+            <div class="hero-stat-card">
+              <span class="stat-label">{{.Label}}</span>
+              <strong>{{.Value}}</strong>
+            </div>
+          {{end}}
+        </div>
+      </header>
+
+      <main class="feed">
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">传输状态</p>
+            <span class="micro-copy">先看 sender/watcher 是否都在，再判断是不是显示层或归档层的问题。</span>
+          </div>
+          <div class="story-list">
+            <article class="story-card">
+              <h2>Watcher</h2>
+              <p class="micro-copy">peer：{{if and .Status.Watcher .Status.WatcherPeerID}}{{.Status.WatcherPeerID}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">listen port：{{if .Status.WatcherListenPort}}{{.Status.WatcherListenPort}}{{else}}暂无{{end}}</p>
+            </article>
+            <article class="story-card">
+              <h2>Sender</h2>
+              <p class="micro-copy">agent：{{if .Status.SenderIdentity.AgentID}}{{.Status.SenderIdentity.AgentID}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">peer：{{if .Status.SenderPeerID}}{{.Status.SenderPeerID}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">listen port：{{if .Status.SenderConfig.ListenPort}}{{.Status.SenderConfig.ListenPort}}{{else}}暂无{{end}}</p>
+            </article>
+            <article class="story-card">
+              <h2>最近事件</h2>
+              <p class="micro-copy">latest event：{{if .Status.LatestEventAt}}{{.Status.LatestEventAt}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">latest visible：{{if .Status.LatestVisibleAt}}{{.Status.LatestVisibleAt}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">latest non-heartbeat：{{if .Status.LatestNonHeartbeatAt}}{{.Status.LatestNonHeartbeatAt}}{{else}}暂无{{end}}</p>
+            </article>
+            <article class="story-card">
+              <h2>本地写入 / 归档</h2>
+              <p class="micro-copy">latest local write：{{if .Status.LatestLocalWriteAt}}{{.Status.LatestLocalWriteAt}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">latest cache refresh：{{if .Status.LatestCacheRefreshAt}}{{.Status.LatestCacheRefreshAt}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">latest archive：{{if .Status.LatestArchiveAt}}{{.Status.LatestArchiveAt}}{{else}}暂无{{end}}</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">文件与归档统计</p>
+            <span class="micro-copy">用于判断 room 文件、history 目录和归档批次是否真的推进了。</span>
+          </div>
+          <div class="story-list">
+            <article class="story-card">
+              <h2>文件时间</h2>
+              <p class="micro-copy">room.json：{{if .Status.RoomFileModTime}}{{.Status.RoomFileModTime}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">events.jsonl：{{if .Status.EventsFileModTime}}{{.Status.EventsFileModTime}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">archive.json：{{if .Status.ArchiveFileModTime}}{{.Status.ArchiveFileModTime}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">history dir：{{if .Status.HistoryDirModTime}}{{.Status.HistoryDirModTime}}{{else}}暂无{{end}}</p>
+            </article>
+            <article class="story-card">
+              <h2>归档批次</h2>
+              <p class="micro-copy">kind：{{if .Status.ArchiveStats.LatestArchiveKind}}{{.Status.ArchiveStats.LatestArchiveKind}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">label：{{if .Status.ArchiveStats.LatestArchiveLabel}}{{.Status.ArchiveStats.LatestArchiveLabel}}{{else}}暂无{{end}}</p>
+              <p class="micro-copy">正文 {{.Status.ArchiveStats.LatestArchiveMsgs}} · 心跳 {{.Status.ArchiveStats.LatestArchiveHBs}} · 事件 {{.Status.ArchiveStats.LatestArchiveEvents}}</p>
+              <p class="micro-copy">时间范围：{{if .Status.ArchiveStats.LatestArchiveStart}}{{.Status.ArchiveStats.LatestArchiveStart}}{{else}}未知{{end}} → {{if .Status.ArchiveStats.LatestArchiveEnd}}{{.Status.ArchiveStats.LatestArchiveEnd}}{{else}}未知{{end}}</p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
+{{end}}

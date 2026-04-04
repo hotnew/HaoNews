@@ -43,15 +43,24 @@
                 <div class="card-meta">
                   <span>{{.ArchiveCount}} 个归档批次</span>
                   {{if .LastArchived}}<span>{{.LastArchived}}</span>{{end}}
+                  {{if .ArchiveStats.LatestArchiveKind}}<span>{{.ArchiveStats.LatestArchiveKind}}</span>{{end}}
                 </div>
                 <h2><a href="{{.RoomLinks.HistoryURL}}">{{if .Room.Title}}{{.Room.Title}}{{else}}{{.Room.RoomID}}{{end}}</a></h2>
                 <p class="micro-copy">{{.Room.RoomID}}</p>
-                {{if .Room.Archive}}
+                {{if .LatestArchive}}
+                  <p class="micro-copy">最近批次：{{if .LatestArchive.Label}}{{.LatestArchive.Label}}{{else if .LatestArchive.Kind}}{{.LatestArchive.Kind}}{{else}}{{.LatestArchive.ArchiveID}}{{end}}</p>
+                  <p class="micro-copy">时间范围：{{if .LatestArchive.StartAt}}{{.LatestArchive.StartAt}}{{else}}-{{end}} 至 {{if .LatestArchive.EndAt}}{{.LatestArchive.EndAt}}{{else}}-{{end}}</p>
+                  <p class="micro-copy">正文 {{if .LatestArchive.MessageCount}}{{.LatestArchive.MessageCount}}{{else if .LatestArchive.NonHeartbeatCount}}{{.LatestArchive.NonHeartbeatCount}}{{else}}{{.LatestArchive.EventCount}}{{end}} 条{{if .LatestArchive.HeartbeatCount}}，心跳 {{.LatestArchive.HeartbeatCount}} 条{{end}}{{if gt .LatestArchive.TaskUpdateCount 0}}，任务更新 {{.LatestArchive.TaskUpdateCount}} 条{{end}}</p>
+                {{else if .Room.Archive}}
                   <p class="micro-copy">最近归档正文 {{if .Room.Archive.NonHeartbeatCount}}{{.Room.Archive.NonHeartbeatCount}}{{else}}{{.Room.Archive.EventCount}}{{end}} 条{{if .Room.Archive.HeartbeatCount}}，心跳 {{.Room.Archive.HeartbeatCount}} 条{{end}}</p>
+                {{end}}
+                {{if .ArchiveStats.LatestArchiveStart}}
+                  <p class="micro-copy">统计：{{.ArchiveStats.LatestArchiveStart}} 到 {{.ArchiveStats.LatestArchiveEnd}}{{if .ArchiveStats.LatestArchiveLabel}}，{{.ArchiveStats.LatestArchiveLabel}}{{end}}</p>
                 {{end}}
                 <div class="story-links">
                   <a href="{{.RoomLinks.HistoryURL}}">查看 Live 归档</a>
                   <a href="{{.RoomLinks.RoomURL}}">返回房间</a>
+                  {{if .LatestArchive}}<a href="{{.RoomLinks.HistoryURL}}/{{.LatestArchive.ArchiveID}}">打开最新批次</a>{{end}}
                 </div>
               </article>
             {{end}}

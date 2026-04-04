@@ -51,6 +51,8 @@ func handleTeamSync(app *newsplugin.App, store *teamcore.Store, teamID string, w
 			{Label: "pending ack", Value: formatTeamCount(status.TeamSync.PendingAcks)},
 			{Label: "ack peers", Value: formatTeamCount(status.TeamSync.AckPeers)},
 			{Label: "冲突", Value: formatTeamCount(status.TeamSync.Conflicts)},
+			{Label: "已处理冲突", Value: formatTeamCount(status.TeamSync.ResolvedConflicts)},
+			{Label: "冲突清理", Value: formatTeamCount(status.TeamSync.ConflictPrunes)},
 			{Label: "最近 publish", Value: formatTeamTimePtr(status.TeamSync.LastPublishedAt)},
 			{Label: "最近 apply", Value: formatTeamTimePtr(status.TeamSync.LastAppliedAt)},
 		},
@@ -192,10 +194,13 @@ func buildTeamSyncConflictViews(records []corehaonews.TeamSyncConflictRecord) []
 		if syncType == "" {
 			syncType = strings.TrimSpace(record.Type)
 		}
+		reasonLabel, actionHint, suggestedAction := describeTeamSyncConflict(record, supportsAcceptRemoteConflict(syncType))
 		views = append(views, teamSyncConflictView{
 			Record:            record,
 			AllowAcceptRemote: supportsAcceptRemoteConflict(syncType),
-			SuggestedAction:   suggestedConflictAction(record, supportsAcceptRemoteConflict(syncType)),
+			SuggestedAction:   suggestedAction,
+			ReasonLabel:       reasonLabel,
+			ActionHint:        actionHint,
 		})
 	}
 	return views
@@ -210,17 +215,38 @@ func supportsAcceptRemoteConflict(syncType string) bool {
 	}
 }
 
-func suggestedConflictAction(record corehaonews.TeamSyncConflictRecord, allowAcceptRemote bool) string {
+func describeTeamSyncConflict(record corehaonews.TeamSyncConflictRecord, allowAcceptRemote bool) (string, string, string) {
 	reason := strings.TrimSpace(record.Reason)
 	switch {
-	case allowAcceptRemote && reason == "same_version_diverged":
-		return "accept_remote"
 	case reason == "local_newer":
-		return "dismiss"
-	case allowAcceptRemote:
-		return "review_accept_remote"
+		if allowAcceptRemote {
+			return "本地版本更新较新", "建议保留本地版本，除非你明确要覆盖为远端。", "keep_local"
+		}
+		return "本地版本更新较新", "建议人工复核后再决定是否保留本地版本。", "dismiss"
+	case reason == "same_version_diverged":
+		if allowAcceptRemote {
+			return "同版本分叉", "建议先选一个方向，通常接收远端即可恢复一致性。", "accept_remote"
+		}
+		return "同版本分叉", "建议人工复核差异后再处理。", "dismiss"
+	case reason == "signature_rejected":
+		return "签名校验失败", "建议驳回并检查消息签名或来源节点。", "dismiss"
+	case reason == "policy_rejected":
+		return "策略拒绝", "建议先修订策略，再重新发起同步。", "dismiss"
+	case reason == "remote_newer":
+		if allowAcceptRemote {
+			return "远端版本较新", "建议接收远端版本并检查本地是否存在未同步写入。", "accept_remote"
+		}
+		return "远端版本较新", "建议人工复核后再决定。", "dismiss"
+	case reason == "":
+		if allowAcceptRemote {
+			return "待人工复核", "建议先比对本地/远端差异，再决定 keep_local 或 accept_remote。", "review_accept_remote"
+		}
+		return "待人工复核", "建议先人工复核差异，再决定处理动作。", "dismiss"
 	default:
-		return "dismiss"
+		if allowAcceptRemote {
+			return reason, "建议人工复核后再决定是否接收远端。", "review_accept_remote"
+		}
+		return reason, "建议人工复核后再决定。", "dismiss"
 	}
 }
 

@@ -108,12 +108,15 @@
               <div class="card-meta">
                 <span>cleanup</span>
                 <span>peer ack prunes {{.SyncStatus.PeerAckPrunes}}</span>
+                <span>conflict prunes {{.SyncStatus.ConflictPrunes}}</span>
                 <span>conflicts {{.SyncStatus.Conflicts}}</span>
               </div>
               <h2>压缩与清理</h2>
               <p class="micro-copy">expired pending：{{.SyncStatus.ExpiredPending}} · superseded：{{.SyncStatus.SupersededPending}}</p>
+              <p class="micro-copy">resolved conflicts：{{.SyncStatus.ResolvedConflicts}}</p>
               <p class="micro-copy">last pruned ack peer：{{if .SyncStatus.LastPrunedAckPeer}}{{.SyncStatus.LastPrunedAckPeer}}{{else}}暂无{{end}}</p>
               <p class="micro-copy">last pruned ack key：{{if .SyncStatus.LastPrunedAckKey}}<code>{{.SyncStatus.LastPrunedAckKey}}</code>{{else}}暂无{{end}}</p>
+              <p class="micro-copy">last pruned conflict key：{{if .SyncStatus.LastPrunedConflictKey}}<code>{{.SyncStatus.LastPrunedConflictKey}}</code>{{else}}暂无{{end}}</p>
             </article>
           </div>
         </section>
@@ -160,11 +163,13 @@
                   <div class="card-meta">
                     {{if .Record.SyncType}}<span>{{.Record.SyncType}}</span>{{end}}
                     {{if .Record.Reason}}<span>{{.Record.Reason}}</span>{{end}}
+                    {{if .ReasonLabel}}<span>{{.ReasonLabel}}</span>{{end}}
                     {{if .Record.SourceNode}}<span>{{.Record.SourceNode}}</span>{{end}}
                     {{if .Record.UpdatedAt.IsZero}}{{else}}<span>{{.Record.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
                   </div>
                   <h2>复制冲突：{{if .Record.SubjectID}}{{.Record.SubjectID}}{{else}}{{.Record.Key}}{{end}}</h2>
                   <p class="micro-copy">建议动作：{{if .SuggestedAction}}{{.SuggestedAction}}{{else}}review{{end}}</p>
+                  {{if .ActionHint}}<p class="micro-copy">{{.ActionHint}}</p>{{end}}
                   {{if .Record.Resolution}}<p class="micro-copy">处理结果：{{.Record.Resolution}}{{if .Record.ResolvedBy}} · {{.Record.ResolvedBy}}{{end}}</p>{{end}}
                   <div class="team-card-links">
                     <form method="post" action="/teams/{{$.Team.TeamID}}/sync/conflicts/{{urlquery .Record.Key}}/resolve">
@@ -172,6 +177,13 @@
                       <input type="hidden" name="action" value="dismiss">
                       <button class="button-link button-link-muted" type="submit">dismiss</button>
                     </form>
+                    {{if not .Record.Resolution}}
+                      <form method="post" action="/teams/{{$.Team.TeamID}}/sync/conflicts/{{urlquery .Record.Key}}/resolve">
+                        <input type="hidden" name="actor_agent_id" value="{{$.Team.OwnerAgentID}}">
+                        <input type="hidden" name="action" value="keep_local">
+                        <button class="button-link button-link-muted" type="submit">keep_local</button>
+                      </form>
+                    {{end}}
                     {{if and .AllowAcceptRemote (not .Record.Resolution)}}
                       <form method="post" action="/teams/{{$.Team.TeamID}}/sync/conflicts/{{urlquery .Record.Key}}/resolve">
                         <input type="hidden" name="actor_agent_id" value="{{$.Team.OwnerAgentID}}">

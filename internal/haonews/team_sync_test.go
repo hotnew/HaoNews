@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1030,6 +1031,111 @@ func TestWriteTeamSyncStatePreservesNewerResolvedConflict(t *testing.T) {
 	conflict := state.Conflicts["message:conflict-1"]
 	if conflict.Resolution != "dismiss" || conflict.ResolvedBy != "agent://pc75/openclaw01" {
 		t.Fatalf("expected resolved conflict preserved, got %#v", conflict)
+	}
+}
+
+func TestTeamPubSubRuntimePrunesResolvedConflictsAndTracksStatus(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamID := "project-team-sync"
+	teamRoot := filepath.Join(root, "team", teamID)
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"project-team-sync","title":"Team Sync"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	statePath := filepath.Join(root, "sync", "team_sync_state.json")
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(sync dir) error = %v", err)
+	}
+	oldResolvedAt := time.Now().UTC().Add(-(teamSyncConflictResolvedTTL + time.Hour))
+	recentResolvedAt := time.Now().UTC().Add(-time.Hour)
+	rawState := teamSyncPersistedState{
+		Conflicts: map[string]teamSyncConflict{
+			"task:old-conflict": {
+				Key:        "task:old-conflict",
+				Type:       "task",
+				TeamID:     teamID,
+				SubjectID:  "old-conflict",
+				SourceNode: "node-74",
+				Reason:     "local_newer",
+				Resolution: "dismiss",
+				ResolvedBy: "agent://pc75/openclaw01",
+				ResolvedAt: oldResolvedAt,
+				UpdatedAt:  oldResolvedAt,
+			},
+			"task:recent-conflict": {
+				Key:        "task:recent-conflict",
+				Type:       "task",
+				TeamID:     teamID,
+				SubjectID:  "recent-conflict",
+				SourceNode: "node-74",
+				Reason:     "same_version_diverged",
+				Resolution: "accept_remote",
+				ResolvedBy: "agent://pc75/openclaw01",
+				ResolvedAt: recentResolvedAt,
+				UpdatedAt:  recentResolvedAt,
+			},
+			"task:open-conflict": {
+				Key:        "task:open-conflict",
+				Type:       "task",
+				TeamID:     teamID,
+				SubjectID:  "open-conflict",
+				SourceNode: "node-74",
+				Reason:     "local_newer",
+				UpdatedAt:  recentResolvedAt,
+			},
+		},
+	}
+	rawData, err := json.MarshalIndent(rawState, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent error = %v", err)
+	}
+	if err := os.WriteFile(statePath, append(rawData, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile raw state error = %v", err)
+	}
+	runtime, err := startTeamPubSubRuntime(root, &fakeTeamSyncTransport{}, "node-1")
+	if err != nil {
+		t.Fatalf("startTeamPubSubRuntime error = %v", err)
+	}
+	initial := runtime.Status()
+	if initial.ResolvedConflicts != 2 {
+		t.Fatalf("initial status = %+v, want two resolved conflicts", initial)
+	}
+	if initial.Conflicts != 3 {
+		t.Fatalf("initial status = %+v, want three conflicts", initial)
+	}
+	triggerSync := teamcore.TeamSyncMessage{
+		Type:       teamcore.TeamSyncTypeMessage,
+		TeamID:     teamID,
+		SourceNode: "node-1",
+		CreatedAt:  time.Now().UTC(),
+		Message: &teamcore.Message{
+			TeamID:    teamID,
+			ChannelID: "main",
+			MessageID: "message-trigger-prune",
+			Content:   "trigger prune",
+			CreatedAt: time.Now().UTC(),
+		},
+	}
+	if err := runtime.persistCheckpoint(triggerSync, time.Now().UTC(), true); err != nil {
+		t.Fatalf("persistCheckpoint error = %v", err)
+	}
+	state, err := loadTeamSyncState(statePath)
+	if err != nil {
+		t.Fatalf("loadTeamSyncState error = %v", err)
+	}
+	if len(state.Conflicts) != 2 {
+		t.Fatalf("expected old resolved conflict to be pruned, got %#v", state.Conflicts)
+	}
+	after := runtime.Status()
+	if after.ResolvedConflicts != 1 {
+		t.Fatalf("after status = %+v, want one resolved conflict remaining", after)
+	}
+	if after.ConflictPrunes == 0 || after.LastPrunedConflictKey != "task:old-conflict" || after.LastPrunedConflictAt == nil {
+		t.Fatalf("after status = %+v, want conflict prune counters", after)
 	}
 }
 

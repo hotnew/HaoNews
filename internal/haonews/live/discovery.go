@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	mdns "github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	routingdisc "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	discutil "github.com/libp2p/go-libp2p/p2p/discovery/util"
+	"github.com/multiformats/go-multiaddr"
 )
 
 type AnnouncementWatcher struct {
@@ -33,9 +35,10 @@ type AnnouncementWatcher struct {
 }
 
 type BootstrapStatus struct {
-	NetworkID string   `json:"network_id,omitempty"`
-	PeerID    string   `json:"peer_id,omitempty"`
-	DialAddrs []string `json:"dial_addrs,omitempty"`
+	NetworkID  string   `json:"network_id,omitempty"`
+	PeerID     string   `json:"peer_id,omitempty"`
+	ListenPort int      `json:"listen_port,omitempty"`
+	DialAddrs  []string `json:"dial_addrs,omitempty"`
 }
 
 func StartAnnouncementWatcher(parent context.Context, storeRoot, netPath string) (*AnnouncementWatcher, error) {
@@ -112,10 +115,48 @@ func (w *AnnouncementWatcher) BootstrapStatus() *BootstrapStatus {
 		dialAddrs = append(dialAddrs, value)
 	}
 	return &BootstrapStatus{
-		NetworkID: w.networkID,
-		PeerID:    w.host.ID().String(),
-		DialAddrs: dialAddrs,
+		NetworkID:  w.networkID,
+		PeerID:     w.host.ID().String(),
+		ListenPort: firstLiveListenPort(addrs),
+		DialAddrs:  dialAddrs,
 	}
+}
+
+func firstLiveListenPort(addrs []multiaddr.Multiaddr) int {
+	for _, addr := range addrs {
+		port, ok := parseMultiaddrPort(addr.String())
+		if ok {
+			return port
+		}
+	}
+	return 0
+}
+
+func parseMultiaddrPort(addr string) (int, bool) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return 0, false
+	}
+	for _, prefix := range []string{"/tcp/", "/udp/"} {
+		idx := strings.LastIndex(addr, prefix)
+		if idx < 0 {
+			continue
+		}
+		rest := addr[idx+len(prefix):]
+		if rest == "" {
+			continue
+		}
+		parts := strings.Split(rest, "/")
+		if len(parts) == 0 {
+			continue
+		}
+		port, err := strconv.Atoi(parts[0])
+		if err != nil || port <= 0 {
+			continue
+		}
+		return port, true
+	}
+	return 0, false
 }
 
 func (w *AnnouncementWatcher) Close() error {

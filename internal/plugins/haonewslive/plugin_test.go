@@ -2,6 +2,7 @@ package haonewslive
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"hao.news/internal/apphost"
 	core "hao.news/internal/haonews"
@@ -122,11 +124,12 @@ func TestNewHandlerServesLiveBootstrap(t *testing.T) {
 
 	handler := newHandler(nil, nil, os.DirFS(t.TempDir()), func() *live.BootstrapStatus {
 		return &live.BootstrapStatus{
-			NetworkID: "net-live",
-			PeerID:    "12D3KooWLiveBootstrap",
-			DialAddrs: []string{"/ip4/192.168.102.74/tcp/51584/p2p/12D3KooWLiveBootstrap"},
+			NetworkID:  "net-live",
+			PeerID:     "12D3KooWLiveBootstrap",
+			ListenPort: 51585,
+			DialAddrs:  []string{"/ip4/192.168.102.74/tcp/51584/p2p/12D3KooWLiveBootstrap"},
 		}
-	}, "")
+	}, "", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/live/bootstrap", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -136,6 +139,107 @@ func TestNewHandlerServesLiveBootstrap(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "\"network_id\": \"net-live\"") || !strings.Contains(body, "\"peer_id\": \"12D3KooWLiveBootstrap\"") {
 		t.Fatalf("unexpected bootstrap body = %q", body)
+	}
+}
+
+func TestNewHandlerServesLiveStatusAPI(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := live.OpenLocalStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	room := live.RoomInfo{
+		RoomID:    "public-live-time",
+		Title:     "Live-Time",
+		Creator:   "agent://pc75/now-time",
+		CreatedAt: "2026-04-04T00:00:00Z",
+		Channel:   "hao.news/live/public",
+	}
+	if err := store.SaveRoom(room); err != nil {
+		t.Fatalf("SaveRoom error = %v", err)
+	}
+	if err := store.AppendEvent(room.RoomID, live.LiveMessage{
+		Protocol:     live.ProtocolVersion,
+		Type:         live.TypeMessage,
+		RoomID:       room.RoomID,
+		Sender:       room.Creator,
+		SenderPubKey: strings.Repeat("a", 64),
+		Seq:          1,
+		Timestamp:    "2026-04-04T07:37:14Z",
+		Payload:      live.LivePayload{Content: "当前时间：2026-04-04 15:37:06 CST"},
+		Signature:    strings.Repeat("1", 128),
+	}); err != nil {
+		t.Fatalf("AppendEvent error = %v", err)
+	}
+	senderNetPath := filepath.Join(root, "config", "hao_news_live_sender_net.inf")
+	if err := os.MkdirAll(filepath.Dir(senderNetPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll sender config dir error = %v", err)
+	}
+	if err := os.WriteFile(senderNetPath, []byte("network_mode=lan\nlibp2p_listen=/ip4/127.0.0.1/tcp/51585\nredis_enabled=true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile sender net error = %v", err)
+	}
+	senderIdentityPath := filepath.Join(root, "config", "identities", "pc75-now-time.json")
+	if err := os.MkdirAll(filepath.Dir(senderIdentityPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll sender identity dir error = %v", err)
+	}
+	identity, err := core.NewAgentIdentity("agent://pc75/now-time", "agent://pc75/now-time", time.Date(2026, 4, 4, 15, 37, 6, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("NewAgentIdentity error = %v", err)
+	}
+	if err := core.SaveAgentIdentity(senderIdentityPath, identity); err != nil {
+		t.Fatalf("SaveAgentIdentity error = %v", err)
+	}
+	handler := newHandler(nil, store, os.DirFS(root), func() *live.BootstrapStatus {
+		return &live.BootstrapStatus{
+			NetworkID:  "net-live",
+			PeerID:     "12D3KooWLiveBootstrap",
+			ListenPort: 51584,
+			DialAddrs:  []string{"/ip4/192.168.102.74/tcp/51584/p2p/12D3KooWLiveBootstrap"},
+		}
+	}, senderNetPath, senderIdentityPath)
+	req := httptest.NewRequest(http.MethodGet, "/api/live/status/public-live-time", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal error = %v", err)
+	}
+	if body["watcher_peer_id"] != "12D3KooWLiveBootstrap" {
+		t.Fatalf("watcher_peer_id = %v", body["watcher_peer_id"])
+	}
+	if got := int(body["watcher_listen_port"].(float64)); got != 51584 {
+		t.Fatalf("watcher_listen_port = %d", got)
+	}
+	if body["sender_peer_id"] != "agent://pc75/now-time" {
+		t.Fatalf("sender_peer_id = %v", body["sender_peer_id"])
+	}
+	if got := int(body["sender_listen_port"].(float64)); got != 51585 {
+		t.Fatalf("sender_listen_port = %d", got)
+	}
+	if body["latest_non_heartbeat_at"] != "2026-04-04 15:37:14 CST" {
+		t.Fatalf("latest_non_heartbeat_at = %v", body["latest_non_heartbeat_at"])
+	}
+	senderIdentity, ok := body["sender_identity"].(map[string]any)
+	if !ok {
+		t.Fatalf("sender_identity = %#v", body["sender_identity"])
+	}
+	if senderIdentity["agent_id"] != "agent://pc75/now-time" {
+		t.Fatalf("sender_identity.agent_id = %v", senderIdentity["agent_id"])
+	}
+	archiveStats, ok := body["archive_stats"].(map[string]any)
+	if !ok {
+		t.Fatalf("archive_stats = %#v", body["archive_stats"])
+	}
+	if got := int(archiveStats["archive_count"].(float64)); got != 0 {
+		t.Fatalf("archive_count = %d", got)
+	}
+	if body["latest_cache_refresh_at"] == nil || body["latest_cache_refresh_at"] == "" {
+		t.Fatal("expected latest_cache_refresh_at")
 	}
 }
 
@@ -170,15 +274,119 @@ func TestPluginBuildServesLiveStatus(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AppendEvent error = %v", err)
 	}
+	senderNetPath := filepath.Join(root, "config", "hao_news_live_sender_net.inf")
+	if err := os.MkdirAll(filepath.Dir(senderNetPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll sender config dir error = %v", err)
+	}
+	if err := os.WriteFile(senderNetPath, []byte("network_mode=lan\nlibp2p_listen=/ip4/127.0.0.1/tcp/51585\nredis_enabled=true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile sender net error = %v", err)
+	}
+	senderIdentityPath := filepath.Join(root, "config", "identities", "pc75-now-time.json")
+	if err := os.MkdirAll(filepath.Dir(senderIdentityPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll sender identity dir error = %v", err)
+	}
+	identity, err := core.NewAgentIdentity("agent://pc75/now-time", "agent://pc75/now-time", time.Date(2026, 4, 4, 15, 37, 6, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("NewAgentIdentity error = %v", err)
+	}
+	if err := core.SaveAgentIdentity(senderIdentityPath, identity); err != nil {
+		t.Fatalf("SaveAgentIdentity error = %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/api/live/status/public-live-time", nil)
 	rec := httptest.NewRecorder()
 	site.Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal error = %v", err)
+	}
+	if got := int(body["visible_event_count"].(float64)); got != 1 {
+		t.Fatalf("visible_event_count = %d", got)
+	}
+	if body["latest_non_heartbeat_at"] != "2026-04-04 15:37:14 CST" {
+		t.Fatalf("latest_non_heartbeat_at = %v", body["latest_non_heartbeat_at"])
+	}
+	if body["sender_peer_id"] != "agent://pc75/now-time" {
+		t.Fatalf("sender_peer_id = %v", body["sender_peer_id"])
+	}
+	if got := int(body["sender_listen_port"].(float64)); got != 51585 {
+		t.Fatalf("sender_listen_port = %d", got)
+	}
+	if got := int(body["total_event_count"].(float64)); got != 1 {
+		t.Fatalf("total_event_count = %d", got)
+	}
+	if body["latest_cache_refresh_at"] == nil || body["latest_cache_refresh_at"] == "" {
+		t.Fatal("expected latest_cache_refresh_at")
+	}
+}
+
+func TestPluginBuildServesLiveStatusPage(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildLiveSite(t)
+	store, err := live.OpenLocalStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenLocalStore error = %v", err)
+	}
+	room := live.RoomInfo{
+		RoomID:    "public-live-time",
+		Title:     "Live-Time",
+		Creator:   "agent://pc75/now-time",
+		CreatedAt: "2026-04-04T00:00:00Z",
+		Channel:   "hao.news/live/public",
+	}
+	if err := store.SaveRoom(room); err != nil {
+		t.Fatalf("SaveRoom error = %v", err)
+	}
+	if err := store.AppendEvent(room.RoomID, live.LiveMessage{
+		Protocol:     live.ProtocolVersion,
+		Type:         live.TypeMessage,
+		RoomID:       room.RoomID,
+		Sender:       room.Creator,
+		SenderPubKey: strings.Repeat("a", 64),
+		Seq:          1,
+		Timestamp:    "2026-04-04T07:37:14Z",
+		Payload:      live.LivePayload{Content: "当前时间：2026-04-04 15:37:06 CST"},
+		Signature:    strings.Repeat("1", 128),
+	}); err != nil {
+		t.Fatalf("AppendEvent error = %v", err)
+	}
+	senderNetPath := filepath.Join(root, "config", "hao_news_live_sender_net.inf")
+	if err := os.MkdirAll(filepath.Dir(senderNetPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll sender config dir error = %v", err)
+	}
+	if err := os.WriteFile(senderNetPath, []byte("network_mode=lan\nlibp2p_listen=/ip4/127.0.0.1/tcp/51585\nredis_enabled=true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile sender net error = %v", err)
+	}
+	senderIdentityPath := filepath.Join(root, "config", "identities", "pc75-now-time.json")
+	if err := os.MkdirAll(filepath.Dir(senderIdentityPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll sender identity dir error = %v", err)
+	}
+	identity, err := core.NewAgentIdentity("agent://pc75/now-time", "agent://pc75/now-time", time.Date(2026, 4, 4, 15, 37, 6, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("NewAgentIdentity error = %v", err)
+	}
+	if err := core.SaveAgentIdentity(senderIdentityPath, identity); err != nil {
+		t.Fatalf("SaveAgentIdentity error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/live/status/public-live-time", nil)
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "\"visible_event_count\": 1") || !strings.Contains(body, "\"latest_non_heartbeat_at\": \"2026-04-04T07:37:14Z\"") || !strings.Contains(body, "\"sender_config\":") {
-		t.Fatalf("unexpected status body = %s", body)
+	if !strings.Contains(body, "Live 状态") ||
+		!strings.Contains(body, "传输状态") ||
+		!strings.Contains(body, "Sender") ||
+		!strings.Contains(body, "latest cache refresh") ||
+		!strings.Contains(body, "agent://pc75/now-time") ||
+		!strings.Contains(body, "listen port：51585") ||
+		!strings.Contains(body, "latest non-heartbeat") {
+		t.Fatalf("unexpected status page body = %q", body)
 	}
 }
 
@@ -908,6 +1116,20 @@ func TestPluginBuildCreatesManualArchiveAndServesArchiveLiveRoutes(t *testing.T)
 	}
 	if !strings.Contains(indexRec.Body.String(), "Live 归档") || !strings.Contains(indexRec.Body.String(), room.Title) {
 		t.Fatalf("expected archive live index body, got %q", indexRec.Body.String())
+	}
+	if !strings.Contains(indexRec.Body.String(), "正文 1 条") || !strings.Contains(indexRec.Body.String(), "手动") {
+		t.Fatalf("expected archive stats in index body, got %q", indexRec.Body.String())
+	}
+
+	apiIndexReq := httptest.NewRequest(http.MethodGet, "/api/archive/live", nil)
+	apiIndexRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(apiIndexRec, apiIndexReq)
+	if apiIndexRec.Code != http.StatusOK {
+		t.Fatalf("archive live API status = %d, body = %s", apiIndexRec.Code, apiIndexRec.Body.String())
+	}
+	apiBody := apiIndexRec.Body.String()
+	if !strings.Contains(apiBody, "\"archive_stats\"") || !strings.Contains(apiBody, "\"latest_archive_kind\": \"manual\"") || !strings.Contains(apiBody, "\"latest_archive_message_count\": 1") {
+		t.Fatalf("expected archive API stats, got %q", apiBody)
 	}
 
 	historyListReq := httptest.NewRequest(http.MethodGet, "/archive/live/"+room.RoomID, nil)

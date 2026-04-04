@@ -251,6 +251,44 @@ func handleLiveArchiveIndex(app *newsplugin.App, store *live.LocalStore, w http.
 	}
 }
 
+func handleLiveStatusPage(app *newsplugin.App, store *live.LocalStore, roomID string, watcherStatus func() *live.BootstrapStatus, senderNetPath, senderIdentityPath string, w http.ResponseWriter, r *http.Request) {
+	status, err := buildLiveRoomStatus(app, store, roomID, watcherStatus, senderNetPath, senderIdentityPath, r)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	index, err := app.Index()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	page := liveRoomStatusPageData{
+		Project:    app.ProjectName(),
+		Version:    app.VersionString(),
+		PageNav:    app.PageNav("/live"),
+		NodeStatus: app.NodeStatus(index),
+		Now:        time.Now(),
+		Status:     status,
+		SummaryStats: []newsplugin.SummaryStat{
+			{Label: "可见消息", Value: formatCount(status.VisibleEventCount)},
+			{Label: "总消息", Value: formatCount(status.TotalEventCount)},
+			{Label: "归档批次", Value: formatCount(status.ArchiveStats.ArchiveCount)},
+			{Label: "最近归档", Value: firstNonEmptyString(status.LatestArchiveAt, "暂无")},
+		},
+		RoomLinks:       status.RoomLinks,
+		Archive:         status.Archive,
+		Room:            status.Room,
+		HistoryArchives: status.HistoryArchives,
+	}
+	if err := app.Templates().ExecuteTemplate(w, "live_status.html", page); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 func handleLiveArchiveNow(app *newsplugin.App, store *live.LocalStore, roomID string, w http.ResponseWriter, r *http.Request) {
 	if !livePublicRequestTrusted(r) {
 		http.Redirect(w, r, liveRoomLinksFor(roomID).RoomURL+"?archive_error=untrusted", http.StatusSeeOther)
@@ -286,7 +324,7 @@ func handleAPILiveArchiveNow(store *live.LocalStore, roomID string, w http.Respo
 }
 
 func handleAPILiveArchiveIndex(store *live.LocalStore, w http.ResponseWriter, r *http.Request) {
-	summaries, _, err := loadLiveArchiveRoomSummaries(store)
+	summaries, totalArchives, err := loadLiveArchiveRoomSummaries(store)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -297,13 +335,33 @@ func handleAPILiveArchiveIndex(store *live.LocalStore, w http.ResponseWriter, r 
 			"room":            summary.Room,
 			"archive_count":   summary.ArchiveCount,
 			"last_archived":   summary.LastArchived,
+			"archive_stats":   summary.ArchiveStats,
+			"latest_archive":  summary.LatestArchive,
 			"history_url":     summary.RoomLinks.HistoryURL,
 			"api_history_url": summary.RoomLinks.APIHistoryURL,
 		})
 	}
+	latestSummary := liveArchiveRoomSummary{}
+	if len(summaries) > 0 {
+		latestSummary = summaries[0]
+	}
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope": "live-archive-index",
-		"rooms": items,
+		"stats": map[string]any{
+			"room_count":                     len(items),
+			"archive_count":                  totalArchives,
+			"latest_archive":                 liveArchiveLatestValue(summaries),
+			"latest_archive_kind":            latestSummary.ArchiveStats.LatestArchiveKind,
+			"latest_archive_label":           latestSummary.ArchiveStats.LatestArchiveLabel,
+			"latest_archive_at":              latestSummary.ArchiveStats.LatestArchiveAt,
+			"latest_archive_start_at":        latestSummary.ArchiveStats.LatestArchiveStart,
+			"latest_archive_end_at":          latestSummary.ArchiveStats.LatestArchiveEnd,
+			"latest_archive_event_count":     latestSummary.ArchiveStats.LatestArchiveEvents,
+			"latest_archive_message_count":   latestSummary.ArchiveStats.LatestArchiveMsgs,
+			"latest_archive_heartbeat_count": latestSummary.ArchiveStats.LatestArchiveHBs,
+		},
+		"latest_archive_detail": latestSummary.LatestArchive,
+		"rooms":                 items,
 	})
 }
 
@@ -346,11 +404,18 @@ func loadLiveArchiveRoomSummaries(store *live.LocalStore) ([]liveArchiveRoomSumm
 			if len(historyArchives) > 0 {
 				lastArchived = formatLiveDisplayTime(historyArchives[0].ArchivedAt)
 			}
+			var latestArchive *live.RoomHistoryArchive
+			if len(historyArchives) > 0 {
+				copyArchive := formatHistoryArchive(&historyArchives[0])
+				latestArchive = copyArchive
+			}
 			item := liveArchiveRoomSummary{
-				Room:         room,
-				RoomLinks:    liveRoomLinksFor(summary.RoomID),
-				ArchiveCount: len(historyArchives),
-				LastArchived: lastArchived,
+				Room:          room,
+				RoomLinks:     liveRoomLinksFor(summary.RoomID),
+				ArchiveCount:  len(historyArchives),
+				LastArchived:  lastArchived,
+				LatestArchive: latestArchive,
+				ArchiveStats:  summarizeLiveArchiveStats(historyArchives),
 			}
 			mu.Lock()
 			totalArchives += len(historyArchives)
@@ -816,79 +881,179 @@ func handleAPILiveRoom(app *newsplugin.App, store *live.LocalStore, roomID strin
 	})
 }
 
-func handleAPILiveStatus(app *newsplugin.App, store *live.LocalStore, roomID string, watcherStatus func() *live.BootstrapStatus, senderNetPath string, w http.ResponseWriter, r *http.Request) {
+func handleAPILiveStatus(app *newsplugin.App, store *live.LocalStore, roomID string, watcherStatus func() *live.BootstrapStatus, senderNetPath, senderIdentityPath string, w http.ResponseWriter, r *http.Request) {
+	status, err := buildLiveRoomStatus(app, store, roomID, watcherStatus, senderNetPath, senderIdentityPath, r)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, status)
+}
+
+func buildLiveRoomStatus(app *newsplugin.App, store *live.LocalStore, roomID string, watcherStatus func() *live.BootstrapStatus, senderNetPath, senderIdentityPath string, r *http.Request) (liveRoomStatusView, error) {
 	room, err := loadLiveRoom(store, roomID)
 	if err != nil {
-		http.NotFound(w, r)
-		return
+		return liveRoomStatusView{}, err
 	}
 	events, err := store.ReadEvents(roomID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return liveRoomStatusView{}, err
 	}
 	rules := newsplugin.SubscriptionRules{}
 	if app != nil {
 		rules, _ = app.SubscriptionRules()
 	}
-	filteredEvents := filterLiveEvents(events, false, rules)
+	showHeartbeats := false
+	if r != nil {
+		showHeartbeats = queryBool(r, "show_heartbeats", false)
+	}
+	filteredEvents := filterLiveEvents(events, showHeartbeats, rules)
 	if isPublicLiveRoomID(room.RoomID) {
 		filteredEvents, _, _ = applyPublicLiveGuards(filteredEvents, rules)
 	}
 	displayEvents := limitVisibleLiveEvents(filteredEvents, live.LiveRoomDisplayNonHeartbeatEvents, live.LiveRoomRetainHeartbeatEvents)
 	archive, err := store.LoadArchiveResult(roomID)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return liveRoomStatusView{}, err
 	}
 	historyArchives, err := store.ListHistoryArchives(roomID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return liveRoomStatusView{}, err
 	}
-
-	latestEventAt := ""
-	latestEventType := ""
-	latestContent := ""
+	status := liveRoomStatusView{
+		Room:            room,
+		RoomLinks:       liveRoomLinksFor(roomID),
+		Watcher:         nil,
+		SenderConfig:    summarizeLiveNetConfig(senderNetPath),
+		SenderIdentity:  summarizeLiveIdentity(senderIdentityPath),
+		RoomFilePath:    filepath.Join(store.RoomDir(roomID), "room.json"),
+		Archive:         archive,
+		HistoryArchives: formatHistoryArchives(historyArchives),
+		ArchiveStats:    summarizeLiveArchiveStats(historyArchives),
+	}
+	if watcherStatus != nil {
+		status.Watcher = watcherStatus()
+		if status.Watcher != nil {
+			status.WatcherPeerID = strings.TrimSpace(status.Watcher.PeerID)
+			status.WatcherListenPort = status.Watcher.ListenPort
+		}
+	}
+	status.SenderPeerID = strings.TrimSpace(status.SenderIdentity.AgentID)
+	status.SenderListenPort = status.SenderConfig.ListenPort
 	if count := len(filteredEvents); count > 0 {
 		latest := filteredEvents[count-1]
-		latestEventAt = latest.Timestamp
-		latestEventType = latest.Type
-		latestContent = strings.TrimSpace(latest.Payload.Content)
+		status.LatestEventAt = formatLiveDisplayTime(latest.Timestamp)
+		status.LatestNonHeartbeatAt = latestNonHeartbeatTimestamp(filteredEvents)
+		status.LatestVisibleAt = latestVisibleTimestamp(displayEvents)
 	}
-	latestVisibleAt := ""
-	if count := len(displayEvents); count > 0 {
-		latestVisibleAt = displayEvents[count-1].Timestamp
+	status.VisibleEventCount = len(displayEvents)
+	status.TotalEventCount = len(filteredEvents)
+	status.RoomFileModTime = fileModTime(status.RoomFilePath)
+	status.EventsFileModTime = fileModTime(filepath.Join(store.RoomDir(roomID), "events.jsonl"))
+	status.ArchiveFileModTime = fileModTime(filepath.Join(store.RoomDir(roomID), "archive.json"))
+	status.HistoryDirModTime = dirModTime(filepath.Join(store.RoomDir(roomID), "history"))
+	status.LatestLocalWriteAt = latestTime(status.RoomFileModTime, status.EventsFileModTime)
+	status.LatestCacheRefreshAt = latestTime(status.RoomFileModTime, status.EventsFileModTime, status.ArchiveFileModTime, status.HistoryDirModTime)
+	if len(historyArchives) > 0 {
+		status.LatestArchiveAt = formatLiveDisplayTime(historyArchives[0].ArchivedAt)
 	}
-	latestNonHeartbeatAt := ""
-	for idx := len(filteredEvents) - 1; idx >= 0; idx-- {
-		if filteredEvents[idx].Type == live.TypeHeartbeat {
+	return status, nil
+}
+
+func latestVisibleTimestamp(events []live.LiveMessage) string {
+	if len(events) == 0 {
+		return ""
+	}
+	return formatLiveDisplayTime(events[len(events)-1].Timestamp)
+}
+
+func latestNonHeartbeatTimestamp(events []live.LiveMessage) string {
+	for idx := len(events) - 1; idx >= 0; idx-- {
+		if events[idx].Type == live.TypeHeartbeat {
 			continue
 		}
-		latestNonHeartbeatAt = filteredEvents[idx].Timestamp
-		break
+		return formatLiveDisplayTime(events[idx].Timestamp)
 	}
-	watcher := (*live.BootstrapStatus)(nil)
-	if watcherStatus != nil {
-		watcher = watcherStatus()
+	return ""
+}
+
+func summarizeLiveIdentity(path string) liveIdentitySummary {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return liveIdentitySummary{}
 	}
-	resp := map[string]any{
-		"room":                    room,
-		"room_links":              liveRoomLinksFor(roomID),
-		"room_file_path":          filepath.Join(store.RoomDir(roomID), "events.jsonl"),
-		"watcher":                 watcher,
-		"sender_config":           summarizeLiveNetConfig(senderNetPath),
-		"visible_event_count":     len(displayEvents),
-		"total_event_count":       len(filteredEvents),
-		"latest_event_at":         latestEventAt,
-		"latest_visible_at":       latestVisibleAt,
-		"latest_non_heartbeat_at": latestNonHeartbeatAt,
-		"latest_event_type":       latestEventType,
-		"latest_content":          latestContent,
-		"archive":                 archive,
-		"history_archives":        formatHistoryArchives(historyArchives),
+	identity, err := corehaonews.LoadAgentIdentity(path)
+	if err != nil {
+		return liveIdentitySummary{IdentityFile: path}
 	}
-	newsplugin.WriteJSON(w, http.StatusOK, resp)
+	return liveIdentitySummary{
+		IdentityFile: path,
+		AgentID:      strings.TrimSpace(identity.AgentID),
+		Author:       strings.TrimSpace(identity.Author),
+		PublicKey:    strings.TrimSpace(identity.PublicKey),
+		KeyType:      strings.TrimSpace(identity.KeyType),
+		Known:        true,
+	}
+}
+
+func summarizeLiveArchiveStats(archives []live.RoomHistoryArchive) liveArchiveStats {
+	stats := liveArchiveStats{ArchiveCount: len(archives)}
+	if len(archives) == 0 {
+		return stats
+	}
+	latest := archives[0]
+	stats.LatestArchiveID = strings.TrimSpace(latest.ArchiveID)
+	stats.LatestArchiveKind = strings.TrimSpace(latest.Kind)
+	stats.LatestArchiveLabel = strings.TrimSpace(latest.Label)
+	stats.LatestArchiveAt = formatLiveDisplayTime(latest.ArchivedAt)
+	stats.LatestArchiveStart = formatLiveDisplayTime(latest.StartAt)
+	stats.LatestArchiveEnd = formatLiveDisplayTime(latest.EndAt)
+	stats.LatestArchiveEvents = latest.EventCount
+	stats.LatestArchiveMsgs = latest.MessageCount
+	stats.LatestArchiveHBs = latest.HeartbeatCount
+	return stats
+}
+
+func fileModTime(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	return formatLiveDisplayTime(info.ModTime().UTC().Format(time.RFC3339))
+}
+
+func dirModTime(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	return formatLiveDisplayTime(info.ModTime().UTC().Format(time.RFC3339))
+}
+
+func latestTime(values ...string) string {
+	latest := ""
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if latest == "" || value > latest {
+			latest = value
+		}
+	}
+	return latest
 }
 
 func summarizeLiveNetConfig(path string) liveNetConfigSummary {
@@ -905,11 +1070,41 @@ func summarizeLiveNetConfig(path string) liveNetConfigSummary {
 		Exists:       cfg.Exists,
 		NetworkMode:  cfg.NetworkMode,
 		Listen:       append([]string{}, cfg.LibP2PListen...),
+		ListenPort:   firstConfigListenPort(cfg.LibP2PListen),
 		LANPeers:     append([]string{}, cfg.LANPeers...),
 		PublicPeers:  append([]string{}, cfg.PublicPeers...),
 		RelayPeers:   append([]string{}, cfg.RelayPeers...),
 		RedisEnabled: cfg.Redis.Enabled,
 	}
+}
+
+func firstConfigListenPort(addrs []string) int {
+	for _, addr := range addrs {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		for _, prefix := range []string{"/tcp/", "/udp/"} {
+			idx := strings.LastIndex(addr, prefix)
+			if idx < 0 {
+				continue
+			}
+			rest := addr[idx+len(prefix):]
+			if rest == "" {
+				continue
+			}
+			parts := strings.Split(rest, "/")
+			if len(parts) == 0 {
+				continue
+			}
+			port, err := strconv.Atoi(parts[0])
+			if err != nil || port <= 0 {
+				continue
+			}
+			return port
+		}
+	}
+	return 0
 }
 
 func handleAPILiveRoomHistory(store *live.LocalStore, roomID, archiveID string, w http.ResponseWriter, r *http.Request) {

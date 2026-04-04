@@ -124,7 +124,9 @@ type SyncTeamSyncStatus struct {
 	PersistedPeerAcks       int        `json:"persisted_peer_acks,omitempty"`
 	AckPeers                int        `json:"ack_peers,omitempty"`
 	Conflicts               int        `json:"conflicts,omitempty"`
+	ResolvedConflicts       int        `json:"resolved_conflicts,omitempty"`
 	PeerAckPrunes           int        `json:"peer_ack_prunes,omitempty"`
+	ConflictPrunes          int        `json:"conflict_prunes,omitempty"`
 	ExpiredPending          int        `json:"expired_pending,omitempty"`
 	SupersededPending       int        `json:"superseded_pending,omitempty"`
 	SubscribedTeams         int        `json:"subscribed_teams"`
@@ -186,6 +188,8 @@ type SyncTeamSyncStatus struct {
 	LastConflictReason      string     `json:"last_conflict_reason,omitempty"`
 	LastPrunedAckPeer       string     `json:"last_pruned_ack_peer,omitempty"`
 	LastPrunedAckKey        string     `json:"last_pruned_ack_key,omitempty"`
+	LastPrunedConflictKey   string     `json:"last_pruned_conflict_key,omitempty"`
+	LastPrunedConflictAt    *time.Time `json:"last_pruned_conflict_at,omitempty"`
 	LastScannedChannelID    string     `json:"last_scanned_channel_id,omitempty"`
 	LastScannedMessageID    string     `json:"last_scanned_message_id,omitempty"`
 	LastScannedEventID      string     `json:"last_scanned_event_id,omitempty"`

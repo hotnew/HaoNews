@@ -73,10 +73,13 @@
             <p class="panel-label">当前批次</p>
             <div class="summary-grid">
               <div><span class="stat-label">归档时间</span><strong>{{.Archive.ArchivedAt}}</strong></div>
+              <div><span class="stat-label">归档类型</span><strong>{{if .Archive.Kind}}{{.Archive.Kind}}{{else}}-{{end}}</strong></div>
+              <div><span class="stat-label">批次标签</span><strong>{{if .Archive.Label}}{{.Archive.Label}}{{else}}-{{end}}</strong></div>
               <div><span class="stat-label">起始时间</span><strong>{{if .Archive.StartAt}}{{.Archive.StartAt}}{{else}}-{{end}}</strong></div>
               <div><span class="stat-label">结束时间</span><strong>{{if .Archive.EndAt}}{{.Archive.EndAt}}{{else}}-{{end}}</strong></div>
               <div><span class="stat-label">正文数</span><strong>{{if .Archive.NonHeartbeatCount}}{{.Archive.NonHeartbeatCount}}{{else}}{{.Archive.EventCount}}{{end}}</strong></div>
               <div><span class="stat-label">心跳数</span><strong>{{.Archive.HeartbeatCount}}</strong></div>
+              <div><span class="stat-label">事件数</span><strong>{{.Archive.EventCount}}</strong></div>
             </div>
           </section>
 

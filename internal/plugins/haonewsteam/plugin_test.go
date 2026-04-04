@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"hao.news/internal/apphost"
+	corehaonews "hao.news/internal/haonews"
 	teamcore "hao.news/internal/haonews/team"
 	themehaonews "hao.news/internal/themes/haonews"
 )
@@ -1844,6 +1845,49 @@ func TestPluginBuildServesAndResolvesTeamSyncConflicts(t *testing.T) {
 	}
 	if !strings.Contains(pageRec.Body.String(), "最近复制冲突") || !strings.Contains(pageRec.Body.String(), "冲突 JSON") {
 		t.Fatalf("expected conflict summary on team history page, got %q", pageRec.Body.String())
+	}
+}
+
+func TestBuildTeamSyncConflictViewsExplainsSuggestions(t *testing.T) {
+	t.Parallel()
+
+	views := buildTeamSyncConflictViews([]corehaonews.TeamSyncConflictRecord{
+		{
+			Key:       "task:task-1:remote",
+			Type:      "task",
+			SyncType:  "task",
+			TeamID:    "team-1",
+			SubjectID: "task-1",
+			Reason:    "local_newer",
+		},
+		{
+			Key:       "artifact:artifact-1:remote",
+			Type:      "artifact",
+			SyncType:  "artifact",
+			TeamID:    "team-1",
+			SubjectID: "artifact-1",
+			Reason:    "same_version_diverged",
+		},
+		{
+			Key:       "policy:team-1:remote",
+			Type:      "policy",
+			SyncType:  "policy",
+			TeamID:    "team-1",
+			SubjectID: "team-1",
+			Reason:    "signature_rejected",
+		},
+	})
+	if len(views) != 3 {
+		t.Fatalf("views = %d, want 3", len(views))
+	}
+	if views[0].SuggestedAction != "keep_local" || !strings.Contains(views[0].ReasonLabel, "本地") || !strings.Contains(views[0].ActionHint, "保留本地") {
+		t.Fatalf("unexpected local_newer view: %#v", views[0])
+	}
+	if views[1].SuggestedAction != "accept_remote" || !strings.Contains(views[1].ReasonLabel, "分叉") || !strings.Contains(views[1].ActionHint, "接收远端") {
+		t.Fatalf("unexpected same_version_diverged view: %#v", views[1])
+	}
+	if views[2].SuggestedAction != "dismiss" || !strings.Contains(views[2].ReasonLabel, "签名") || !strings.Contains(views[2].ActionHint, "驳回") {
+		t.Fatalf("unexpected signature_rejected view: %#v", views[2])
 	}
 }
 

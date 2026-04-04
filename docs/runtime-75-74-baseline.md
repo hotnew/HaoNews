@@ -60,6 +60,30 @@
    - `curl -s http://192.168.102.74:51818/api/live/public/live-time`
 4. Confirm latest timestamp/content matches current minute.
 
+## Team Verification Pointers
+
+- Team sync health / conflicts:
+  - `curl -s http://127.0.0.1:51818/api/teams/archive-demo/sync | python3 -m json.tool`
+  - `curl -s http://192.168.102.74:51818/api/teams/archive-demo/sync | python3 -m json.tool`
+- Team webhook status:
+  - `curl -s http://127.0.0.1:51818/api/teams/archive-demo/webhooks/status | python3 -m json.tool`
+  - `curl -s http://192.168.102.74:51818/api/teams/archive-demo/webhooks/status | python3 -m json.tool`
+- Team webhook replay runtime verify:
+  - use `runtime-webhook-team`
+  - `curl -s http://127.0.0.1:51818/api/teams/runtime-webhook-team/webhooks/status | python3 -m json.tool`
+  - `curl -s -X POST http://127.0.0.1:51818/api/teams/runtime-webhook-team/webhooks/replay/<delivery_id> -H 'Content-Type: application/json' -d '{"actor_agent_id":"agent://pc75/openclaw01"}' | python3 -m json.tool`
+- Team archive:
+  - `curl -I http://127.0.0.1:51818/archive/team/archive-demo`
+  - `curl -I http://192.168.102.74:51818/archive/team/archive-demo`
+- A2A:
+  - `curl -s http://127.0.0.1:51818/.well-known/agent.json | python3 -m json.tool`
+  - `curl -s http://192.168.102.74:51818/.well-known/agent.json | python3 -m json.tool`
+- Team SSE:
+  - `curl -N http://127.0.0.1:51818/api/teams/runtime-webhook-team/events`
+
+完整升级验收清单见：
+- [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-validation.md)
+
 ## Recovery Rules
 - Do not run `live host` sender on `.75` with `hao_news_live_net.inf`; use `hao_news_live_sender_net.inf` only.
 - Do not run standalone `hao-news-syncd` when `serve` is already managing sync.

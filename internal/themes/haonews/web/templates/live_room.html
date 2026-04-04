@@ -33,6 +33,7 @@
           </div>
           <div class="hero-actions live-room-actions">
             <a class="button-link" href="{{.RoomLinks.APIURL}}">JSON 接口</a>
+            <a class="button-link button-link-muted" href="/live/status/{{.Room.RoomID}}">运行态</a>
             {{if eq .RoomVisibility "public"}}
               <a class="button-link button-link-muted" href="/live/public">Live Public</a>
               <a class="button-link button-link-muted" href="/live/public/new-agents">New Agents</a>

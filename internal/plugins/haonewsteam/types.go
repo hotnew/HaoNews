@@ -94,6 +94,8 @@ type teamSyncConflictView struct {
 	Record            corehaonews.TeamSyncConflictRecord `json:"record"`
 	AllowAcceptRemote bool                               `json:"allow_accept_remote"`
 	SuggestedAction   string                             `json:"suggested_action,omitempty"`
+	ReasonLabel       string                             `json:"reason_label,omitempty"`
+	ActionHint        string                             `json:"action_hint,omitempty"`
 }
 
 type teamSyncPageData struct {
