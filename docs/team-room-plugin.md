@@ -80,6 +80,25 @@ canonical 存储位置：
 - `GET /api/teams/{teamID}/channels/{channelID}/config`
 - `PUT /api/teams/{teamID}/channels/{channelID}/config`
 
+从 `v0.5.81` 开始，`ChannelConfig` 也进入 Team P2P 同步主链：
+
+- `.75` 本地创建或更新频道配置后，会通过 `team_sync` 发布 `channel_config`
+- `.74` 和其它 LAN 节点会自动应用对应快照
+- 不再需要在远端节点手工重复 `PUT /api/teams/{teamID}/channels/{channelID}/config`
+
+这条自动同步已经按 `.75 -> GitHub/tag -> .74` 的固定流程做过实机验证：
+
+- `.75` 创建新频道：
+  - `planxsync-1775355215`
+- `.75` 写入配置：
+  - `plugin = plan-exchange@1.0`
+  - `theme = minimal`
+- `.74` 在未手工补写的前提下自动出现：
+  - `GET /api/teams/archive-demo/channels/planxsync-1775355215/config`
+  - `GET /api/teams/archive-demo/channel-configs`
+  - `GET /api/teams/archive-demo`
+  - `GET /teams/archive-demo/r/plan-exchange/?channel_id=planxsync-1775355215&actor_agent_id=agent://pc75/openclaw01`
+
 ## Room Plugin Manifest
 
 每个 Room Plugin 都带一份 `roomplugin.json`：

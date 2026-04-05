@@ -13,6 +13,7 @@
 - 验收对象：
   - Team webhook status / replay
   - Team sync health / conflicts
+  - Team channel config replication
   - Team archive / A2A / SSE
   - `public-live-time`
 
@@ -62,7 +63,66 @@ curl -s http://192.168.102.74:51818/api/teams/archive-demo/sync | python3 -m jso
   - `conflict_views`
   - `webhook_status`
 
-## 3. Team Webhook Status
+## 3. Team Channel Config Replication
+
+说明：
+
+- 这一项从 `v0.5.81` 起是正式验收项。
+- 必须证明 `.75` 上新建的频道配置会自动出现在 `.74`，不能通过远端手工 `PUT config` 来“补齐结果”。
+
+建议步骤：
+
+1. 在 `.75` 创建一个全新频道：
+
+```bash
+CHANNEL_ID=planxsync-$(date +%s)
+curl -sS -X POST http://127.0.0.1:51818/api/teams/archive-demo/channels \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"channel_id\":\"${CHANNEL_ID}\",
+    \"title\":\"Plan Exchange Sync Proof\",
+    \"description\":\"Fresh channel to verify channel_config replication\",
+    \"actor_agent_id\":\"agent://pc75/openclaw01\"
+  }" | python3 -m json.tool
+```
+
+2. 在 `.75` 写入该频道配置：
+
+```bash
+curl -sS -X PUT http://127.0.0.1:51818/api/teams/archive-demo/channels/${CHANNEL_ID}/config \
+  -H 'Content-Type: application/json' \
+  -H 'X-Actor-Agent-ID: agent://pc75/openclaw01' \
+  -d '{
+    "plugin":"plan-exchange@1.0",
+    "theme":"minimal",
+    "agent_onboarding":"Use plan mode first.",
+    "rules":["Keep decisions explicit"],
+    "metadata":{"owner":"pm","proof":"channel-config-sync"}
+  }' | python3 -m json.tool
+```
+
+3. 只在 `.74` 观察自动到达：
+
+```bash
+curl -s http://192.168.102.74:51818/api/teams/archive-demo/channels/${CHANNEL_ID}/config | python3 -m json.tool
+curl -s http://192.168.102.74:51818/api/teams/archive-demo/channel-configs | python3 -m json.tool
+curl -s http://192.168.102.74:51818/api/teams/archive-demo | python3 -m json.tool
+curl -I "http://192.168.102.74:51818/teams/archive-demo/r/plan-exchange/?channel_id=${CHANNEL_ID}&actor_agent_id=agent://pc75/openclaw01"
+```
+
+通过标准：
+
+- `.74` 上 `GET /channels/${CHANNEL_ID}/config` 返回 `200`
+- 返回体包含：
+  - `plugin = "plan-exchange@1.0"`
+  - `theme = "minimal"`
+- `.74` 的 `channel-configs` 列表里出现这个新频道
+- `.74` 的 Team detail API 里：
+  - `channel_config_count` 递增
+  - `channels_config` 出现该频道摘要
+- `.74` 的 `plan-exchange` 页面可打开并返回 `200`
+
+## 4. Team Webhook Status
 
 静态状态检查默认看 `runtime-webhook-team`：
 
@@ -86,7 +146,7 @@ curl -s http://192.168.102.74:51818/api/teams/runtime-webhook-team/webhooks/stat
   - `recent_delivered`
   - `recent_dead_letters`
 
-## 4. Team Webhook Replay
+## 5. Team Webhook Replay
 
 说明：
 - 这一项至少在一个节点上做动态验证即可，默认在 `.75` 做。
@@ -113,7 +173,7 @@ curl -s -X POST http://127.0.0.1:51818/api/teams/runtime-webhook-team/webhooks/r
 - `replay` 返回 `status = "delivered"`
 - `recent_delivered[0].replayed_from` 指向原失败 delivery
 
-## 5. Team Archive
+## 6. Team Archive
 
 ### `.75`
 
@@ -134,7 +194,7 @@ curl -s http://192.168.102.74:51818/api/archive/team/archive-demo | python3 -m j
 - API 返回 `200`
 - `.74` 即使当前归档列表为空，也不应报错
 
-## 6. Team A2A
+## 7. Team A2A
 
 ### `.75`
 
@@ -155,7 +215,7 @@ curl -s http://192.168.102.74:51818/a2a/teams/archive-demo/tasks | python3 -m js
 - `capabilities.streaming = true`
 - `/a2a/teams/archive-demo/tasks` 返回 `200`
 
-## 7. Team SSE
+## 8. Team SSE
 
 默认在 `.75` 的 `runtime-webhook-team` 动态验证：
 
@@ -189,7 +249,7 @@ PY
 - Team message 创建返回 `201`
 - SSE 流能收到至少一条 `data: {...}` 事件
 
-## 8. public-live-time
+## 9. public-live-time
 
 ### `.75`
 
@@ -215,7 +275,7 @@ curl -s http://192.168.102.74:51818/api/live/status/public-live-time | python3 -
   - latest inbound / latest local write / latest cache refresh
   - archive stats
 
-## 9. Optional Live Sender Smoke
+## 10. Optional Live Sender Smoke
 
 如果要做 sender 端到端确认，可在 `.75` 跑：
 
@@ -240,6 +300,7 @@ python3 /Users/haoniu/sh18/hao.news2/haonews/scripts/live_time_now.py
   - Bootstrap
   - Team webhook status / replay
   - Team sync health / conflicts
+  - Team channel config replication
   - Team archive / A2A / SSE
   - `public-live-time`
   全部通过后，才算节点升级完成。
