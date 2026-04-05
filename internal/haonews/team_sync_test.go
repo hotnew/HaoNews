@@ -372,12 +372,22 @@ func TestTeamPubSubRuntimePublishesAndAppliesMemberPolicyChannel(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveChannel error = %v", err)
 	}
+	if err := store.SaveChannelConfig("project-team-sync", teamcore.ChannelConfig{
+		ChannelID:       "research",
+		Plugin:          "plan-exchange@1.0",
+		Theme:           "minimal",
+		AgentOnboarding: "Use plan mode first.",
+		Rules:           []string{"Keep decisions explicit"},
+		UpdatedAt:       memberVersion.Add(3 * time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveChannelConfig error = %v", err)
+	}
 
 	if err := runtime.SyncOnce(context.Background(), nil); err != nil {
 		t.Fatalf("SyncOnce(publish object snapshots) error = %v", err)
 	}
-	if len(transport.published) < 3 {
-		t.Fatalf("published = %d, want at least 3", len(transport.published))
+	if len(transport.published) < 4 {
+		t.Fatalf("published = %d, want at least 4", len(transport.published))
 	}
 	if transport.published[0].Type != teamcore.TeamSyncTypeMember || len(transport.published[0].Members) != 2 {
 		t.Fatalf("unexpected member sync payload: %#v", transport.published[0])
@@ -386,14 +396,24 @@ func TestTeamPubSubRuntimePublishesAndAppliesMemberPolicyChannel(t *testing.T) {
 		t.Fatalf("unexpected policy sync payload: %#v", transport.published[1])
 	}
 	channelPayloads := 0
+	configPayloads := 0
 	for _, payload := range transport.published {
-		if payload.Type != teamcore.TeamSyncTypeChannel || payload.Channel == nil {
-			continue
+		switch payload.Type {
+		case teamcore.TeamSyncTypeChannel:
+			if payload.Channel != nil {
+				channelPayloads++
+			}
+		case teamcore.TeamSyncTypeChannelConfig:
+			if payload.ChannelConfig != nil {
+				configPayloads++
+			}
 		}
-		channelPayloads++
 	}
 	if channelPayloads == 0 {
 		t.Fatalf("expected at least one channel sync payload, got %#v", transport.published)
+	}
+	if configPayloads == 0 {
+		t.Fatalf("expected at least one channel config sync payload, got %#v", transport.published)
 	}
 
 	inboundRoot := t.TempDir()
@@ -450,6 +470,13 @@ func TestTeamPubSubRuntimePublishesAndAppliesMemberPolicyChannel(t *testing.T) {
 	}
 	if gotChannel.Title != "Research" {
 		t.Fatalf("unexpected inbound channel: %#v", gotChannel)
+	}
+	gotConfig, err := inboundStore.LoadChannelConfig("project-team-sync", "research")
+	if err != nil {
+		t.Fatalf("LoadChannelConfig(inbound) error = %v", err)
+	}
+	if gotConfig.Plugin != "plan-exchange@1.0" || gotConfig.Theme != "minimal" {
+		t.Fatalf("unexpected inbound channel config: %#v", gotConfig)
 	}
 	status := inboundRuntime.Status()
 	if status.AppliedMembers != 1 || status.AppliedPolicies != 1 || status.AppliedConfigChannels < 1 {

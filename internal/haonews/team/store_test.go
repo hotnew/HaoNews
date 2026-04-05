@@ -2509,6 +2509,48 @@ func TestStoreApplyReplicatedSyncMemberPolicyChannel(t *testing.T) {
 	if applied {
 		t.Fatalf("expected stale channel snapshot to be skipped")
 	}
+
+	configVersion := time.Date(2026, 4, 3, 13, 25, 0, 0, time.UTC)
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{
+		Type:   TeamSyncTypeChannelConfig,
+		TeamID: "replicate-team",
+		ChannelConfig: &ChannelConfig{
+			ChannelID:       "research",
+			Plugin:          "plan-exchange@1.0",
+			Theme:           "minimal",
+			AgentOnboarding: "Use plan mode first.",
+			Rules:           []string{"Keep decisions explicit"},
+			UpdatedAt:       configVersion,
+		},
+		CreatedAt: configVersion,
+	})
+	if err != nil || !applied {
+		t.Fatalf("ApplyReplicatedSync(channel_config) = (%v, %v), want (true, nil)", applied, err)
+	}
+	gotConfig, err := store.LoadChannelConfig("replicate-team", "research")
+	if err != nil {
+		t.Fatalf("LoadChannelConfig error = %v", err)
+	}
+	if gotConfig.Plugin != "plan-exchange@1.0" || gotConfig.Theme != "minimal" {
+		t.Fatalf("unexpected replicated channel config: %#v", gotConfig)
+	}
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{
+		Type:   TeamSyncTypeChannelConfig,
+		TeamID: "replicate-team",
+		ChannelConfig: &ChannelConfig{
+			ChannelID: "research",
+			Plugin:    "old-plugin@0.1",
+			Theme:     "legacy",
+			UpdatedAt: configVersion.Add(-time.Minute),
+		},
+		CreatedAt: configVersion.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(stale channel_config) error = %v", err)
+	}
+	if applied {
+		t.Fatalf("expected stale channel config snapshot to be skipped")
+	}
 }
 
 func TestStoreSaveMembersNormalizesStatusesForApprovalFlow(t *testing.T) {

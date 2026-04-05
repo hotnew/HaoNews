@@ -10,14 +10,15 @@ import (
 )
 
 const (
-	TeamSyncTypeMessage  = "message"
-	TeamSyncTypeHistory  = "history"
-	TeamSyncTypeTask     = "task"
-	TeamSyncTypeArtifact = "artifact"
-	TeamSyncTypeMember   = "member"
-	TeamSyncTypePolicy   = "policy"
-	TeamSyncTypeChannel  = "channel"
-	TeamSyncTypeAck      = "ack"
+	TeamSyncTypeMessage       = "message"
+	TeamSyncTypeHistory       = "history"
+	TeamSyncTypeTask          = "task"
+	TeamSyncTypeArtifact      = "artifact"
+	TeamSyncTypeMember        = "member"
+	TeamSyncTypePolicy        = "policy"
+	TeamSyncTypeChannel       = "channel"
+	TeamSyncTypeChannelConfig = "channel_config"
+	TeamSyncTypeAck           = "ack"
 )
 
 func normalizeTeamSyncType(value string) string {
@@ -45,18 +46,19 @@ type TeamSyncConflict struct {
 }
 
 type TeamSyncMessage struct {
-	Type       string       `json:"type"`
-	TeamID     string       `json:"team_id"`
-	Message    *Message     `json:"message,omitempty"`
-	History    *ChangeEvent `json:"history,omitempty"`
-	Task       *Task        `json:"task,omitempty"`
-	Artifact   *Artifact    `json:"artifact,omitempty"`
-	Members    []Member     `json:"members,omitempty"`
-	Policy     *Policy      `json:"policy,omitempty"`
-	Channel    *Channel     `json:"channel,omitempty"`
-	Ack        *TeamSyncAck `json:"ack,omitempty"`
-	SourceNode string       `json:"source_node,omitempty"`
-	CreatedAt  time.Time    `json:"created_at,omitempty"`
+	Type          string         `json:"type"`
+	TeamID        string         `json:"team_id"`
+	Message       *Message       `json:"message,omitempty"`
+	History       *ChangeEvent   `json:"history,omitempty"`
+	Task          *Task          `json:"task,omitempty"`
+	Artifact      *Artifact      `json:"artifact,omitempty"`
+	Members       []Member       `json:"members,omitempty"`
+	Policy        *Policy        `json:"policy,omitempty"`
+	Channel       *Channel       `json:"channel,omitempty"`
+	ChannelConfig *ChannelConfig `json:"channel_config,omitempty"`
+	Ack           *TeamSyncAck   `json:"ack,omitempty"`
+	SourceNode    string         `json:"source_node,omitempty"`
+	CreatedAt     time.Time      `json:"created_at,omitempty"`
 }
 
 func (m TeamSyncMessage) Normalize() TeamSyncMessage {
@@ -116,6 +118,16 @@ func (m TeamSyncMessage) Normalize() TeamSyncMessage {
 		}
 		m.Channel = &channel
 	}
+	if m.ChannelConfig != nil {
+		cfg := normalizeChannelConfig(*m.ChannelConfig)
+		if cfg.UpdatedAt.IsZero() {
+			cfg.UpdatedAt = m.CreatedAt
+		}
+		if cfg.CreatedAt.IsZero() {
+			cfg.CreatedAt = cfg.UpdatedAt
+		}
+		m.ChannelConfig = &cfg
+	}
 	if m.Ack != nil {
 		ack := *m.Ack
 		ack.AckedKey = strings.TrimSpace(ack.AckedKey)
@@ -156,6 +168,10 @@ func (m TeamSyncMessage) Key() string {
 	case TeamSyncTypeChannel:
 		if m.Channel != nil {
 			return teamSyncChannelKey(m.TeamID, *m.Channel)
+		}
+	case TeamSyncTypeChannelConfig:
+		if m.ChannelConfig != nil {
+			return teamSyncChannelConfigKey(m.TeamID, *m.ChannelConfig)
 		}
 	case TeamSyncTypeAck:
 		if m.Ack != nil && m.Ack.AckedKey != "" {
@@ -210,6 +226,11 @@ func (s *Store) ApplyReplicatedSync(sync TeamSyncMessage) (bool, error) {
 			return false, errors.New("missing team sync channel payload")
 		}
 		return s.ApplyReplicatedChannel(sync.TeamID, *sync.Channel, sync.CreatedAt)
+	case TeamSyncTypeChannelConfig:
+		if sync.ChannelConfig == nil {
+			return false, errors.New("missing team sync channel config payload")
+		}
+		return s.ApplyReplicatedChannelConfig(sync.TeamID, *sync.ChannelConfig, sync.CreatedAt)
 	case TeamSyncTypeAck:
 		return false, nil
 	default:
@@ -369,6 +390,35 @@ func (s *Store) DetectReplicatedConflict(sync TeamSyncMessage) (TeamSyncConflict
 				RemoteVersion: remoteVersion,
 			}, true, nil
 		}
+	case TeamSyncTypeChannelConfig:
+		if sync.ChannelConfig == nil {
+			return TeamSyncConflict{}, false, nil
+		}
+		current, err := s.loadChannelConfigNoCtx(sync.TeamID, sync.ChannelConfig.ChannelID)
+		if err != nil {
+			return TeamSyncConflict{}, false, err
+		}
+		remote := normalizeChannelConfig(*sync.ChannelConfig)
+		localVersion := channelConfigSnapshotVersion(current)
+		remoteVersion := sync.CreatedAt.UTC()
+		if remoteVersion.IsZero() {
+			remoteVersion = channelConfigSnapshotVersion(remote)
+		}
+		if !replicatedVersionAfter(remoteVersion, localVersion) && !reflect.DeepEqual(current, remote) {
+			reason := "local_newer"
+			if remoteVersion.Equal(localVersion) {
+				reason = "same_version_diverged"
+			}
+			return TeamSyncConflict{
+				Type:          sync.Type,
+				TeamID:        sync.TeamID,
+				SubjectID:     remote.ChannelID,
+				SourceNode:    sync.SourceNode,
+				Reason:        reason,
+				LocalVersion:  localVersion,
+				RemoteVersion: remoteVersion,
+			}, true, nil
+		}
 	}
 	return TeamSyncConflict{}, false, nil
 }
@@ -407,6 +457,14 @@ func (s *Store) ForceApplyReplicatedSync(sync TeamSyncMessage) (bool, error) {
 			return false, errors.New("missing channel payload")
 		}
 		if err := s.saveChannelNoCtx(sync.TeamID, normalizeChannel(*sync.Channel)); err != nil {
+			return false, err
+		}
+		return true, nil
+	case TeamSyncTypeChannelConfig:
+		if sync.ChannelConfig == nil {
+			return false, errors.New("missing channel config payload")
+		}
+		if err := s.saveChannelConfigNoCtx(sync.TeamID, normalizeChannelConfig(*sync.ChannelConfig)); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -642,6 +700,39 @@ func (s *Store) ApplyReplicatedChannel(teamID string, channel Channel, version t
 	return true, nil
 }
 
+func (s *Store) ApplyReplicatedChannelConfig(teamID string, cfg ChannelConfig, version time.Time) (bool, error) {
+	if s == nil {
+		return false, errors.New("nil team store")
+	}
+	teamID = NormalizeTeamID(teamID)
+	if teamID == "" {
+		return false, errors.New("empty team id")
+	}
+	cfg = normalizeChannelConfig(cfg)
+	if strings.TrimSpace(cfg.ChannelID) == "" {
+		return false, errors.New("empty replicated channel config channel_id")
+	}
+	current, err := s.loadChannelConfigNoCtx(teamID, cfg.ChannelID)
+	if err != nil {
+		return false, err
+	}
+	if version.IsZero() {
+		version = channelConfigSnapshotVersion(cfg)
+	}
+	if !replicatedVersionAfter(version, channelConfigSnapshotVersion(current)) && !reflect.DeepEqual(current, cfg) {
+		return false, nil
+	}
+	cfg.ChannelID = normalizeChannelID(cfg.ChannelID)
+	if cfg.CreatedAt.IsZero() {
+		cfg.CreatedAt = version
+	}
+	cfg.UpdatedAt = version
+	if err := s.saveChannelConfigNoCtx(teamID, cfg); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Store) HasMessageID(teamID, channelID, messageID string) (bool, error) {
 	if s == nil {
 		return false, errors.New("nil team store")
@@ -813,6 +904,13 @@ func channelSnapshotVersion(channel Channel) time.Time {
 	return channel.CreatedAt.UTC()
 }
 
+func channelConfigSnapshotVersion(cfg ChannelConfig) time.Time {
+	if !cfg.UpdatedAt.IsZero() {
+		return cfg.UpdatedAt.UTC()
+	}
+	return cfg.CreatedAt.UTC()
+}
+
 func artifactVersion(artifact Artifact) time.Time {
 	if !artifact.UpdatedAt.IsZero() {
 		return artifact.UpdatedAt.UTC()
@@ -881,6 +979,19 @@ func teamSyncChannelKey(teamID string, channel Channel) string {
 		return ""
 	}
 	return "channel:" + channel.ChannelID + ":" + version.Format(time.RFC3339Nano)
+}
+
+func teamSyncChannelConfigKey(teamID string, cfg ChannelConfig) string {
+	teamID = NormalizeTeamID(teamID)
+	cfg = normalizeChannelConfig(cfg)
+	if teamID == "" || cfg.ChannelID == "" {
+		return ""
+	}
+	version := channelConfigSnapshotVersion(cfg)
+	if version.IsZero() {
+		return ""
+	}
+	return "channel_config:" + cfg.ChannelID + ":" + version.Format(time.RFC3339Nano)
 }
 
 func (s *Store) upsertReplicatedTask(teamID string, task Task) error {

@@ -180,6 +180,9 @@ func (r *teamPubSubRuntime) SyncOnce(ctx context.Context, logf func(string, ...a
 		if err := r.syncTeamChannels(ctx, teamID, logf); err != nil && logf != nil {
 			logf("team sync channels %s: %v", teamID, err)
 		}
+		if err := r.syncTeamChannelConfigs(ctx, teamID, logf); err != nil && logf != nil {
+			logf("team sync channel configs %s: %v", teamID, err)
+		}
 		if err := r.syncTeamTasks(ctx, teamID, logf); err != nil && logf != nil {
 			logf("team sync tasks %s: %v", teamID, err)
 		}
@@ -546,6 +549,72 @@ func (r *teamPubSubRuntime) syncTeamChannels(ctx context.Context, teamID string,
 		_ = r.persistPublished(syncMsg, version)
 		if firstScan {
 			r.markPrimedConfigChannel(teamID, channel.ChannelID)
+		}
+	}
+	return nil
+}
+
+func (r *teamPubSubRuntime) syncTeamChannelConfigs(ctx context.Context, teamID string, logf func(string, ...any)) error {
+	items, err := r.store.ListChannelConfigsCtx(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	for _, cfg := range items {
+		channelID := strings.TrimSpace(cfg.ChannelID)
+		if channelID == "" {
+			continue
+		}
+		r.recordScannedChannel(teamID, channelID)
+		version := cfg.UpdatedAt.UTC()
+		if version.IsZero() {
+			version = cfg.CreatedAt.UTC()
+		}
+		primedKey := channelID + ":config"
+		if version.IsZero() {
+			if !r.isPrimedConfigChannel(teamID, primedKey) {
+				r.markPrimedConfigChannel(teamID, primedKey)
+			}
+			continue
+		}
+		syncMsg := teamcore.TeamSyncMessage{
+			Type:          teamcore.TeamSyncTypeChannelConfig,
+			TeamID:        teamID,
+			ChannelConfig: &cfg,
+			SourceNode:    r.nodeID,
+			CreatedAt:     version,
+		}.Normalize()
+		syncKey := syncMsg.Key()
+		if syncKey == "" {
+			continue
+		}
+		firstScan := !r.isPrimedConfigChannel(teamID, primedKey)
+		retryPending := r.shouldRetryPending(syncKey)
+		if firstScan && !retryPending && !r.shouldPublishSnapshot(teamSyncStateChannelConfigKey(teamID, channelID), version) {
+			r.rememberSeen(syncKey)
+			r.markPrimedConfigChannel(teamID, primedKey)
+			continue
+		}
+		if !retryPending && r.seenKey(syncKey) {
+			if firstScan {
+				r.markPrimedConfigChannel(teamID, primedKey)
+			}
+			continue
+		}
+		if err := r.transport.PublishTeamSync(ctx, syncMsg); err != nil {
+			r.recordError(teamID, err)
+			if logf != nil {
+				logf("team sync publish channel config %s/%s: %v", teamID, channelID, err)
+			}
+			continue
+		}
+		r.rememberSeen(syncKey)
+		if retryPending {
+			r.recordRetried(syncKey)
+		}
+		r.recordPublished(syncMsg)
+		_ = r.persistPublished(syncMsg, version)
+		if firstScan {
+			r.markPrimedConfigChannel(teamID, primedKey)
 		}
 	}
 	return nil
@@ -951,6 +1020,10 @@ func teamSyncSubjectID(syncMsg teamcore.TeamSyncMessage) string {
 		if syncMsg.Channel != nil {
 			return strings.TrimSpace(syncMsg.Channel.ChannelID)
 		}
+	case teamcore.TeamSyncTypeChannelConfig:
+		if syncMsg.ChannelConfig != nil {
+			return strings.TrimSpace(syncMsg.ChannelConfig.ChannelID)
+		}
 	}
 	return ""
 }
@@ -983,6 +1056,8 @@ func (r *teamPubSubRuntime) recordTransition(syncMsg teamcore.TeamSyncMessage, s
 			r.status.PublishedPolicies++
 		case teamcore.TeamSyncTypeChannel:
 			r.status.PublishedConfigChannels++
+		case teamcore.TeamSyncTypeChannelConfig:
+			r.status.PublishedConfigChannels++
 		case teamcore.TeamSyncTypeAck:
 			r.status.PublishedAcks++
 		}
@@ -1003,6 +1078,8 @@ func (r *teamPubSubRuntime) recordTransition(syncMsg teamcore.TeamSyncMessage, s
 		case teamcore.TeamSyncTypePolicy:
 			r.status.ReceivedPolicies++
 		case teamcore.TeamSyncTypeChannel:
+			r.status.ReceivedConfigChannels++
+		case teamcore.TeamSyncTypeChannelConfig:
 			r.status.ReceivedConfigChannels++
 		case teamcore.TeamSyncTypeAck:
 			r.status.ReceivedAcks++
@@ -1028,6 +1105,8 @@ func (r *teamPubSubRuntime) recordTransition(syncMsg teamcore.TeamSyncMessage, s
 			r.status.AppliedPolicies++
 		case teamcore.TeamSyncTypeChannel:
 			r.status.AppliedConfigChannels++
+		case teamcore.TeamSyncTypeChannelConfig:
+			r.status.AppliedConfigChannels++
 		case teamcore.TeamSyncTypeAck:
 			r.status.AppliedAcks++
 		}
@@ -1046,6 +1125,8 @@ func (r *teamPubSubRuntime) recordTransition(syncMsg teamcore.TeamSyncMessage, s
 		case teamcore.TeamSyncTypePolicy:
 			r.status.SkippedPolicies++
 		case teamcore.TeamSyncTypeChannel:
+			r.status.SkippedConfigChannels++
+		case teamcore.TeamSyncTypeChannelConfig:
 			r.status.SkippedConfigChannels++
 		case teamcore.TeamSyncTypeAck:
 			r.status.SkippedAcks++
@@ -1851,7 +1932,7 @@ func ResolveTeamSyncConflict(storeRoot, teamID, key, action, actorAgentID string
 
 func teamSyncConflictReplaySafe(conflict teamSyncConflict) bool {
 	switch conflict.Sync.Normalize().Type {
-	case teamcore.TeamSyncTypeTask, teamcore.TeamSyncTypeArtifact, teamcore.TeamSyncTypeMember, teamcore.TeamSyncTypePolicy, teamcore.TeamSyncTypeChannel:
+	case teamcore.TeamSyncTypeTask, teamcore.TeamSyncTypeArtifact, teamcore.TeamSyncTypeMember, teamcore.TeamSyncTypePolicy, teamcore.TeamSyncTypeChannel, teamcore.TeamSyncTypeChannelConfig:
 		return true
 	default:
 		return false
@@ -1873,6 +1954,8 @@ func teamSyncStateBucket(state teamSyncPersistedState, stateKey string) map[stri
 	case strings.HasPrefix(stateKey, "policy:"):
 		return state.Policies
 	case strings.HasPrefix(stateKey, "channel:"):
+		return state.Channels
+	case strings.HasPrefix(stateKey, "channel_config:"):
 		return state.Channels
 	case strings.HasPrefix(stateKey, "ack:"):
 		return state.Acks
@@ -1905,6 +1988,10 @@ func teamSyncStateKey(syncMsg teamcore.TeamSyncMessage) string {
 	case teamcore.TeamSyncTypeChannel:
 		if syncMsg.Channel != nil {
 			return teamSyncStateChannelKey(syncMsg.TeamID, syncMsg.Channel.ChannelID)
+		}
+	case teamcore.TeamSyncTypeChannelConfig:
+		if syncMsg.ChannelConfig != nil {
+			return teamSyncStateChannelConfigKey(syncMsg.TeamID, syncMsg.ChannelConfig.ChannelID)
 		}
 	case teamcore.TeamSyncTypeAck:
 		if syncMsg.Ack != nil {
@@ -1940,6 +2027,13 @@ func teamSyncMessageVersion(syncMsg teamcore.TeamSyncMessage) time.Time {
 	case teamcore.TeamSyncTypeChannel:
 		if syncMsg.Channel != nil {
 			return channelSyncVersion(*syncMsg.Channel)
+		}
+	case teamcore.TeamSyncTypeChannelConfig:
+		if syncMsg.ChannelConfig != nil {
+			if !syncMsg.ChannelConfig.UpdatedAt.IsZero() {
+				return syncMsg.ChannelConfig.UpdatedAt.UTC()
+			}
+			return syncMsg.ChannelConfig.CreatedAt.UTC()
 		}
 	case teamcore.TeamSyncTypeAck:
 		if syncMsg.Ack != nil {
@@ -1985,6 +2079,10 @@ func teamSyncStatePolicyKey(teamID string) string {
 
 func teamSyncStateChannelKey(teamID, channelID string) string {
 	return "channel:" + teamcore.NormalizeTeamID(teamID) + ":" + strings.TrimSpace(channelID)
+}
+
+func teamSyncStateChannelConfigKey(teamID, channelID string) string {
+	return "channel_config:" + teamcore.NormalizeTeamID(teamID) + ":" + strings.TrimSpace(channelID)
 }
 
 func teamSyncStateAckKey(teamID, ackedKey, ackedBy string) string {
