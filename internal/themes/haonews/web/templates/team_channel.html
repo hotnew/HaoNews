@@ -76,7 +76,104 @@
           <div class="team-section-actions">
             <a class="filter-chip" href="/archive/team/{{.Team.TeamID}}">查看 Team 归档</a>
             <a class="filter-chip" href="/teams/{{.Team.TeamID}}">返回 Team 工作区</a>
+            {{if .RoomEntry.RoomWebPath}}<a class="filter-chip" href="{{.RoomEntry.RoomWebPath}}">进入房间</a>{{end}}
+            <a class="filter-chip" href="{{.RoomEntry.ConfigAPIPath}}">配置 JSON</a>
           </div>
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
+            <p class="panel-label">Room Plugin</p>
+            <span class="micro-copy">当前频道是否被挂成专属房间，以及它使用的 Theme。</span>
+          </div>
+          {{if .ConfigNotice}}
+            <p class="team-page-note">{{.ConfigNotice}}</p>
+          {{end}}
+          {{if .AvailableRoomPlugins}}
+            <div class="facet-list-inline team-inline-tags">
+              {{range .AvailableRoomPlugins}}
+                <span class="filter-chip">plugin={{.ID}} · {{.Version}}</span>
+              {{end}}
+            </div>
+          {{end}}
+          {{if .AvailableRoomThemes}}
+            <div class="facet-list-inline team-inline-tags">
+              {{range .AvailableRoomThemes}}
+                <span class="filter-chip">available={{.ID}} · {{.PreviewClass}}</span>
+              {{end}}
+            </div>
+          {{end}}
+          <div class="team-workbench-grid">
+            <article class="team-workbench-card">
+              <p class="panel-label">当前模式</p>
+              <strong>{{if .RoomEntry.Configured}}room-enabled{{else}}plain-channel{{end}}</strong>
+              <p class="team-empty-note">
+                {{if .RoomEntry.Configured}}
+                  当前频道已配置为房间：{{if .RoomEntry.Plugin}}{{.RoomEntry.Plugin}}{{else}}已配置{{end}}
+                {{else}}
+                  当前频道还没有绑定 Room Plugin，默认按普通 Team Channel 使用。
+                {{end}}
+              </p>
+              <div class="team-card-links">
+                <a href="{{.RoomEntry.ConfigAPIPath}}">配置 JSON</a>
+                {{if .RoomEntry.RoomWebPath}}<a href="{{.RoomEntry.RoomWebPath}}">进入房间</a>{{end}}
+                {{if .RoomEntry.RoomAPIPath}}<a href="{{.RoomEntry.RoomAPIPath}}">房间 API</a>{{end}}
+              </div>
+            </article>
+            <article class="team-workbench-card">
+              <p class="panel-label">Plugin / Theme</p>
+              <strong>{{if .CurrentRoomPlugin.Name}}{{.CurrentRoomPlugin.Name}}{{else if .RoomEntry.PluginID}}{{.RoomEntry.PluginID}}{{else}}-{{end}}</strong>
+              <p class="team-empty-note">
+                Theme：{{if .CurrentRoomTheme.Name}}{{.CurrentRoomTheme.Name}}{{else if .RoomEntry.Theme}}{{.RoomEntry.Theme}}{{else}}default{{end}}
+                {{if .ChannelConfig.AgentOnboarding}}<br>Onboarding：{{.ChannelConfig.AgentOnboarding}}{{end}}
+              </p>
+              {{if .ChannelConfig.Rules}}
+              <div class="facet-list-inline team-inline-tags">
+                {{range .ChannelConfig.Rules}}<span class="filter-chip">{{.}}</span>{{end}}
+              </div>
+              {{end}}
+              <div class="team-card-links">
+                {{if .CurrentRoomPlugin.Description}}<span>{{.CurrentRoomPlugin.Description}}</span>{{end}}
+                {{if .CurrentRoomTheme.Description}}<span>{{.CurrentRoomTheme.Description}}</span>{{end}}
+              </div>
+            </article>
+          </div>
+          <form method="post" action="/teams/{{.Team.TeamID}}/channels/{{.ChannelID}}/config/update" class="settings-form team-form-grid">
+            <label>
+              <span>配置人 Agent ID</span>
+              <input type="text" name="actor_agent_id" placeholder="agent://pc75/openclaw01">
+            </label>
+            <label>
+              <span>Room Plugin</span>
+              <select name="plugin">
+                <option value="">普通 Team Channel</option>
+                {{range .AvailableRoomPlugins}}
+                  <option value="{{.ConfigValue}}"{{if eq $.ChannelConfig.Plugin .ConfigValue}} selected{{end}}>{{.Name}} ({{.ID}})</option>
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <span>Theme</span>
+              <select name="theme">
+                <option value="">default</option>
+                {{range .AvailableRoomThemes}}
+                  <option value="{{.ID}}"{{if eq $.ChannelConfig.Theme .ID}} selected{{end}}>{{.Name}} ({{.ID}})</option>
+                {{end}}
+              </select>
+            </label>
+            <label class="team-form-wide">
+              <span>Agent Onboarding</span>
+              <textarea name="agent_onboarding" rows="3" placeholder="进入房间前团队成员应该先做什么">{{.ChannelConfig.AgentOnboarding}}</textarea>
+            </label>
+            <label class="team-form-wide">
+              <span>Room Rules（每行一条）</span>
+              <textarea name="rules" rows="4" placeholder="先写结论，再写风险，再写动作">{{range .ChannelConfig.Rules}}{{.}}
+{{end}}</textarea>
+            </label>
+            <div class="team-form-actions team-form-wide">
+              <button class="button-link" type="submit">保存 Room 配置</button>
+              <button class="button-link button-link-muted" type="submit" name="action" value="clear">清空 Room 配置</button>
+            </div>
+          </form>
         </section>
         <section class="panel panel-inline">
           <div class="panel-head">

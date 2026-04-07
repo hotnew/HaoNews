@@ -70,6 +70,8 @@ type teamPageData struct {
 	RecentMessageItems  []teamMessagePreview
 	RecentChangeItems   []teamChangePreview
 	DashboardAlerts     []string
+	RoomEntries         []teamRoomEntry
+	AvailableRoomThemes []teamRoomThemeSummary
 	SummaryStats        []newsplugin.SummaryStat
 }
 
@@ -112,6 +114,45 @@ type teamChannelConfigSummary struct {
 	AgentOnboarding string    `json:"agent_onboarding,omitempty"`
 	Rules           []string  `json:"rules,omitempty"`
 	UpdatedAt       time.Time `json:"updated_at,omitempty"`
+}
+
+type teamRoomEntry struct {
+	ChannelID           string    `json:"channel_id"`
+	Plugin              string    `json:"plugin,omitempty"`
+	PluginID            string    `json:"plugin_id,omitempty"`
+	Theme               string    `json:"theme,omitempty"`
+	Configured          bool      `json:"configured"`
+	ChannelPath         string    `json:"channel_path,omitempty"`
+	RoomWebPath         string    `json:"room_web_path,omitempty"`
+	RoomAPIPath         string    `json:"room_api_path,omitempty"`
+	ConfigAPIPath       string    `json:"config_api_path,omitempty"`
+	AgentOnboarding     string    `json:"agent_onboarding,omitempty"`
+	RuleCount           int       `json:"rule_count"`
+	UpdatedAt           time.Time `json:"updated_at,omitempty"`
+	ChannelTitle        string    `json:"channel_title,omitempty"`
+	ChannelDescription  string    `json:"channel_description,omitempty"`
+	ChannelHidden       bool      `json:"channel_hidden,omitempty"`
+	ChannelMessageCount int       `json:"channel_message_count,omitempty"`
+}
+
+type teamRoomThemeSummary struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Version      string   `json:"version"`
+	Description  string   `json:"description,omitempty"`
+	Overrides    []string `json:"overrides,omitempty"`
+	PreviewClass string   `json:"preview_class,omitempty"`
+}
+
+type teamRoomPluginSummary struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Version       string   `json:"version"`
+	ConfigValue   string   `json:"config_value"`
+	Description   string   `json:"description,omitempty"`
+	MinTeamVer    string   `json:"min_team_version,omitempty"`
+	MessageKinds  []string `json:"message_kinds,omitempty"`
+	ArtifactKinds []string `json:"artifact_kinds,omitempty"`
 }
 
 type teamMembersPageData struct {
@@ -288,21 +329,28 @@ type teamSearchResultView struct {
 }
 
 type teamChannelPageData struct {
-	Project        string
-	Version        string
-	PageNav        []newsplugin.NavItem
-	NodeStatus     newsplugin.NodeStatus
-	Now            time.Time
-	Team           teamcore.Info
-	Channel        teamcore.ChannelSummary
-	ChannelID      string
-	Channels       []teamcore.ChannelSummary
-	Messages       []teamcore.Message
-	Tasks          []teamcore.Task
-	Artifacts      []teamcore.Artifact
-	ChannelConfig  teamcore.ChannelConfig
-	RelatedHistory []teamcore.ChangeEvent
-	SummaryStats   []newsplugin.SummaryStat
+	Project              string
+	Version              string
+	PageNav              []newsplugin.NavItem
+	NodeStatus           newsplugin.NodeStatus
+	Now                  time.Time
+	Team                 teamcore.Info
+	Channel              teamcore.ChannelSummary
+	ChannelID            string
+	ViewMode             string
+	Channels             []teamcore.ChannelSummary
+	Messages             []teamcore.Message
+	Tasks                []teamcore.Task
+	Artifacts            []teamcore.Artifact
+	ChannelConfig        teamcore.ChannelConfig
+	RoomEntry            teamRoomEntry
+	CurrentRoomPlugin    teamRoomPluginSummary
+	CurrentRoomTheme     teamRoomThemeSummary
+	AvailableRoomPlugins []teamRoomPluginSummary
+	AvailableRoomThemes  []teamRoomThemeSummary
+	ConfigNotice         string
+	RelatedHistory       []teamcore.ChangeEvent
+	SummaryStats         []newsplugin.SummaryStat
 }
 
 type teamTasksPageData struct {

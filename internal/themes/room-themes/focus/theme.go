@@ -1,4 +1,4 @@
-package minimal
+package focus
 
 import (
 	"embed"
@@ -18,19 +18,19 @@ func New() *Theme {
 }
 
 func (t *Theme) ID() string {
-	return "minimal"
+	return "focus"
 }
 
 func (t *Theme) Manifest() roomthemes.Manifest {
 	manifest, err := roomthemes.LoadManifestJSON(roomthemeJSON)
 	if err != nil {
 		return roomthemes.Manifest{
-			ID:           "minimal",
-			Name:         "Minimal",
+			ID:           "focus",
+			Name:         "Focus",
 			Version:      "1.0.0",
-			Description:  "Minimal channel theme",
+			Description:  "Focused workbench theme",
 			Overrides:    []string{"room_channel.html", "channel_item.html"},
-			PreviewClass: "compact",
+			PreviewClass: "workbench",
 		}
 	}
 	return manifest

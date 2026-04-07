@@ -15,10 +15,20 @@ h1, h2 { font-size: 16px; margin: 8px 0; }
 .structured { background: #f0f0f0; padding: 8px; margin: 4px 0; white-space: pre-wrap; font-size: 13px; overflow-x: auto; }
 .onboarding { background: #eff6ff; border-left: 3px solid #2563eb; padding: 8px 12px; margin: 12px 0; }
 .rules { background: #f0fdf4; border-left: 3px solid #059669; padding: 8px 12px; margin: 12px 0; }
+.links { margin: 12px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+.links a { color: #2563eb; text-decoration: none; }
 </style>
 </head>
 <body>
 <h1>[{{.Team.TeamID}}] {{.Team.Title}} / #{{.Channel.ChannelID}} {{.Channel.Title}}</h1>
+
+<div class="links">
+  <a href="{{.RoomEntry.ChannelPath}}">返回频道</a>
+  <a href="{{.RoomEntry.ChannelPath}}?view=channel">频道工作台</a>
+  <a href="{{.RoomEntry.ConfigAPIPath}}">配置 JSON</a>
+  {{if .RoomEntry.RoomWebPath}}<a href="{{.RoomEntry.RoomWebPath}}">进入房间</a>{{end}}
+  {{if .RoomEntry.RoomAPIPath}}<a href="{{.RoomEntry.RoomAPIPath}}">房间 API</a>{{end}}
+</div>
 
 {{if .ChannelConfig.AgentOnboarding}}
 <div class="onboarding">

@@ -1,0 +1,11 @@
+{{define "channel_item.html"}}
+<article class="focus-item">
+  <div class="focus-item-meta">
+    {{if .MessageType}}<span class="focus-kind">{{.MessageType}}</span>{{end}}
+    {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Format "2006-01-02 15:04"}}</span>{{end}}
+    {{if .AuthorAgentID}}<span>{{.AuthorAgentID}}</span>{{end}}
+  </div>
+  {{if .Content}}<p class="focus-item-content">{{.Content}}</p>{{end}}
+  {{if .StructuredData}}<pre class="focus-item-structured">{{structuredJSON .StructuredData}}</pre>{{end}}
+</article>
+{{end}}

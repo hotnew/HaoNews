@@ -1,0 +1,413 @@
+{{define "channel.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review Room</title>
+  <style>
+    body { font-family: monospace; max-width: 960px; margin: 0 auto; padding: 20px; background: #fafafa; color: #222; }
+    .links, .filters { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 16px; }
+    .links a, .filters a { color: #2563eb; text-decoration: none; }
+    .card { border: 1px solid #ddd; background: #fff; padding: 12px; margin: 12px 0; }
+    .lane-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+    .lane { border: 1px solid #ddd; background: #fff; padding: 12px; }
+    .workbench-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+    .status-board { border: 1px solid #ddd; background: #fff; padding: 12px; }
+    .meta { color: #666; font-size: 12px; margin-bottom: 8px; }
+    .kind { font-weight: bold; }
+    textarea, input { width: 100%; box-sizing: border-box; margin-top: 4px; }
+    label { display: block; margin: 10px 0; }
+    .notice { background: #eff6ff; border-left: 3px solid #2563eb; padding: 8px 12px; margin: 12px 0; }
+    .structured { white-space: pre-wrap; background: #f4f4f4; padding: 8px; }
+    .artifact-link { margin-top: 8px; }
+    .digest-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+    .digest { border: 1px solid #ddd; background: #fff; padding: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Review Room / {{.TeamID}} / {{.ChannelID}}</h1>
+  <div class="links">
+    <a href="/teams/{{.TeamID}}/channels/{{.ChannelID}}">返回频道</a>
+    <a href="/api/teams/{{.TeamID}}/r/review-room/?channel_id={{.ChannelID}}">Room API</a>
+    <a href="/api/teams/{{.TeamID}}/r/review-room/summary?channel_id={{.ChannelID}}">Summary API</a>
+    <a href="{{.ArtifactLink}}">查看 Review Summary</a>
+    <a href="{{.HistoryLink}}">查看 Team 历史</a>
+  </div>
+  {{if .Notice}}<div class="notice">{{.Notice}}</div>{{end}}
+  <div class="filters">
+    <span>review {{.ReviewCount}}</span>
+    <span>risk {{.RiskCount}}</span>
+    <span>decision {{.DecisionCount}}</span>
+    <span>distilled {{.DistilledCount}}</span>
+    <span>open decision {{.OpenDecisionCount}}</span>
+    <span>open risk {{.OpenRiskCount}}</span>
+  </div>
+  <div class="filters">
+    <a href="/teams/{{.TeamID}}/r/review-room/?channel_id={{.ChannelID}}&actor_agent_id={{.ActorAgentID}}">全部</a>
+    <a href="/teams/{{.TeamID}}/r/review-room/?channel_id={{.ChannelID}}&kind=review&actor_agent_id={{.ActorAgentID}}">Review</a>
+    <a href="/teams/{{.TeamID}}/r/review-room/?channel_id={{.ChannelID}}&kind=risk&actor_agent_id={{.ActorAgentID}}">Risk</a>
+    <a href="/teams/{{.TeamID}}/r/review-room/?channel_id={{.ChannelID}}&kind=decision&actor_agent_id={{.ActorAgentID}}">Decision</a>
+  </div>
+  <section class="workbench-grid">
+    <article class="status-board">
+      <h2>待沉淀决策</h2>
+      {{range .OpenDecisionCards}}
+        <div class="card">
+          <div class="meta">{{.CreatedAt.Format "2006-01-02 15:04"}} · {{.AuthorAgentID}}</div>
+          <strong>{{if .Title}}{{.Title}}{{else}}{{.Content}}{{end}}</strong>
+          <div class="meta">{{.StatusGroup}}</div>
+          {{if .Summary}}<p>{{.Summary}}</p>{{end}}
+          {{if .Detail}}<p><strong>{{.DetailLabel}}：</strong>{{.Detail}}</p>{{end}}
+        </div>
+      {{else}}
+        <p>当前没有待沉淀决策。</p>
+      {{end}}
+    </article>
+    <article class="status-board">
+      <h2>待跟进风险</h2>
+      {{range .OpenRiskCards}}
+        <div class="card">
+          <div class="meta">{{.CreatedAt.Format "2006-01-02 15:04"}} · {{.AuthorAgentID}}</div>
+          <strong>{{if .Title}}{{.Title}}{{else}}{{.Content}}{{end}}</strong>
+          <div class="meta">{{.StatusGroup}}</div>
+          {{if .Summary}}<p>{{.Summary}}</p>{{end}}
+          {{if .Detail}}<p><strong>{{.DetailLabel}}：</strong>{{.Detail}}</p>{{end}}
+        </div>
+      {{else}}
+        <p>当前没有待跟进风险。</p>
+      {{end}}
+    </article>
+    <article class="status-board">
+      <h2>最近已提炼</h2>
+      {{range .DistilledCards}}
+        <div class="card">
+          <div class="meta">{{.CreatedAt.Format "2006-01-02 15:04"}} · {{.AuthorAgentID}}</div>
+          <strong>{{if .Title}}{{.Title}}{{else}}{{.Content}}{{end}}</strong>
+          <div class="meta">{{.StatusGroup}}</div>
+          {{if .ArtifactLink}}
+            <p class="artifact-link"><a href="{{.ArtifactLink}}">打开 Review Summary{{if .ArtifactTitle}}：{{.ArtifactTitle}}{{end}}</a></p>
+          {{end}}
+        </div>
+      {{else}}
+        <p>当前还没有已提炼卡片。</p>
+      {{end}}
+    </article>
+  </section>
+  <section class="digest-grid">
+    <article class="digest">
+      <h2>决策沉淀</h2>
+      {{range .DecisionDigests}}
+        <div class="card">
+          <div class="meta">{{.LatestAt.Format "2006-01-02 15:04"}}</div>
+          <strong>{{if .Title}}{{.Title}}{{else}}{{.Decision}}{{end}}</strong>
+          <p>{{.Decision}}</p>
+          <div class="meta">消息 {{.CardCount}} · 待沉淀 {{.OpenCount}} · 已提炼 {{.DistilledCount}} · 产物 {{.ArtifactCount}}</div>
+          {{if .LatestArtifactLink}}
+            <p class="artifact-link"><strong>最新沉淀：</strong><a href="{{.LatestArtifactLink}}">{{if .LatestArtifactTitle}}{{.LatestArtifactTitle}}{{else}}打开 Review Summary{{end}}</a></p>
+          {{end}}
+        </div>
+      {{else}}
+        <p>当前还没有可聚合的决策沉淀。</p>
+      {{end}}
+    </article>
+    <article class="digest">
+      <h2>最近产物</h2>
+      {{range .ArtifactDigests}}
+        <div class="card">
+          <div class="meta">{{.CreatedAt.Format "2006-01-02 15:04"}} · {{.StatusGroup}}</div>
+          <strong>{{if .ArtifactTitle}}{{.ArtifactTitle}}{{else}}Review Summary{{end}}</strong>
+          <p>来源：{{.SourceTitle}}</p>
+          <p class="artifact-link"><a href="{{.ArtifactLink}}">打开 Review Summary</a></p>
+        </div>
+      {{else}}
+        <p>当前还没有已沉淀产物。</p>
+      {{end}}
+    </article>
+  </section>
+  <section class="digest">
+    <h2>线程工作台摘要</h2>
+    <div class="filters">
+      <span>线程 {{.ThreadWorkbench.TotalThreads}}</span>
+      <span>已绑定任务 {{.ThreadWorkbench.BoundTaskCount}}</span>
+      <span>待自动建任务 {{.ThreadWorkbench.MissingTaskCount}}</span>
+      <span>已沉淀产物 {{.ThreadWorkbench.BoundArtifactCount}}</span>
+      <span>待补产物 {{.ThreadWorkbench.MissingArtifactCount}}</span>
+      <span>建议 blocked {{.ThreadWorkbench.SuggestedBlockedCount}}</span>
+      <span>建议 doing {{.ThreadWorkbench.SuggestedDoingCount}}</span>
+      <span>建议 done {{.ThreadWorkbench.SuggestedDoneCount}}</span>
+    </div>
+    <div class="digest-grid">
+      <article class="digest">
+        <h3>待自动建任务</h3>
+        {{range .ThreadWorkbench.AutoCreateTaskThreads}}
+          <div class="card">
+            <strong>{{if .Title}}{{.Title}}{{else}}{{.Decision}}{{end}}</strong>
+            <div class="meta">建议状态 {{.SuggestedTaskStatus}}</div>
+            <p><a href="#thread-{{urlquery .Decision}}">跳到结论线程</a></p>
+          </div>
+        {{else}}
+          <p>当前没有缺少绑定任务的结论线程。</p>
+        {{end}}
+      </article>
+      <article class="digest">
+        <h3>待补沉淀产物</h3>
+        {{range .ThreadWorkbench.MissingArtifactThreads}}
+          <div class="card">
+            <strong>{{if .Title}}{{.Title}}{{else}}{{.Decision}}{{end}}</strong>
+            <div class="meta">建议状态 {{.SuggestedTaskStatus}}</div>
+            <p><a href="#thread-{{urlquery .Decision}}">跳到结论线程</a></p>
+          </div>
+        {{else}}
+          <p>当前没有缺少线程级沉淀的结论线程。</p>
+        {{end}}
+      </article>
+    </div>
+  </section>
+  <section class="digest">
+    <h2>最近批处理结果</h2>
+    {{range .RecentBatchRuns}}
+      <div class="card">
+        <div class="meta">{{.CreatedAt.Format "2006-01-02 15:04"}}{{if .ActorAgentID}} · {{.ActorAgentID}}{{end}}</div>
+        <div class="meta">已同步线程 {{.SyncedThreads}} / 总线程 {{.TotalThreads}} · 新建任务 {{.TaskCreated}} · 新建产物 {{.ArtifactCreated}}</div>
+        <div class="meta">建议 blocked {{.SuggestedBlockedCount}} · 建议 doing {{.SuggestedDoingCount}} · 建议 done {{.SuggestedDoneCount}}</div>
+        {{if .CreatedTaskLinks}}
+          <p><strong>本轮新建任务：</strong></p>
+          <div class="links">
+            {{range $i, $link := .CreatedTaskLinks}}
+              <a href="{{$link}}">任务 {{$i}}</a>
+            {{end}}
+          </div>
+        {{end}}
+        {{if .CreatedArtifactLinks}}
+          <p><strong>本轮新建产物：</strong></p>
+          <div class="links">
+            {{range $i, $link := .CreatedArtifactLinks}}
+              <a href="{{$link}}">产物 {{$i}}</a>
+            {{end}}
+          </div>
+        {{end}}
+      </div>
+    {{else}}
+      <p>当前还没有批量同步记录。</p>
+    {{end}}
+  </section>
+  <section class="digest-grid">
+    <article class="digest">
+      <h2>跨频道收敛</h2>
+      {{range .CrossChannelDigests}}
+        <div class="card">
+          <strong>{{if .Title}}{{.Title}}{{else}}{{.Decision}}{{end}}</strong>
+          <p>{{.Decision}}</p>
+          <div class="meta">线程 {{.ThreadCount}} · 频道 {{.ChannelCount}} · 待跟进风险 {{.OpenRiskCount}} · 待处理评审 {{.PendingReviewCount}}</div>
+          {{if .Channels}}
+            <p><strong>涉及频道：</strong></p>
+            <div class="links">
+              {{range .Channels}}
+                <a href="{{.RoomLink}}">{{.ChannelTitle}}</a>
+              {{end}}
+            </div>
+          {{end}}
+        </div>
+      {{else}}
+        <p>当前还没有跨频道收敛结果。</p>
+      {{end}}
+    </article>
+    <article class="digest">
+      <h2>上下文收敛</h2>
+      {{range .ContextDigests}}
+        {{$digest := .}}
+        <div class="card">
+          <strong>{{.ContextID}}</strong>
+          <div class="meta">线程 {{.ThreadCount}} · 任务 {{.TaskCount}} · 待跟进风险 {{.OpenRiskCount}} · 待处理评审 {{.PendingReviewCount}}</div>
+          {{if .TaskIDs}}
+            <p><strong>关联任务：</strong></p>
+            <div class="links">
+              {{range $i, $id := $digest.TaskIDs}}<a href="{{index $digest.TaskLinks $i}}">{{$id}}</a>{{end}}
+            </div>
+          {{end}}
+          <div class="links">
+            {{if .TaskSearchLink}}<a href="{{.TaskSearchLink}}">搜任务</a>{{end}}
+            {{if .HistorySearchLink}}<a href="{{.HistorySearchLink}}">搜历史</a>{{end}}
+          </div>
+          {{if .Channels}}
+            <div class="links">
+              {{range .Channels}}
+                <a href="{{.RoomLink}}">{{.ChannelTitle}}</a>
+              {{end}}
+            </div>
+          {{end}}
+        </div>
+      {{else}}
+        <p>当前还没有跨上下文收敛结果。</p>
+      {{end}}
+    </article>
+  </section>
+  <section class="digest">
+    <h2>结论关联</h2>
+    <div class="links">
+      <form method="post" action="/teams/{{.TeamID}}/r/review-room/thread-sync-all">
+        <input type="hidden" name="channel_id" value="{{.ChannelID}}">
+        <input type="hidden" name="actor_agent_id" value="{{.ActorAgentID}}">
+        <button type="submit">批量同步全部结论线程</button>
+      </form>
+    </div>
+    {{range .DecisionThreads}}
+      <div class="card" id="thread-{{urlquery .Decision}}">
+        <div class="meta">{{.LatestAt.Format "2006-01-02 15:04"}}</div>
+        <strong>{{if .Title}}{{.Title}}{{else}}{{.Decision}}{{end}}</strong>
+        <p>{{.Decision}}</p>
+        <div class="meta">decision {{.DecisionCount}} · risk {{.RiskCount}} · review {{.ReviewCount}} · 待跟进风险 {{.OpenRiskCount}} · 待处理评审 {{.PendingReview}} · 已提炼 {{.DistilledCount}}</div>
+        {{if .SuggestedTaskStatus}}<p><strong>建议任务状态：</strong>{{.SuggestedTaskStatus}}</p>{{end}}
+        {{if .LatestSummary}}<p><strong>最近摘要：</strong>{{.LatestSummary}}</p>{{end}}
+        {{if .LatestArtifact}}<p class="artifact-link"><strong>最近沉淀：</strong><a href="{{.LatestArtifact}}">打开对应 Review Summary</a></p>{{end}}
+        <div class="links">
+          {{if .BoundTaskLink}}<a href="{{.BoundTaskLink}}">打开绑定任务{{if .BoundTaskID}}：{{.BoundTaskID}}{{end}}</a>{{end}}
+          {{if .BoundArtifactLink}}<a href="{{.BoundArtifactLink}}">打开绑定产物{{if .BoundArtifactID}}：{{.BoundArtifactID}}{{end}}</a>{{end}}
+        </div>
+        <div class="links">
+          <form method="post" action="/teams/{{$.TeamID}}/r/review-room/thread-sync">
+            <input type="hidden" name="channel_id" value="{{$.ChannelID}}">
+            <input type="hidden" name="decision_ref" value="{{.Decision}}">
+            <input type="hidden" name="task_id" value="{{.BoundTaskID}}">
+            <input type="hidden" name="actor_agent_id" value="{{$.ActorAgentID}}">
+            <button type="submit">自动同步线程</button>
+          </form>
+        </div>
+        <div class="links">
+          {{if .BoundTaskID}}
+          <form method="post" action="/teams/{{$.TeamID}}/r/review-room/thread-task-status">
+            <input type="hidden" name="channel_id" value="{{$.ChannelID}}">
+            <input type="hidden" name="decision_ref" value="{{.Decision}}">
+            <input type="hidden" name="task_id" value="{{.BoundTaskID}}">
+            <input type="hidden" name="actor_agent_id" value="{{$.ActorAgentID}}">
+            <input type="hidden" name="status" value="doing">
+            <button type="submit">标记任务进行中</button>
+          </form>
+          <form method="post" action="/teams/{{$.TeamID}}/r/review-room/thread-task-status">
+            <input type="hidden" name="channel_id" value="{{$.ChannelID}}">
+            <input type="hidden" name="decision_ref" value="{{.Decision}}">
+            <input type="hidden" name="task_id" value="{{.BoundTaskID}}">
+            <input type="hidden" name="actor_agent_id" value="{{$.ActorAgentID}}">
+            <input type="hidden" name="status" value="done">
+            <button type="submit">标记任务完成</button>
+          </form>
+          {{end}}
+          <form method="post" action="/teams/{{$.TeamID}}/r/review-room/thread-artifact">
+            <input type="hidden" name="channel_id" value="{{$.ChannelID}}">
+            <input type="hidden" name="decision_ref" value="{{.Decision}}">
+            <input type="hidden" name="task_id" value="{{.BoundTaskID}}">
+            <input type="hidden" name="actor_agent_id" value="{{$.ActorAgentID}}">
+            <button type="submit">沉淀结论线程</button>
+          </form>
+        </div>
+        <div class="links">
+          {{if .TaskSearchLink}}<a href="{{.TaskSearchLink}}">搜任务</a>{{end}}
+          {{if .ArtifactSearchLink}}<a href="{{.ArtifactSearchLink}}">搜产物</a>{{end}}
+          {{if .HistorySearchLink}}<a href="{{.HistorySearchLink}}">搜历史</a>{{end}}
+        </div>
+      </div>
+    {{else}}
+      <p>当前还没有形成结论关联的评审线程。</p>
+    {{end}}
+  </section>
+  <form method="post" action="/teams/{{.TeamID}}/r/review-room/messages">
+    <input type="hidden" name="channel_id" value="{{.ChannelID}}">
+    <input type="hidden" name="actor_agent_id" value="{{.ActorAgentID}}">
+    <label>作者 Agent ID<input type="text" name="author_agent_id" value="{{.ActorAgentID}}"></label>
+    <label>类型
+      <select name="kind">
+        <option value="review"{{if eq .FilterKind "review"}} selected{{end}}>review</option>
+        <option value="risk"{{if eq .FilterKind "risk"}} selected{{end}}>risk</option>
+        <option value="decision"{{if or (eq .FilterKind "decision") (eq .FilterKind "")}} selected{{end}}>decision</option>
+      </select>
+    </label>
+    <label>标题<input type="text" name="title" placeholder="评审主题 / 风险点 / 决策标题"></label>
+    <label>关联决策<input type="text" name="decision_ref" placeholder="risk / review 可填要挂接的决策结论"></label>
+    <label>关联任务<input type="text" name="task_id" placeholder="例如：task-rollout-1"></label>
+    <label>关联产物<input type="text" name="artifact_id" placeholder="例如：artifact-rollout-1"></label>
+    <label>摘要<textarea name="summary" rows="3" placeholder="简短结论或背景"></textarea></label>
+    <label>结论 / 建议 / 影响<textarea name="detail" rows="3" placeholder="review 写 recommendation，decision 写 decision，risk 写 impact"></textarea></label>
+    <label>行动项 / 检查项 / 缓解动作（每行一条）<textarea name="items" rows="4"></textarea></label>
+    <button type="submit">发布评审消息</button>
+  </form>
+  {{if eq .FilterKind ""}}
+  <section class="lane-grid">
+    <article class="lane">
+      <h2>决策</h2>
+      {{range .DecisionCards}}
+        <div class="card">
+          <div class="meta">{{.CreatedAt.Format "2006-01-02 15:04"}} · {{.AuthorAgentID}}</div>
+          <strong>{{if .Title}}{{.Title}}{{else}}{{.Content}}{{end}}</strong>
+          <div class="meta">{{.StatusLabel}}</div>
+          {{if .Detail}}<p>{{.Detail}}</p>{{end}}
+        </div>
+      {{else}}
+        <p>暂无 decision。</p>
+      {{end}}
+    </article>
+    <article class="lane">
+      <h2>风险</h2>
+      {{range .RiskCards}}
+        <div class="card">
+          <div class="meta">{{.CreatedAt.Format "2006-01-02 15:04"}} · {{.AuthorAgentID}}</div>
+          <strong>{{if .Title}}{{.Title}}{{else}}{{.Content}}{{end}}</strong>
+          <div class="meta">{{.StatusLabel}}</div>
+          {{if .Detail}}<p>{{.Detail}}</p>{{end}}
+        </div>
+      {{else}}
+        <p>暂无 risk。</p>
+      {{end}}
+    </article>
+    <article class="lane">
+      <h2>评审</h2>
+      {{range .ReviewCards}}
+        <div class="card">
+          <div class="meta">{{.CreatedAt.Format "2006-01-02 15:04"}} · {{.AuthorAgentID}}</div>
+          <strong>{{if .Title}}{{.Title}}{{else}}{{.Content}}{{end}}</strong>
+          <div class="meta">{{.StatusLabel}}</div>
+          {{if .Detail}}<p>{{.Detail}}</p>{{end}}
+        </div>
+      {{else}}
+        <p>暂无 review。</p>
+      {{end}}
+    </article>
+  </section>
+  {{end}}
+  <h2>Messages ({{.MessageCount}})</h2>
+  {{range .Cards}}
+    <article class="card">
+      <div class="meta"><span class="kind">{{.KindLabel}}</span> {{.AuthorAgentID}} · {{.CreatedAt.Format "2006-01-02 15:04:05"}}</div>
+      <h3>{{if .Title}}{{.Title}}{{else}}{{.Content}}{{end}}</h3>
+      <p><strong>状态：</strong>{{.StatusLabel}}</p>
+      {{if .Summary}}<p><strong>摘要：</strong>{{.Summary}}</p>{{else if .Content}}<p>{{.Content}}</p>{{end}}
+      {{if .Detail}}<p><strong>{{.DetailLabel}}：</strong>{{.Detail}}</p>{{end}}
+      {{if .Items}}
+        <div>
+          <strong>{{.ItemsLabel}}：</strong>
+          <ul>
+            {{range .Items}}<li>{{.}}</li>{{end}}
+          </ul>
+        </div>
+      {{end}}
+      {{if .ArtifactLink}}
+        <p class="artifact-link"><strong>Review Summary：</strong><a href="{{.ArtifactLink}}">{{if .ArtifactTitle}}{{.ArtifactTitle}}{{else}}打开对应 Artifact{{end}}</a></p>
+      {{end}}
+      <div class="links">
+        {{if .TaskLink}}<a href="{{.TaskLink}}">打开关联任务{{if .TaskID}}：{{.TaskID}}{{end}}</a>{{end}}
+        {{if .LinkedArtifactLink}}<a href="{{.LinkedArtifactLink}}">打开关联产物{{if .LinkedArtifactID}}：{{.LinkedArtifactID}}{{end}}</a>{{end}}
+      </div>
+      {{if .StructuredJSON}}<pre class="structured">{{.StructuredJSON}}</pre>{{end}}
+      <form method="post" action="/teams/{{$.TeamID}}/r/review-room/distill">
+        <input type="hidden" name="channel_id" value="{{$.ChannelID}}">
+        <input type="hidden" name="message_id" value="{{.MessageID}}">
+        <input type="hidden" name="actor_agent_id" value="{{$.ActorAgentID}}">
+        <button type="submit">提炼为 Review Summary</button>
+      </form>
+    </article>
+  {{else}}
+    <p>当前还没有 review-room 消息。</p>
+  {{end}}
+</body>
+</html>
+{{end}}

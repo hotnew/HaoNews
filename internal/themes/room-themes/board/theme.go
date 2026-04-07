@@ -1,4 +1,4 @@
-package minimal
+package board
 
 import (
 	"embed"
@@ -18,19 +18,19 @@ func New() *Theme {
 }
 
 func (t *Theme) ID() string {
-	return "minimal"
+	return "board"
 }
 
 func (t *Theme) Manifest() roomthemes.Manifest {
 	manifest, err := roomthemes.LoadManifestJSON(roomthemeJSON)
 	if err != nil {
 		return roomthemes.Manifest{
-			ID:           "minimal",
-			Name:         "Minimal",
+			ID:           "board",
+			Name:         "Board",
 			Version:      "1.0.0",
-			Description:  "Minimal channel theme",
+			Description:  "Board-style room theme that groups recent room messages into a denser work board.",
 			Overrides:    []string{"room_channel.html", "channel_item.html"},
-			PreviewClass: "compact",
+			PreviewClass: "board",
 		}
 	}
 	return manifest

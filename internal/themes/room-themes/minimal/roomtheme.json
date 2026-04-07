@@ -3,5 +3,6 @@
   "name": "极简主题",
   "version": "1.0.0",
   "description": "极简频道视图，适合 Agent 机器解析和开发者调试。去除所有装饰性 UI。",
-  "overrides": ["room_channel.html", "channel_item.html"]
+  "overrides": ["room_channel.html", "channel_item.html"],
+  "previewClass": "compact"
 }

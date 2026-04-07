@@ -15,7 +15,10 @@ import (
 	newsplugin "hao.news/internal/plugins/haonews"
 	"hao.news/internal/plugins/haonewsteam/roomplugin"
 	"hao.news/internal/plugins/haonewsteam/rooms/planexchange"
+	"hao.news/internal/plugins/haonewsteam/rooms/reviewroom"
 	roomthemes "hao.news/internal/themes/room-themes"
+	roomboard "hao.news/internal/themes/room-themes/board"
+	roomfocus "hao.news/internal/themes/room-themes/focus"
 	roomminimal "hao.news/internal/themes/room-themes/minimal"
 )
 
@@ -55,7 +58,10 @@ func (Plugin) Build(_ context.Context, cfg apphost.Config, theme apphost.WebThem
 	}
 	registry := roomplugin.NewRegistry()
 	registry.MustRegister(planexchange.New())
+	registry.MustRegister(reviewroom.New())
 	themeRegistry := roomthemes.NewRegistry()
+	themeRegistry.MustRegister(roomboard.New())
+	themeRegistry.MustRegister(roomfocus.New())
 	themeRegistry.MustRegister(roomminimal.New())
 	if !strings.HasSuffix(filepathBase(os.Args[0]), ".test") {
 		startTeamWorkspaceWarmup(ctx, app, store)
@@ -198,7 +204,7 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 			return
 		}
 		if len(parts) == 1 {
-			handleTeam(app, store, teamID, w, r)
+			handleTeam(app, store, themeRegistry, teamID, w, r)
 			return
 		}
 		if len(parts) == 2 && parts[1] == "tasks" {
@@ -334,13 +340,22 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 			handleTeamChannelHide(store, teamID, channelID, w, r)
 			return
 		}
+		if len(parts) == 5 && parts[1] == "channels" && parts[3] == "config" && parts[4] == "update" && r.Method == http.MethodPost {
+			channelID := normalizeTeamChannel(parts[2])
+			if channelID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			handleTeamChannelConfigUpdate(store, roomRegistry, themeRegistry, teamID, channelID, w, r)
+			return
+		}
 		if len(parts) == 3 && parts[1] == "channels" {
 			channelID := normalizeTeamChannel(parts[2])
 			if channelID == "" {
 				http.NotFound(w, r)
 				return
 			}
-			handleTeamChannel(app, store, themeRegistry, teamID, channelID, w, r)
+			handleTeamChannel(app, store, roomRegistry, themeRegistry, teamID, channelID, w, r)
 			return
 		}
 		if len(parts) == 5 && parts[1] == "channels" && parts[3] == "messages" && parts[4] == "create" && r.Method == http.MethodPost {
@@ -410,7 +425,7 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 				http.NotFound(w, r)
 				return
 			}
-			handleAPITeamChannel(store, teamID, channelID, w, r)
+			handleAPITeamChannel(store, roomRegistry, themeRegistry, teamID, channelID, w, r)
 			return
 		}
 		if len(parts) == 4 && parts[1] == "channels" && parts[3] == "config" {

@@ -1,0 +1,8 @@
+{
+  "id": "focus",
+  "name": "Focus",
+  "version": "1.0.0",
+  "description": "A denser room theme that surfaces onboarding, rules, and recent messages in a focused workbench layout.",
+  "overrides": ["room_channel.html", "channel_item.html"],
+  "previewClass": "workbench"
+}

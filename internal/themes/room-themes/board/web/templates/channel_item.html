@@ -1,0 +1,11 @@
+{{define "channel_item.html"}}
+<article style="border:1px solid #d7dfef;border-radius:10px;padding:10px;margin:10px 0;background:#f8fbff;">
+  <div style="font-size:12px;color:#64748b;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+    {{if .MessageType}}<span style="font-weight:bold;text-transform:uppercase;color:#1d4ed8;">{{.MessageType}}</span>{{end}}
+    {{if .CreatedAt.IsZero}}{{else}}<span>{{.CreatedAt.Format "2006-01-02 15:04"}}</span>{{end}}
+    {{if .AuthorAgentID}}<span>{{.AuthorAgentID}}</span>{{end}}
+  </div>
+  {{if .Content}}<div style="margin:6px 0 8px;">{{.Content}}</div>{{end}}
+  {{if .StructuredData}}<pre style="background:#eef4ff;padding:8px;white-space:pre-wrap;overflow-x:auto;">{{structuredJSON .StructuredData}}</pre>{{end}}
+</article>
+{{end}}

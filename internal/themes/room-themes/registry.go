@@ -16,11 +16,12 @@ type Theme interface {
 }
 
 type Manifest struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Version     string   `json:"version"`
-	Description string   `json:"description,omitempty"`
-	Overrides   []string `json:"overrides,omitempty"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Version      string   `json:"version"`
+	Description  string   `json:"description,omitempty"`
+	Overrides    []string `json:"overrides,omitempty"`
+	PreviewClass string   `json:"previewClass,omitempty"`
 }
 
 func LoadManifestJSON(data []byte) (Manifest, error) {
@@ -86,5 +87,29 @@ func (r *Registry) IDs() []string {
 		out = append(out, id)
 	}
 	sort.Strings(out)
+	return out
+}
+
+func (r *Registry) All() []Theme {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ids := make([]string, 0, len(r.themes))
+	for id := range r.themes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]Theme, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, r.themes[id])
+	}
+	return out
+}
+
+func (r *Registry) Manifests() []Manifest {
+	themes := r.All()
+	out := make([]Manifest, 0, len(themes))
+	for _, theme := range themes {
+		out = append(out, theme.Manifest())
+	}
 	return out
 }

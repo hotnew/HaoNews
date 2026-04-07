@@ -207,3 +207,77 @@ func TestLoadCachedSyncQueueRefs(t *testing.T) {
 		t.Fatalf("queue refs = %#v", refs)
 	}
 }
+
+func TestCacheSyncAnnouncementTrimsToMaxAnnouncements(t *testing.T) {
+	mini, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run error = %v", err)
+	}
+	defer mini.Close()
+
+	rc, err := NewRedisClient(RedisConfig{
+		Enabled:          true,
+		Addr:             mini.Addr(),
+		KeyPrefix:        "haonews-test-",
+		MaxAnnouncements: 2,
+	})
+	if err != nil {
+		t.Fatalf("NewRedisClient error = %v", err)
+	}
+	defer rc.Close()
+
+	first := SyncAnnouncement{
+		InfoHash:  "1111111111111111111111111111111111111111",
+		Ref:       "magnet:?xt=urn:btih:1111111111111111111111111111111111111111",
+		Title:     "first",
+		Channel:   "news",
+		Topics:    []string{"world"},
+		CreatedAt: "2026-04-01T10:00:00Z",
+	}
+	second := SyncAnnouncement{
+		InfoHash:  "2222222222222222222222222222222222222222",
+		Ref:       "magnet:?xt=urn:btih:2222222222222222222222222222222222222222",
+		Title:     "second",
+		Channel:   "news",
+		Topics:    []string{"world"},
+		CreatedAt: "2026-04-01T10:01:00Z",
+	}
+	third := SyncAnnouncement{
+		InfoHash:  "3333333333333333333333333333333333333333",
+		Ref:       "magnet:?xt=urn:btih:3333333333333333333333333333333333333333",
+		Title:     "third",
+		Channel:   "news",
+		Topics:    []string{"world"},
+		CreatedAt: "2026-04-01T10:02:00Z",
+	}
+	for _, item := range []SyncAnnouncement{first, second, third} {
+		if err := cacheSyncAnnouncement(context.Background(), rc, item); err != nil {
+			t.Fatalf("cacheSyncAnnouncement(%s) error = %v", item.Title, err)
+		}
+	}
+
+	indexMembers, err := rc.client.ZRange(context.Background(), syncAnnouncementIndexRedisKey(rc), 0, -1).Result()
+	if err != nil {
+		t.Fatalf("ZRange(index) error = %v", err)
+	}
+	if len(indexMembers) != 2 {
+		t.Fatalf("index members len = %d, members=%#v", len(indexMembers), indexMembers)
+	}
+	if indexMembers[0] != second.InfoHash || indexMembers[1] != third.InfoHash {
+		t.Fatalf("index members = %#v", indexMembers)
+	}
+
+	if ok, err := rc.client.Exists(context.Background(), syncAnnouncementRedisKey(rc, first.InfoHash)).Result(); err != nil {
+		t.Fatalf("Exists(first) error = %v", err)
+	} else if ok != 0 {
+		t.Fatalf("expected first announcement key to be trimmed")
+	}
+
+	channelMembers, err := rc.client.ZRevRange(context.Background(), syncChannelRedisKey(rc, "news"), 0, -1).Result()
+	if err != nil {
+		t.Fatalf("ZRevRange(channel) error = %v", err)
+	}
+	if len(channelMembers) != 2 || channelMembers[0] != third.InfoHash || channelMembers[1] != second.InfoHash {
+		t.Fatalf("channel members after trim = %#v", channelMembers)
+	}
+}

@@ -1,0 +1,8 @@
+{
+  "id": "board",
+  "name": "Board",
+  "version": "1.0.0",
+  "description": "Board-style room theme that groups onboarding, rules, and recent room cards into a compact planning surface.",
+  "overrides": ["room_channel.html", "channel_item.html"],
+  "previewClass": "board"
+}

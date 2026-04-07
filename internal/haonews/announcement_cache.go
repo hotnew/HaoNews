@@ -68,6 +68,13 @@ func syncQueueRedisKey(rc *RedisClient, queuePath string) string {
 	return rc.Key("sync", "queue", "refs", token)
 }
 
+func syncAnnouncementIndexRedisKey(rc *RedisClient) string {
+	if rc == nil {
+		return ""
+	}
+	return rc.Key("sync", "meta", "ann", "index")
+}
+
 func syncAnnouncementScore(announcement SyncAnnouncement) float64 {
 	createdAt := strings.TrimSpace(announcement.CreatedAt)
 	if createdAt != "" {
@@ -104,6 +111,10 @@ func cacheSyncAnnouncement(ctx context.Context, rc *RedisClient, announcement Sy
 	score := syncAnnouncementScore(announcement)
 	pipe := rc.client.TxPipeline()
 	pipe.Set(ctx, key, body, ttl)
+	if indexKey := syncAnnouncementIndexRedisKey(rc); indexKey != "" {
+		pipe.ZAdd(ctx, indexKey, redis.Z{Score: score, Member: announcement.InfoHash})
+		pipe.Expire(ctx, indexKey, ttl)
+	}
 	if channelKey := syncChannelRedisKey(rc, announcement.Channel); channelKey != "" {
 		pipe.ZAdd(ctx, channelKey, redis.Z{Score: score, Member: announcement.InfoHash})
 		pipe.Expire(ctx, channelKey, ttl)
@@ -115,7 +126,10 @@ func cacheSyncAnnouncement(ctx context.Context, rc *RedisClient, announcement Sy
 		}
 	}
 	_, err = pipe.Exec(ctx)
-	return err
+	if err != nil {
+		return err
+	}
+	return trimCachedSyncAnnouncements(ctx, rc)
 }
 
 func cacheSyncQueueRef(ctx context.Context, rc *RedisClient, queuePath string, ref SyncRef) error {
@@ -245,4 +259,113 @@ func loadCachedSyncAnnouncementsByIndex(ctx context.Context, rc *RedisClient, in
 		out = append(out, normalizeAnnouncement(announcement))
 	}
 	return out, nil
+}
+
+func trimCachedSyncAnnouncements(ctx context.Context, rc *RedisClient) error {
+	if rc == nil || !rc.Enabled() {
+		return nil
+	}
+	cfg := rc.Config().Normalized()
+	if cfg.MaxAnnouncements <= 0 {
+		return nil
+	}
+	indexKey := syncAnnouncementIndexRedisKey(rc)
+	if strings.TrimSpace(indexKey) == "" {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	count, err := rc.client.ZCard(ctx, indexKey).Result()
+	if err != nil || count <= int64(cfg.MaxAnnouncements) {
+		return err
+	}
+	excess := count - int64(cfg.MaxAnnouncements)
+	oldest, err := rc.client.ZRange(ctx, indexKey, 0, excess-1).Result()
+	if err != nil {
+		return err
+	}
+	if len(oldest) == 0 {
+		return nil
+	}
+	return removeCachedAnnouncementsByInfoHashes(ctx, rc, oldest)
+}
+
+func removeCachedAnnouncementsByInfoHashes(ctx context.Context, rc *RedisClient, infoHashes []string) error {
+	if rc == nil || !rc.Enabled() || len(infoHashes) == 0 {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	keys := make([]string, 0, len(infoHashes))
+	for _, infoHash := range infoHashes {
+		if key := syncAnnouncementRedisKey(rc, infoHash); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	values, err := rc.client.MGet(ctx, keys...).Result()
+	if err != nil {
+		return err
+	}
+	pipe := rc.client.TxPipeline()
+	indexKey := syncAnnouncementIndexRedisKey(rc)
+	for i, infoHash := range infoHashes {
+		infoHash = normalizeInfoHash(infoHash)
+		if infoHash == "" {
+			continue
+		}
+		if indexKey != "" {
+			pipe.ZRem(ctx, indexKey, infoHash)
+		}
+		if key := syncAnnouncementRedisKey(rc, infoHash); key != "" {
+			pipe.Del(ctx, key)
+		}
+		if i >= len(values) || values[i] == nil {
+			continue
+		}
+		announcement, ok := decodeCachedAnnouncement(values[i])
+		if !ok {
+			continue
+		}
+		if channelKey := syncChannelRedisKey(rc, announcement.Channel); channelKey != "" {
+			pipe.ZRem(ctx, channelKey, infoHash)
+		}
+		for _, topic := range announcement.Topics {
+			if topicKey := syncTopicRedisKey(rc, topic); topicKey != "" {
+				pipe.ZRem(ctx, topicKey, infoHash)
+			}
+		}
+	}
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+func decodeCachedAnnouncement(raw any) (SyncAnnouncement, bool) {
+	var announcement SyncAnnouncement
+	switch value := raw.(type) {
+	case string:
+		if err := json.Unmarshal([]byte(value), &announcement); err != nil {
+			return SyncAnnouncement{}, false
+		}
+	case []byte:
+		if err := json.Unmarshal(value, &announcement); err != nil {
+			return SyncAnnouncement{}, false
+		}
+	default:
+		body, err := json.Marshal(value)
+		if err != nil {
+			return SyncAnnouncement{}, false
+		}
+		if err := json.Unmarshal(body, &announcement); err != nil {
+			return SyncAnnouncement{}, false
+		}
+	}
+	if strings.TrimSpace(announcement.InfoHash) == "" {
+		return SyncAnnouncement{}, false
+	}
+	return normalizeAnnouncement(announcement), true
 }

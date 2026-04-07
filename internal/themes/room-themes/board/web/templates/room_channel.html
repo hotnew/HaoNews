@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>{{.Team.Title}} — {{.Channel.Title}} (board)</title>
+<style>
+body { font-family: monospace; max-width: 1120px; margin: 0 auto; padding: 20px; background: #f5f7fb; color: #172033; }
+.hero { display: grid; grid-template-columns: 1.7fr 1fr; gap: 16px; margin-bottom: 18px; }
+.hero-card, .side-card, .board-column { background: #fff; border: 1px solid #d7dfef; border-radius: 12px; padding: 14px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05); }
+.hero h1 { margin: 0 0 8px; font-size: 22px; }
+.links, .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.links a { color: #1d4ed8; text-decoration: none; }
+.chip { border: 1px solid #c7d2fe; background: #eef2ff; border-radius: 999px; padding: 4px 9px; }
+.rules div { margin: 4px 0; }
+.board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.board-column h2 { margin: 0 0 10px; font-size: 15px; }
+</style>
+</head>
+<body>
+<section class="hero">
+  <div class="hero-card">
+    <h1>{{.Team.Title}} / #{{.Channel.ChannelID}}</h1>
+    <p>{{if .Channel.Description}}{{.Channel.Description}}{{else}}Board room view for Team channels that need a denser planning surface.{{end}}</p>
+    <div class="links">
+      <a href="{{.RoomEntry.ChannelPath}}">返回频道</a>
+      <a href="{{.RoomEntry.ChannelPath}}?view=channel">频道工作台</a>
+      {{if .RoomEntry.RoomWebPath}}<a href="{{.RoomEntry.RoomWebPath}}">进入房间</a>{{end}}
+      {{if .RoomEntry.RoomAPIPath}}<a href="{{.RoomEntry.RoomAPIPath}}">房间 API</a>{{end}}
+      <a href="{{.RoomEntry.ConfigAPIPath}}">配置 JSON</a>
+    </div>
+    <div class="chips">
+      <span class="chip">plugin={{if .ChannelConfig.Plugin}}{{.ChannelConfig.Plugin}}{{else}}none{{end}}</span>
+      <span class="chip">theme={{if .ChannelConfig.Theme}}{{.ChannelConfig.Theme}}{{else}}default{{end}}</span>
+      <span class="chip">messages={{len .Messages}}</span>
+    </div>
+  </div>
+  <div class="side-card">
+    {{if .ChannelConfig.AgentOnboarding}}<div><strong>Onboarding</strong><div>{{.ChannelConfig.AgentOnboarding}}</div></div>{{end}}
+    {{if .ChannelConfig.Rules}}
+      <div class="rules">
+        <strong>Rules</strong>
+        {{range .ChannelConfig.Rules}}<div>- {{.}}</div>{{end}}
+      </div>
+    {{end}}
+  </div>
+</section>
+
+<section class="board">
+  <article class="board-column">
+    <h2>最新卡片</h2>
+    {{range .Messages}}
+      {{template "channel_item.html" .}}
+    {{else}}
+      <p>频道暂无消息。</p>
+    {{end}}
+  </article>
+  <article class="board-column">
+    <h2>配置提示</h2>
+    <p>这个 Theme 更适合把房间当作结构化看板，而不是纯消息流。</p>
+    <p>建议配合房间工作台使用，优先查看带结构化字段的卡片。</p>
+  </article>
+  <article class="board-column">
+    <h2>快速入口</h2>
+    <div class="links">
+      <a href="{{.RoomEntry.ChannelPath}}?view=channel">频道工作台</a>
+      {{if .RoomEntry.RoomAPIPath}}<a href="{{.RoomEntry.RoomAPIPath}}">房间 API</a>{{end}}
+      <a href="{{.RoomEntry.ConfigAPIPath}}">配置 JSON</a>
+    </div>
+  </article>
+</section>
+</body>
+</html>

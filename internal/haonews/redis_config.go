@@ -3,33 +3,35 @@ package haonews
 import "time"
 
 type RedisConfig struct {
-	Enabled        bool   `json:"enabled"`
-	Addr           string `json:"addr"`
-	Password       string `json:"password,omitempty"`
-	DB             int    `json:"db"`
-	KeyPrefix      string `json:"key_prefix"`
-	MaxRetries     int    `json:"max_retries"`
-	DialTimeoutMs  int    `json:"dial_timeout_ms"`
-	ReadTimeoutMs  int    `json:"read_timeout_ms"`
-	WriteTimeoutMs int    `json:"write_timeout_ms"`
-	PoolSize       int    `json:"pool_size"`
-	MinIdleConns   int    `json:"min_idle_conns"`
-	HotWindowDays  int    `json:"hot_window_days"`
+	Enabled          bool   `json:"enabled"`
+	Addr             string `json:"addr"`
+	Password         string `json:"password,omitempty"`
+	DB               int    `json:"db"`
+	KeyPrefix        string `json:"key_prefix"`
+	MaxRetries       int    `json:"max_retries"`
+	DialTimeoutMs    int    `json:"dial_timeout_ms"`
+	ReadTimeoutMs    int    `json:"read_timeout_ms"`
+	WriteTimeoutMs   int    `json:"write_timeout_ms"`
+	PoolSize         int    `json:"pool_size"`
+	MinIdleConns     int    `json:"min_idle_conns"`
+	HotWindowDays    int    `json:"hot_window_days"`
+	MaxAnnouncements int    `json:"max_announcements"`
 }
 
 func DefaultRedisConfig() RedisConfig {
 	return RedisConfig{
-		Enabled:        false,
-		Addr:           "127.0.0.1:6379",
-		DB:             0,
-		KeyPrefix:      "haonews-",
-		MaxRetries:     3,
-		DialTimeoutMs:  3000,
-		ReadTimeoutMs:  2000,
-		WriteTimeoutMs: 2000,
-		PoolSize:       10,
-		MinIdleConns:   2,
-		HotWindowDays:  7,
+		Enabled:          false,
+		Addr:             "127.0.0.1:6379",
+		DB:               0,
+		KeyPrefix:        "haonews-",
+		MaxRetries:       3,
+		DialTimeoutMs:    3000,
+		ReadTimeoutMs:    2000,
+		WriteTimeoutMs:   2000,
+		PoolSize:         10,
+		MinIdleConns:     2,
+		HotWindowDays:    7,
+		MaxAnnouncements: 70000,
 	}
 }
 
@@ -62,6 +64,9 @@ func normalizeRedisConfig(cfg RedisConfig) RedisConfig {
 	}
 	if normalized.HotWindowDays <= 0 {
 		normalized.HotWindowDays = defaults.HotWindowDays
+	}
+	if normalized.MaxAnnouncements <= 0 {
+		normalized.MaxAnnouncements = defaults.MaxAnnouncements
 	}
 	return normalized
 }

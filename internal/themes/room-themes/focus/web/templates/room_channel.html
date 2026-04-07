@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>{{.Team.Title}} — {{.Channel.Title}} (focus)</title>
+<style>
+body { font-family: monospace; max-width: 1040px; margin: 0 auto; padding: 18px; background: #f6f4ef; color: #1f2937; }
+.hero { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+.hero-card, .side-card, .focus-item { background: #fffdf7; border: 1px solid #d9d1c7; padding: 14px; }
+.hero h1 { margin: 0 0 8px; font-size: 20px; }
+.links, .tags { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.links a { color: #0f766e; text-decoration: none; }
+.chip { border: 1px solid #d9d1c7; padding: 4px 8px; background: #faf8f2; }
+.rules { margin: 12px 0; }
+.rules div { margin: 4px 0; }
+.focus-list { display: grid; gap: 12px; }
+.focus-item-meta { color: #6b7280; font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.focus-kind { font-weight: bold; text-transform: uppercase; color: #92400e; }
+.focus-item-content { margin: 6px 0; }
+.focus-item-structured { background: #f3efe6; padding: 8px; white-space: pre-wrap; overflow-x: auto; }
+</style>
+</head>
+<body>
+<section class="hero">
+  <div class="hero-card">
+    <h1>{{.Team.Title}} / #{{.Channel.ChannelID}}</h1>
+    <p>{{if .Channel.Description}}{{.Channel.Description}}{{else}}Focused room workbench for configured Team channels.{{end}}</p>
+    <div class="links">
+      <a href="{{.RoomEntry.ChannelPath}}">返回频道</a>
+      <a href="{{.RoomEntry.ChannelPath}}?view=channel">频道工作台</a>
+      {{if .RoomEntry.RoomWebPath}}<a href="{{.RoomEntry.RoomWebPath}}">进入房间</a>{{end}}
+      {{if .RoomEntry.RoomAPIPath}}<a href="{{.RoomEntry.RoomAPIPath}}">房间 API</a>{{end}}
+      <a href="{{.RoomEntry.ConfigAPIPath}}">配置 JSON</a>
+    </div>
+    <div class="tags">
+      <span class="chip">plugin={{if .ChannelConfig.Plugin}}{{.ChannelConfig.Plugin}}{{else}}none{{end}}</span>
+      <span class="chip">theme={{if .ChannelConfig.Theme}}{{.ChannelConfig.Theme}}{{else}}default{{end}}</span>
+      <span class="chip">messages={{len .Messages}}</span>
+    </div>
+  </div>
+  <div class="side-card">
+    {{if .ChannelConfig.AgentOnboarding}}<div><strong>Onboarding</strong><div>{{.ChannelConfig.AgentOnboarding}}</div></div>{{end}}
+    {{if .ChannelConfig.Rules}}
+      <div class="rules">
+        <strong>Rules</strong>
+        {{range .ChannelConfig.Rules}}<div>- {{.}}</div>{{end}}
+      </div>
+    {{end}}
+  </div>
+</section>
+
+<section class="focus-list">
+  {{range .Messages}}
+    {{template "channel_item.html" .}}
+  {{else}}
+    <article class="focus-item"><p>频道暂无消息。</p></article>
+  {{end}}
+</section>
+</body>
+</html>

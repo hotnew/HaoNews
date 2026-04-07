@@ -200,6 +200,54 @@
         </section>
         <section class="panel panel-inline">
           <div class="panel-head">
+            <p class="panel-label">频道插件入口</p>
+            <span class="micro-copy">把已配置 Room Plugin 的频道直接作为工作房间进入；未配置的频道保持普通 Team Channel。</span>
+          </div>
+          {{if .AvailableRoomThemes}}
+            <div class="facet-list-inline team-inline-tags">
+              {{range .AvailableRoomThemes}}
+                <span class="filter-chip">theme={{.ID}} · {{.Name}}</span>
+              {{end}}
+            </div>
+          {{end}}
+          {{if .RoomEntries}}
+            <section class="directory-grid">
+              {{range .RoomEntries}}
+                <article class="directory-card">
+                  <div class="card-meta">
+                    <span>{{if .ChannelTitle}}{{.ChannelTitle}}{{else}}{{.ChannelID}}{{end}}</span>
+                    <span>{{if .Configured}}room-enabled{{else}}plain-channel{{end}}</span>
+                    {{if .Theme}}<span>{{.Theme}}</span>{{end}}
+                  </div>
+                  <h2>{{if .PluginID}}{{.PluginID}}{{else}}普通频道{{end}}</h2>
+                  <p class="micro-copy">
+                    {{if .Configured}}
+                      {{if .AgentOnboarding}}{{.AgentOnboarding}}{{else}}已配置 Room Plugin，可直接进入专属协作房间。{{end}}
+                    {{else}}
+                      当前还没有绑定 Room Plugin / Theme，继续按普通 Team Channel 使用。
+                    {{end}}
+                  </p>
+                  <div class="facet-list-inline team-inline-tags">
+                    <span class="filter-chip">channel={{.ChannelID}}</span>
+                    {{if .Plugin}}<span class="filter-chip">plugin={{.Plugin}}</span>{{end}}
+                    {{if .Theme}}<span class="filter-chip">theme={{.Theme}}</span>{{end}}
+                    {{if gt .RuleCount 0}}<span class="filter-chip">rules={{.RuleCount}}</span>{{end}}
+                  </div>
+                  <div class="team-card-links">
+                    <a href="{{.ChannelPath}}">打开频道</a>
+                    {{if .RoomWebPath}}<a href="{{.RoomWebPath}}">进入房间</a>{{end}}
+                    <a href="{{.ConfigAPIPath}}">配置 JSON</a>
+                    {{if .RoomAPIPath}}<a href="{{.RoomAPIPath}}">房间 API</a>{{end}}
+                  </div>
+                </article>
+              {{end}}
+            </section>
+          {{else}}
+            <p class="team-empty-note">当前还没有任何频道配置 Room Plugin。先给某个频道写入 `plugin/theme`，它就会出现在这里。</p>
+          {{end}}
+        </section>
+        <section class="panel panel-inline">
+          <div class="panel-head">
             <p class="panel-label">Team 摘要</p>
             <div class="story-links team-interface-links">
               <a href="/api/teams/{{.Team.TeamID}}/members">成员 JSON</a>

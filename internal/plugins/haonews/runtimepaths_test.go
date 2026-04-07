@@ -17,8 +17,8 @@ lan_peer=%s
 lan_peer=192.168.102.76
 lan_peer=192.168.102.75
 
-# Optional Redis hot cache. File storage remains authoritative.
-# redis_enabled=true
+# Optional Redis hot cache. Disabled by default; file storage remains authoritative.
+# redis_enabled=false
 # redis_addr=127.0.0.1:6379
 # redis_password=
 # redis_db=0
@@ -30,6 +30,7 @@ lan_peer=192.168.102.75
 # redis_pool_size=10
 # redis_min_idle_conns=2
 # redis_hot_window_days=7
+# redis_max_announcements=70000
 `, defaultLANPeer), nil
 }
 
@@ -154,7 +155,7 @@ func TestEnsureRuntimeLayoutCreatesDefaultConfigFiles(t *testing.T) {
 	if !strings.Contains(netText, "network_mode=lan\n") {
 		t.Fatalf("missing network_mode in net config: %q", netText)
 	}
-	if !strings.Contains(netText, "# redis_enabled=true") || !strings.Contains(netText, "# redis_key_prefix=haonews-") {
+	if !strings.Contains(netText, "# redis_enabled=false") || !strings.Contains(netText, "# redis_key_prefix=haonews-") || !strings.Contains(netText, "# redis_max_announcements=70000") {
 		t.Fatalf("missing redis cache comments in net config: %q", netText)
 	}
 	idData, err := os.ReadFile(networkIDPath)

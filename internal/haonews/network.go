@@ -69,8 +69,8 @@ libp2p_bootstrap=/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8S
 libp2p_rendezvous=latest.org/global
 libp2p_rendezvous=latest.org/world
 
-# Optional Redis hot cache. File storage remains authoritative.
-# redis_enabled=true
+# Optional Redis hot cache. Disabled by default; file storage remains authoritative.
+# redis_enabled=false
 # redis_addr=127.0.0.1:6379
 # redis_password=
 # redis_db=0
@@ -82,6 +82,7 @@ libp2p_rendezvous=latest.org/world
 # redis_pool_size=10
 # redis_min_idle_conns=2
 # redis_hot_window_days=7
+# redis_max_announcements=70000
 `, path, networkIDFileName, libp2pPort, libp2pPort, defaultLibP2PTransferMaxSize), nil
 }
 
@@ -190,7 +191,7 @@ func LoadNetworkBootstrapConfig(path string) (NetworkBootstrapConfig, error) {
 			cfg.LibP2PRendezvous = append(cfg.LibP2PRendezvous, value)
 		case "redis_enabled", "redis_addr", "redis_password", "redis_db", "redis_key_prefix",
 			"redis_max_retries", "redis_dial_timeout_ms", "redis_read_timeout_ms", "redis_write_timeout_ms",
-			"redis_pool_size", "redis_min_idle_conns", "redis_hot_window_days":
+			"redis_pool_size", "redis_min_idle_conns", "redis_hot_window_days", "redis_max_announcements":
 			applyRedisConfigValue(&cfg.Redis, key, value)
 		}
 	}
@@ -254,6 +255,10 @@ func applyRedisConfigValue(cfg *RedisConfig, key, value string) {
 	case "redis_hot_window_days":
 		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v > 0 {
 			cfg.HotWindowDays = v
+		}
+	case "redis_max_announcements":
+		if v, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && v > 0 {
+			cfg.MaxAnnouncements = v
 		}
 	}
 }

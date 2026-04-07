@@ -19,6 +19,8 @@ import (
 	corehaonews "hao.news/internal/haonews"
 	teamcore "hao.news/internal/haonews/team"
 	newsplugin "hao.news/internal/plugins/haonews"
+	"hao.news/internal/plugins/haonewsteam/roomplugin"
+	roomthemes "hao.news/internal/themes/room-themes"
 )
 
 func handleTeamIndex(app *newsplugin.App, store *teamcore.Store, w http.ResponseWriter, r *http.Request) {
@@ -64,23 +66,24 @@ func handleTeamIndex(app *newsplugin.App, store *teamcore.Store, w http.Response
 	}
 }
 
-func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+func handleTeam(app *newsplugin.App, store *teamcore.Store, themeRegistry *roomthemes.Registry, teamID string, w http.ResponseWriter, r *http.Request) {
 	info, err := store.LoadTeamCtx(r.Context(), teamID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	var (
-		members   []teamcore.Member
-		policy    teamcore.Policy
-		messages  []teamcore.Message
-		tasks     []teamcore.Task
-		artifacts []teamcore.Artifact
-		history   []teamcore.ChangeEvent
-		channels  []teamcore.ChannelSummary
-		conflicts []corehaonews.TeamSyncConflictRecord
-		webhooks  teamcore.WebhookDeliveryStatus
-		index     newsplugin.Index
+		members        []teamcore.Member
+		policy         teamcore.Policy
+		messages       []teamcore.Message
+		tasks          []teamcore.Task
+		artifacts      []teamcore.Artifact
+		history        []teamcore.ChangeEvent
+		channels       []teamcore.ChannelSummary
+		channelConfigs []teamcore.ChannelConfig
+		conflicts      []corehaonews.TeamSyncConflictRecord
+		webhooks       teamcore.WebhookDeliveryStatus
+		index          newsplugin.Index
 	)
 	g, _ := errgroup.WithContext(r.Context())
 	g.Go(func() error {
@@ -137,6 +140,14 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 			return err
 		}
 		channels = items
+		return nil
+	})
+	g.Go(func() error {
+		items, err := store.ListChannelConfigsCtx(r.Context(), teamID)
+		if err != nil {
+			return err
+		}
+		channelConfigs = items
 		return nil
 	})
 	g.Go(func() error {
@@ -201,6 +212,8 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 		RecentMessageItems:  buildTeamMessagePreviews(messages, 5),
 		RecentChangeItems:   buildTeamChangePreviews(history, 5),
 		DashboardAlerts:     buildTeamDashboardAlerts(policy, conflicts, webhooks),
+		RoomEntries:         buildTeamRoomEntries(info.TeamID, channels, channelConfigs),
+		AvailableRoomThemes: buildRoomThemeSummaries(themeRegistry),
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "成员", Value: formatTeamCount(countMembersByStatus(members, "active"))},
 			{Label: "频道", Value: formatTeamCount(len(channels))},
@@ -214,6 +227,77 @@ func handleTeam(app *newsplugin.App, store *teamcore.Store, teamID string, w htt
 	if err := app.Templates().ExecuteTemplate(w, "team_detail.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func buildRoomThemeSummaries(themeRegistry *roomthemes.Registry) []teamRoomThemeSummary {
+	if themeRegistry == nil {
+		return []teamRoomThemeSummary{}
+	}
+	manifests := themeRegistry.Manifests()
+	out := make([]teamRoomThemeSummary, 0, len(manifests))
+	for _, manifest := range manifests {
+		out = append(out, teamRoomThemeSummary{
+			ID:           manifest.ID,
+			Name:         manifest.Name,
+			Version:      manifest.Version,
+			Description:  manifest.Description,
+			Overrides:    append([]string(nil), manifest.Overrides...),
+			PreviewClass: manifest.PreviewClass,
+		})
+	}
+	return out
+}
+
+func buildRoomPluginSummaries(roomRegistry *roomplugin.Registry) []teamRoomPluginSummary {
+	if roomRegistry == nil {
+		return nil
+	}
+	manifests := roomRegistry.Manifests()
+	out := make([]teamRoomPluginSummary, 0, len(manifests))
+	for _, manifest := range manifests {
+		out = append(out, teamRoomPluginSummary{
+			ID:            manifest.ID,
+			Name:          manifest.Name,
+			Version:       manifest.Version,
+			ConfigValue:   roomPluginConfigValue(manifest),
+			Description:   manifest.Description,
+			MinTeamVer:    manifest.MinTeamVersion,
+			MessageKinds:  append([]string(nil), manifest.MessageKinds...),
+			ArtifactKinds: append([]string(nil), manifest.ArtifactKinds...),
+		})
+	}
+	return out
+}
+
+func roomPluginSummaryMap(roomRegistry *roomplugin.Registry) map[string]teamRoomPluginSummary {
+	items := buildRoomPluginSummaries(roomRegistry)
+	out := make(map[string]teamRoomPluginSummary, len(items))
+	for _, item := range items {
+		out[item.ID] = item
+		out[item.ConfigValue] = item
+	}
+	return out
+}
+
+func roomThemeSummaryMap(themeRegistry *roomthemes.Registry) map[string]teamRoomThemeSummary {
+	items := buildRoomThemeSummaries(themeRegistry)
+	out := make(map[string]teamRoomThemeSummary, len(items))
+	for _, item := range items {
+		out[item.ID] = item
+	}
+	return out
+}
+
+func roomPluginConfigValue(manifest roomplugin.Manifest) string {
+	version := strings.TrimSpace(manifest.Version)
+	if version == "" {
+		return manifest.ID
+	}
+	parts := strings.Split(version, ".")
+	if len(parts) >= 2 {
+		version = parts[0] + "." + parts[1]
+	}
+	return strings.TrimSpace(manifest.ID) + "@" + version
 }
 
 func clampTeamListLimit(raw string, fallback, max int) int {
@@ -653,6 +737,46 @@ func summarizeTeamChannelConfigs(configs []teamcore.ChannelConfig) []teamChannel
 		})
 	}
 	return out
+}
+
+func buildTeamRoomEntries(teamID string, channels []teamcore.ChannelSummary, configs []teamcore.ChannelConfig) []teamRoomEntry {
+	if len(channels) == 0 {
+		return []teamRoomEntry{}
+	}
+	configByChannel := make(map[string]teamcore.ChannelConfig, len(configs))
+	for _, cfg := range configs {
+		configByChannel[normalizeTeamChannel(cfg.ChannelID)] = cfg
+	}
+	out := make([]teamRoomEntry, 0, len(channels))
+	for _, channel := range channels {
+		cfg, ok := configByChannel[normalizeTeamChannel(channel.ChannelID)]
+		out = append(out, buildTeamRoomEntry(teamID, channel, cfg, ok))
+	}
+	return out
+}
+
+func buildTeamRoomEntry(teamID string, channel teamcore.ChannelSummary, cfg teamcore.ChannelConfig, configured bool) teamRoomEntry {
+	entry := teamRoomEntry{
+		ChannelID:           channel.ChannelID,
+		Plugin:              cfg.Plugin,
+		PluginID:            cfg.PluginID(),
+		Theme:               cfg.Theme,
+		Configured:          configured,
+		ChannelPath:         "/teams/" + teamID + "/channels/" + channel.ChannelID,
+		ConfigAPIPath:       "/api/teams/" + teamID + "/channels/" + channel.ChannelID + "/config",
+		AgentOnboarding:     cfg.AgentOnboarding,
+		RuleCount:           len(cfg.Rules),
+		UpdatedAt:           cfg.UpdatedAt,
+		ChannelTitle:        channel.Title,
+		ChannelDescription:  channel.Description,
+		ChannelHidden:       channel.Hidden,
+		ChannelMessageCount: channel.MessageCount,
+	}
+	if entry.PluginID != "" {
+		entry.RoomWebPath = "/teams/" + teamID + "/r/" + entry.PluginID + "/?channel_id=" + channel.ChannelID
+		entry.RoomAPIPath = "/api/teams/" + teamID + "/r/" + entry.PluginID + "/?channel_id=" + channel.ChannelID
+	}
+	return entry
 }
 
 func handleAPITeamHistory(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {

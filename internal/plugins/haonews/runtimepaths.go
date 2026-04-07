@@ -77,8 +77,8 @@ libp2p_bootstrap=/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8S
 libp2p_rendezvous=hao.news/global
 libp2p_rendezvous=hao.news/world
 
-# Optional Redis hot cache. File storage remains authoritative.
-# redis_enabled=true
+# Optional Redis hot cache. Disabled by default; file storage remains authoritative.
+# redis_enabled=false
 # redis_addr=127.0.0.1:6379
 # redis_password=
 # redis_db=0
@@ -90,6 +90,7 @@ libp2p_rendezvous=hao.news/world
 # redis_pool_size=10
 # redis_min_idle_conns=2
 # redis_hot_window_days=7
+# redis_max_announcements=70000
 `, networkIDFileName, libp2pPort, libp2pPort), nil
 }
 

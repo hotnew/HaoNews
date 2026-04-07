@@ -24,6 +24,7 @@ redis_write_timeout_ms=2600
 redis_pool_size=20
 redis_min_idle_conns=3
 redis_hot_window_days=9
+redis_max_announcements=321
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write net config: %v", err)
@@ -50,5 +51,8 @@ redis_hot_window_days=9
 	}
 	if cfg.Redis.HotWindowDays != 9 {
 		t.Fatalf("redis hot window = %d", cfg.Redis.HotWindowDays)
+	}
+	if cfg.Redis.MaxAnnouncements != 321 {
+		t.Fatalf("redis max announcements = %d", cfg.Redis.MaxAnnouncements)
 	}
 }

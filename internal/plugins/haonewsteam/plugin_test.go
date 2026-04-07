@@ -998,6 +998,540 @@ func TestPluginBuildConfiguresAndFiresTeamWebhook(t *testing.T) {
 	}
 }
 
+func TestPluginBuildServesReviewRoom(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	store, err := teamcore.OpenStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	teamRoot := filepath.Join(root, "store", "team", "review-room-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
+  "team_id":"review-room-team",
+  "title":"Review Room Team",
+  "owner_agent_id":"agent://pc75/live-bravo"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-bravo","role":"owner","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+	if err := store.AppendTaskCtx(context.Background(), "review-room-team", teamcore.Task{
+		TaskID:    "task-rollout-1",
+		ChannelID: "main",
+		ContextID: "ctx-rollout",
+		Title:     "Upgrade .74 from GitHub tag",
+		Status:    "open",
+		CreatedBy: "agent://pc75/live-bravo",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendTaskCtx error = %v", err)
+	}
+	if err := store.AppendTaskCtx(context.Background(), "review-room-team", teamcore.Task{
+		TaskID:    "task-rollout-2",
+		ChannelID: "research",
+		ContextID: "ctx-rollout",
+		Title:     "Validate room entry on research lane",
+		Status:    "open",
+		CreatedBy: "agent://pc75/live-bravo",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendTaskCtx research error = %v", err)
+	}
+	if err := store.SaveChannelConfig("review-room-team", teamcore.ChannelConfig{
+		ChannelID: "main",
+		Plugin:    "review-room@1.0",
+		Theme:     "minimal",
+	}); err != nil {
+		t.Fatalf("SaveChannelConfig error = %v", err)
+	}
+	if err := store.SaveChannelConfig("review-room-team", teamcore.ChannelConfig{
+		ChannelID: "research",
+		Plugin:    "review-room@1.0",
+		Theme:     "minimal",
+	}); err != nil {
+		t.Fatalf("SaveChannelConfig research error = %v", err)
+	}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/messages", strings.NewReader(`{
+  "channel_id":"main",
+  "author_agent_id":"agent://pc75/live-bravo",
+  "kind":"decision",
+  "content":"Accept the rollout path",
+  "structured_data":{
+    "kind":"decision",
+    "title":"Accept the rollout path",
+    "task_id":"task-rollout-1",
+    "summary":"Ship from .75, then upgrade .74 from GitHub tag",
+    "decision":"Proceed with GitHub-first rollout",
+    "next_steps":["tag release","upgrade .74","validate room entry"]
+  }
+}`))
+	postReq.RemoteAddr = "127.0.0.1:12345"
+	postReq.Header.Set("Content-Type", "application/json")
+	postRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusCreated {
+		t.Fatalf("review-room post status = %d, body = %s", postRec.Code, postRec.Body.String())
+	}
+	if !strings.Contains(postRec.Body.String(), `"status":"created"`) {
+		t.Fatalf("unexpected review-room post body: %q", postRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/teams/review-room-team/r/review-room/?channel_id=main&kind=decision", nil)
+	listRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("review-room list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	if !strings.Contains(listRec.Body.String(), `"message_type":"decision"`) && !strings.Contains(listRec.Body.String(), `"message_type": "decision"`) {
+		t.Fatalf("expected decision message in review-room list body, got %q", listRec.Body.String())
+	}
+
+	summaryReq := httptest.NewRequest(http.MethodGet, "/api/teams/review-room-team/r/review-room/summary?channel_id=main", nil)
+	summaryRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(summaryRec, summaryReq)
+	if summaryRec.Code != http.StatusOK {
+		t.Fatalf("review-room summary status = %d, body = %s", summaryRec.Code, summaryRec.Body.String())
+	}
+	if !strings.Contains(summaryRec.Body.String(), `"decision_count":1`) && !strings.Contains(summaryRec.Body.String(), `"decision_count": 1`) {
+		t.Fatalf("expected decision count in review-room summary body, got %q", summaryRec.Body.String())
+	}
+	if !strings.Contains(summaryRec.Body.String(), `"open_decision_count":1`) && !strings.Contains(summaryRec.Body.String(), `"open_decision_count": 1`) {
+		t.Fatalf("expected open decision count in review-room summary body, got %q", summaryRec.Body.String())
+	}
+	if !strings.Contains(summaryRec.Body.String(), `"open_decision_cards"`) {
+		t.Fatalf("expected grouped review-room cards in summary body, got %q", summaryRec.Body.String())
+	}
+	if !strings.Contains(summaryRec.Body.String(), `"decision_digests"`) {
+		t.Fatalf("expected decision digests in review-room summary body, got %q", summaryRec.Body.String())
+	}
+	if !strings.Contains(summaryRec.Body.String(), `"decision_threads"`) {
+		t.Fatalf("expected decision threads in review-room summary body, got %q", summaryRec.Body.String())
+	}
+	if !strings.Contains(summaryRec.Body.String(), `"thread_workbench"`) || !strings.Contains(summaryRec.Body.String(), `"total_threads":1`) && !strings.Contains(summaryRec.Body.String(), `"total_threads": 1`) {
+		t.Fatalf("expected thread workbench summary in review-room summary body, got %q", summaryRec.Body.String())
+	}
+
+	webReq := httptest.NewRequest(http.MethodGet, "/teams/review-room-team/r/review-room/?channel_id=main&kind=decision&actor_agent_id=agent://pc75/live-bravo", nil)
+	webRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(webRec, webReq)
+	if webRec.Code != http.StatusOK {
+		t.Fatalf("review-room web status = %d, body = %s", webRec.Code, webRec.Body.String())
+	}
+	if !strings.Contains(webRec.Body.String(), "Review Room") || !strings.Contains(webRec.Body.String(), "提炼为 Review Summary") || !strings.Contains(webRec.Body.String(), "Accept the rollout path") || !strings.Contains(webRec.Body.String(), "查看 Review Summary") || !strings.Contains(webRec.Body.String(), "Summary API") || !strings.Contains(webRec.Body.String(), "decision 1") || !strings.Contains(webRec.Body.String(), "状态：") || !strings.Contains(webRec.Body.String(), "待沉淀") || !strings.Contains(webRec.Body.String(), "决策：") || !strings.Contains(webRec.Body.String(), "Proceed with GitHub-first rollout") || !strings.Contains(webRec.Body.String(), "后续动作：") {
+		t.Fatalf("unexpected review-room web body: %q", webRec.Body.String())
+	}
+	if !strings.Contains(webRec.Body.String(), "待沉淀决策") || !strings.Contains(webRec.Body.String(), "待跟进风险") || !strings.Contains(webRec.Body.String(), "最近已提炼") {
+		t.Fatalf("expected review-room status workbench, got %q", webRec.Body.String())
+	}
+	if !strings.Contains(webRec.Body.String(), "决策沉淀") || !strings.Contains(webRec.Body.String(), "最近产物") {
+		t.Fatalf("expected review-room digest workbench, got %q", webRec.Body.String())
+	}
+	if !strings.Contains(webRec.Body.String(), "结论关联") || !strings.Contains(webRec.Body.String(), "关联决策") {
+		t.Fatalf("expected decision thread workbench, got %q", webRec.Body.String())
+	}
+
+	riskReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/messages", strings.NewReader(`{
+  "channel_id":"main",
+  "author_agent_id":"agent://pc75/live-bravo",
+  "kind":"risk",
+  "content":"Rollout key mismatch",
+  "structured_data":{
+    "kind":"risk",
+    "title":"Rollout key mismatch",
+    "decision_ref":"Proceed with GitHub-first rollout",
+    "artifact_id":"artifact-rollout-risk",
+    "summary":"Node key mismatch can block rollout",
+    "impact":"Remote upgrade may fail validation",
+    "mitigation":["verify peer id","re-run node validation"]
+  }
+}`))
+	riskReq.RemoteAddr = "127.0.0.1:12345"
+	riskReq.Header.Set("Content-Type", "application/json")
+	riskRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(riskRec, riskReq)
+	if riskRec.Code != http.StatusCreated {
+		t.Fatalf("review-room risk post status = %d, body = %s", riskRec.Code, riskRec.Body.String())
+	}
+
+	reviewReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/messages", strings.NewReader(`{
+  "channel_id":"main",
+  "author_agent_id":"agent://pc75/live-bravo",
+  "kind":"review",
+  "content":"Validate room entry after upgrade",
+  "structured_data":{
+    "kind":"review",
+    "title":"Validate room entry after upgrade",
+    "decision_ref":"Proceed with GitHub-first rollout",
+    "task_id":"task-rollout-1",
+    "summary":"Check room page after node upgrade",
+    "recommendation":"Open plan-exchange and review-room after upgrade",
+    "checklist":["open room page","verify theme","check channel config sync"]
+  }
+}`))
+	reviewReq.RemoteAddr = "127.0.0.1:12345"
+	reviewReq.Header.Set("Content-Type", "application/json")
+	reviewRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(reviewRec, reviewReq)
+	if reviewRec.Code != http.StatusCreated {
+		t.Fatalf("review-room review post status = %d, body = %s", reviewRec.Code, reviewRec.Body.String())
+	}
+
+	laneReq := httptest.NewRequest(http.MethodGet, "/teams/review-room-team/r/review-room/?channel_id=main&actor_agent_id=agent://pc75/live-bravo", nil)
+	laneRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(laneRec, laneReq)
+	if laneRec.Code != http.StatusOK {
+		t.Fatalf("review-room lane status = %d, body = %s", laneRec.Code, laneRec.Body.String())
+	}
+	if !strings.Contains(laneRec.Body.String(), ">决策</h2>") || !strings.Contains(laneRec.Body.String(), ">风险</h2>") || !strings.Contains(laneRec.Body.String(), ">评审</h2>") {
+		t.Fatalf("expected review-room lane summary, got %q", laneRec.Body.String())
+	}
+
+	messages, err := store.LoadMessages("review-room-team", "main", 20)
+	if err != nil {
+		t.Fatalf("LoadMessages error = %v", err)
+	}
+	if len(messages) == 0 || messages[0].MessageID == "" {
+		t.Fatalf("expected stored review-room message id, got %#v", messages)
+	}
+
+	distillReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/distill", strings.NewReader(`{
+  "channel_id":"main",
+  "message_id":"`+messages[0].MessageID+`",
+  "actor_agent_id":"agent://pc75/live-bravo"
+}`))
+	distillReq.RemoteAddr = "127.0.0.1:12345"
+	distillReq.Header.Set("Content-Type", "application/json")
+	distillRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(distillRec, distillReq)
+	if distillRec.Code != http.StatusCreated {
+		t.Fatalf("review-room distill status = %d, body = %s", distillRec.Code, distillRec.Body.String())
+	}
+	if !strings.Contains(distillRec.Body.String(), `"artifact_kind":"review-summary"`) {
+		t.Fatalf("unexpected review-room distill body: %q", distillRec.Body.String())
+	}
+
+	summaryAfterDistillReq := httptest.NewRequest(http.MethodGet, "/api/teams/review-room-team/r/review-room/summary?channel_id=main", nil)
+	summaryAfterDistillRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(summaryAfterDistillRec, summaryAfterDistillReq)
+	if summaryAfterDistillRec.Code != http.StatusOK {
+		t.Fatalf("review-room summary after distill status = %d, body = %s", summaryAfterDistillRec.Code, summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"distilled_count":1`) && !strings.Contains(summaryAfterDistillRec.Body.String(), `"distilled_count": 1`) {
+		t.Fatalf("expected distilled count in review-room summary body, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"open_decision_count":1`) && !strings.Contains(summaryAfterDistillRec.Body.String(), `"open_decision_count": 1`) {
+		t.Fatalf("expected open decision count to remain until the decision itself is distilled, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"distilled_cards"`) || !strings.Contains(summaryAfterDistillRec.Body.String(), `"ArtifactLink"`) {
+		t.Fatalf("expected distilled cards in review-room summary body, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"artifact_digests"`) {
+		t.Fatalf("expected artifact digests in review-room summary body, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"decision_threads"`) || !strings.Contains(summaryAfterDistillRec.Body.String(), `"risk_count":1`) || !strings.Contains(summaryAfterDistillRec.Body.String(), `"review_count":1`) {
+		t.Fatalf("expected decision thread aggregation after distill, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"bound_task_id":"task-rollout-1"`) && !strings.Contains(summaryAfterDistillRec.Body.String(), `"bound_task_id": "task-rollout-1"`) {
+		t.Fatalf("expected bound task id in decision thread aggregation, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"bound_artifact_id":"artifact-rollout-risk"`) && !strings.Contains(summaryAfterDistillRec.Body.String(), `"bound_artifact_id": "artifact-rollout-risk"`) {
+		t.Fatalf("expected bound artifact id in decision thread aggregation, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"task_search_link"`) || !strings.Contains(summaryAfterDistillRec.Body.String(), `"artifact_search_link"`) || !strings.Contains(summaryAfterDistillRec.Body.String(), `"history_search_link"`) {
+		t.Fatalf("expected team search links in decision thread aggregation, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"pending_review_count":0`) && !strings.Contains(summaryAfterDistillRec.Body.String(), `"pending_review_count": 0`) {
+		t.Fatalf("expected pending review count to drop after distill, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"latest_artifact_link"`) {
+		t.Fatalf("expected latest artifact link in decision thread after distill, got %q", summaryAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterDistillRec.Body.String(), `"thread_workbench"`) || (!strings.Contains(summaryAfterDistillRec.Body.String(), `"suggested_blocked_count":1`) && !strings.Contains(summaryAfterDistillRec.Body.String(), `"suggested_blocked_count": 1`)) {
+		t.Fatalf("expected thread workbench counts after distill, got %q", summaryAfterDistillRec.Body.String())
+	}
+
+	artifacts, err := store.LoadArtifacts("review-room-team", 20)
+	if err != nil {
+		t.Fatalf("LoadArtifacts error = %v", err)
+	}
+	if len(artifacts) == 0 || artifacts[0].Kind != "review-summary" {
+		t.Fatalf("expected review-summary artifact, got %#v", artifacts)
+	}
+
+	threadSyncReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/thread-sync", strings.NewReader(`{
+  "channel_id":"main",
+  "decision_ref":"Proceed with GitHub-first rollout",
+  "task_id":"task-rollout-1",
+  "actor_agent_id":"agent://pc75/live-bravo"
+}`))
+	threadSyncReq.RemoteAddr = "127.0.0.1:12345"
+	threadSyncReq.Header.Set("Content-Type", "application/json")
+	threadSyncRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(threadSyncRec, threadSyncReq)
+	if threadSyncRec.Code != http.StatusOK {
+		t.Fatalf("review-room thread sync status = %d, body = %s", threadSyncRec.Code, threadSyncRec.Body.String())
+	}
+	if !strings.Contains(threadSyncRec.Body.String(), `"status":"synced"`) || !strings.Contains(threadSyncRec.Body.String(), `"task_status":"blocked"`) {
+		t.Fatalf("expected auto thread sync result body, got %q", threadSyncRec.Body.String())
+	}
+	taskAfterSync, err := store.LoadTaskCtx(context.Background(), "review-room-team", "task-rollout-1")
+	if err != nil {
+		t.Fatalf("LoadTaskCtx after sync error = %v", err)
+	}
+	if taskAfterSync.Status != "blocked" {
+		t.Fatalf("expected auto-synced task status blocked, got %#v", taskAfterSync)
+	}
+	artifactsAfterSync, err := store.LoadArtifacts("review-room-team", 20)
+	if err != nil {
+		t.Fatalf("LoadArtifacts after thread sync error = %v", err)
+	}
+	if len(artifactsAfterSync) < 2 {
+		t.Fatalf("expected second review-summary artifact after thread sync, got %#v", artifactsAfterSync)
+	}
+	foundDecisionArtifact := false
+	for _, artifact := range artifactsAfterSync {
+		if strings.HasPrefix(artifact.Title, "Review Summary:") && strings.Contains(strings.Join(artifact.Labels, ","), "source-decision:Proceed with GitHub-first rollout") {
+			foundDecisionArtifact = true
+			break
+		}
+	}
+	if !foundDecisionArtifact {
+		t.Fatalf("expected auto-synced thread artifact with source-decision label, got %#v", artifactsAfterSync)
+	}
+
+	taskActionReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/thread-task-status", strings.NewReader(`{
+  "channel_id":"main",
+  "decision_ref":"Proceed with GitHub-first rollout",
+  "task_id":"task-rollout-1",
+  "actor_agent_id":"agent://pc75/live-bravo",
+  "status":"doing"
+}`))
+	taskActionReq.RemoteAddr = "127.0.0.1:12345"
+	taskActionReq.Header.Set("Content-Type", "application/json")
+	taskActionRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(taskActionRec, taskActionReq)
+	if taskActionRec.Code != http.StatusOK {
+		t.Fatalf("review-room thread task status = %d, body = %s", taskActionRec.Code, taskActionRec.Body.String())
+	}
+	taskAfterAction, err := store.LoadTaskCtx(context.Background(), "review-room-team", "task-rollout-1")
+	if err != nil {
+		t.Fatalf("LoadTaskCtx error = %v", err)
+	}
+	if taskAfterAction.Status != "doing" {
+		t.Fatalf("expected bound task status doing, got %#v", taskAfterAction)
+	}
+
+	webAfterDistillReq := httptest.NewRequest(http.MethodGet, "/teams/review-room-team/r/review-room/?channel_id=main&actor_agent_id=agent://pc75/live-bravo", nil)
+	webAfterDistillRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(webAfterDistillRec, webAfterDistillReq)
+	if webAfterDistillRec.Code != http.StatusOK {
+		t.Fatalf("review-room web after distill status = %d, body = %s", webAfterDistillRec.Code, webAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(webAfterDistillRec.Body.String(), "打开 Review Summary") || !strings.Contains(webAfterDistillRec.Body.String(), "已提炼") {
+		t.Fatalf("expected artifact direct entry in review-room web body, got %q", webAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(webAfterDistillRec.Body.String(), "决策沉淀") || !strings.Contains(webAfterDistillRec.Body.String(), "最近产物") {
+		t.Fatalf("expected digest sections in review-room web body, got %q", webAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(webAfterDistillRec.Body.String(), "最近沉淀：") {
+		t.Fatalf("expected conclusion-level artifact link in review-room web body, got %q", webAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(webAfterDistillRec.Body.String(), "结论关联") || !strings.Contains(webAfterDistillRec.Body.String(), "待跟进风险 1") || !strings.Contains(webAfterDistillRec.Body.String(), "待处理评审 0") {
+		t.Fatalf("expected decision thread counts in review-room web body, got %q", webAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(webAfterDistillRec.Body.String(), "打开绑定任务") || !strings.Contains(webAfterDistillRec.Body.String(), "打开绑定产物") {
+		t.Fatalf("expected real task/artifact bindings in review-room web body, got %q", webAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(webAfterDistillRec.Body.String(), "自动同步线程") || !strings.Contains(webAfterDistillRec.Body.String(), "建议任务状态") || !strings.Contains(webAfterDistillRec.Body.String(), "blocked") {
+		t.Fatalf("expected auto sync controls in review-room web body, got %q", webAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(webAfterDistillRec.Body.String(), "标记任务进行中") || !strings.Contains(webAfterDistillRec.Body.String(), "标记任务完成") || !strings.Contains(webAfterDistillRec.Body.String(), "沉淀结论线程") {
+		t.Fatalf("expected thread action controls in review-room web body, got %q", webAfterDistillRec.Body.String())
+	}
+	if !strings.Contains(webAfterDistillRec.Body.String(), "搜任务") || !strings.Contains(webAfterDistillRec.Body.String(), "搜产物") || !strings.Contains(webAfterDistillRec.Body.String(), "搜历史") {
+		t.Fatalf("expected team mainline links in review-room web body, got %q", webAfterDistillRec.Body.String())
+	}
+
+	autoTaskReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/messages", strings.NewReader(`{
+  "channel_id":"main",
+  "author_agent_id":"agent://pc75/live-bravo",
+  "kind":"decision",
+  "content":"Create a follow-up workstream",
+  "structured_data":{
+    "kind":"decision",
+    "title":"Create a follow-up workstream",
+    "summary":"Split the rollout follow-up into a dedicated task",
+    "decision":"Open dedicated rollout follow-up"
+  }
+}`))
+	autoTaskReq.RemoteAddr = "127.0.0.1:12345"
+	autoTaskReq.Header.Set("Content-Type", "application/json")
+	autoTaskRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(autoTaskRec, autoTaskReq)
+	if autoTaskRec.Code != http.StatusCreated {
+		t.Fatalf("review-room auto task seed status = %d, body = %s", autoTaskRec.Code, autoTaskRec.Body.String())
+	}
+
+	autoSyncReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/thread-sync", strings.NewReader(`{
+  "channel_id":"main",
+  "decision_ref":"Open dedicated rollout follow-up",
+  "actor_agent_id":"agent://pc75/live-bravo"
+}`))
+	autoSyncReq.RemoteAddr = "127.0.0.1:12345"
+	autoSyncReq.Header.Set("Content-Type", "application/json")
+	autoSyncRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(autoSyncRec, autoSyncReq)
+	if autoSyncRec.Code != http.StatusOK {
+		t.Fatalf("review-room auto task sync status = %d, body = %s", autoSyncRec.Code, autoSyncRec.Body.String())
+	}
+	if !strings.Contains(autoSyncRec.Body.String(), `"task_created":"true"`) && !strings.Contains(autoSyncRec.Body.String(), `"task_created": "true"`) {
+		t.Fatalf("expected auto-created task in thread sync response, got %q", autoSyncRec.Body.String())
+	}
+	tasksAfterAutoSync, err := store.LoadTasksCtx(context.Background(), "review-room-team", 10)
+	if err != nil {
+		t.Fatalf("LoadTasksCtx after auto sync error = %v", err)
+	}
+	foundAutoTask := false
+	for _, task := range tasksAfterAutoSync {
+		if task.Title == "Create a follow-up workstream" {
+			foundAutoTask = true
+			break
+		}
+	}
+	if !foundAutoTask {
+		t.Fatalf("expected auto-created review-room task, got %#v", tasksAfterAutoSync)
+	}
+
+	batchSeedReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/messages", strings.NewReader(`{
+  "channel_id":"main",
+  "author_agent_id":"agent://pc75/live-bravo",
+  "kind":"decision",
+  "content":"Batch a second decision thread",
+  "structured_data":{
+    "kind":"decision",
+    "title":"Batch a second decision thread",
+    "summary":"Prepare the second follow-up branch",
+    "decision":"Prepare second rollout branch"
+  }
+}`))
+	batchSeedReq.RemoteAddr = "127.0.0.1:12345"
+	batchSeedReq.Header.Set("Content-Type", "application/json")
+	batchSeedRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(batchSeedRec, batchSeedReq)
+	if batchSeedRec.Code != http.StatusCreated {
+		t.Fatalf("review-room batch seed status = %d, body = %s", batchSeedRec.Code, batchSeedRec.Body.String())
+	}
+
+	batchSyncReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/thread-sync-all", strings.NewReader(`{
+  "channel_id":"main",
+  "actor_agent_id":"agent://pc75/live-bravo"
+}`))
+	batchSyncReq.RemoteAddr = "127.0.0.1:12345"
+	batchSyncReq.Header.Set("Content-Type", "application/json")
+	batchSyncRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(batchSyncRec, batchSyncReq)
+	if batchSyncRec.Code != http.StatusOK {
+		t.Fatalf("review-room batch sync status = %d, body = %s", batchSyncRec.Code, batchSyncRec.Body.String())
+	}
+	if !strings.Contains(batchSyncRec.Body.String(), `"synced_threads"`) || !strings.Contains(batchSyncRec.Body.String(), `"task_created"`) || !strings.Contains(batchSyncRec.Body.String(), `"artifact_created"`) {
+		t.Fatalf("expected batch sync summary body, got %q", batchSyncRec.Body.String())
+	}
+	if !strings.Contains(batchSyncRec.Body.String(), `"synced_threads":`) || !strings.Contains(batchSyncRec.Body.String(), `"task_created":`) || !strings.Contains(batchSyncRec.Body.String(), `"artifact_created":`) {
+		t.Fatalf("expected structured batch sync counters, got %q", batchSyncRec.Body.String())
+	}
+
+	summaryAfterBatchReq := httptest.NewRequest(http.MethodGet, "/api/teams/review-room-team/r/review-room/summary?channel_id=main", nil)
+	summaryAfterBatchRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(summaryAfterBatchRec, summaryAfterBatchReq)
+	if summaryAfterBatchRec.Code != http.StatusOK {
+		t.Fatalf("review-room summary after batch status = %d, body = %s", summaryAfterBatchRec.Code, summaryAfterBatchRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterBatchRec.Body.String(), `"recent_batch_runs"`) || !strings.Contains(summaryAfterBatchRec.Body.String(), `"synced_threads"`) || !strings.Contains(summaryAfterBatchRec.Body.String(), `"task_created"`) || !strings.Contains(summaryAfterBatchRec.Body.String(), `"artifact_created"`) {
+		t.Fatalf("expected recent batch runs in summary body, got %q", summaryAfterBatchRec.Body.String())
+	}
+	if !strings.Contains(summaryAfterBatchRec.Body.String(), `"created_task_ids"`) || !strings.Contains(summaryAfterBatchRec.Body.String(), `"created_artifact_ids"`) {
+		t.Fatalf("expected created task/artifact ids in recent batch runs, got %q", summaryAfterBatchRec.Body.String())
+	}
+
+	webAfterBatchReq := httptest.NewRequest(http.MethodGet, "/teams/review-room-team/r/review-room/?channel_id=main&actor_agent_id=agent://pc75/live-bravo", nil)
+	webAfterBatchRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(webAfterBatchRec, webAfterBatchReq)
+	if webAfterBatchRec.Code != http.StatusOK {
+		t.Fatalf("review-room web after batch status = %d, body = %s", webAfterBatchRec.Code, webAfterBatchRec.Body.String())
+	}
+	if !strings.Contains(webAfterBatchRec.Body.String(), "批量同步全部结论线程") {
+		t.Fatalf("expected batch sync control in review-room web body, got %q", webAfterBatchRec.Body.String())
+	}
+	if !strings.Contains(webAfterBatchRec.Body.String(), "线程工作台摘要") || !strings.Contains(webAfterBatchRec.Body.String(), "待自动建任务") || !strings.Contains(webAfterBatchRec.Body.String(), "待补沉淀产物") {
+		t.Fatalf("expected thread workbench panel in review-room web body, got %q", webAfterBatchRec.Body.String())
+	}
+	if !strings.Contains(webAfterBatchRec.Body.String(), "最近批处理结果") || !strings.Contains(webAfterBatchRec.Body.String(), "已同步线程") || !strings.Contains(webAfterBatchRec.Body.String(), "新建任务") || !strings.Contains(webAfterBatchRec.Body.String(), "新建产物") {
+		t.Fatalf("expected recent batch runs panel in review-room web body, got %q", webAfterBatchRec.Body.String())
+	}
+	if !strings.Contains(webAfterBatchRec.Body.String(), "本轮新建任务") || !strings.Contains(webAfterBatchRec.Body.String(), "本轮新建产物") {
+		t.Fatalf("expected created task/artifact links in review-room web body, got %q", webAfterBatchRec.Body.String())
+	}
+
+	researchDecisionReq := httptest.NewRequest(http.MethodPost, "/api/teams/review-room-team/r/review-room/messages", strings.NewReader(`{
+  "channel_id":"research",
+  "author_agent_id":"agent://pc75/live-bravo",
+  "kind":"decision",
+  "content":"Proceed with GitHub-first rollout",
+  "structured_data":{
+    "kind":"decision",
+    "title":"Research lane confirms rollout",
+    "task_id":"task-rollout-2",
+    "summary":"Research lane validates the same rollout decision",
+    "decision":"Proceed with GitHub-first rollout"
+  }
+}`))
+	researchDecisionReq.RemoteAddr = "127.0.0.1:12345"
+	researchDecisionReq.Header.Set("Content-Type", "application/json")
+	researchDecisionRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(researchDecisionRec, researchDecisionReq)
+	if researchDecisionRec.Code != http.StatusCreated {
+		t.Fatalf("research review-room decision status = %d, body = %s", researchDecisionRec.Code, researchDecisionRec.Body.String())
+	}
+
+	globalSummaryReq := httptest.NewRequest(http.MethodGet, "/api/teams/review-room-team/r/review-room/summary?channel_id=main", nil)
+	globalSummaryRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(globalSummaryRec, globalSummaryReq)
+	if globalSummaryRec.Code != http.StatusOK {
+		t.Fatalf("review-room global summary status = %d, body = %s", globalSummaryRec.Code, globalSummaryRec.Body.String())
+	}
+	globalSummaryBody := globalSummaryRec.Body.String()
+	if !strings.Contains(globalSummaryBody, `"cross_channel_digests"`) || (!strings.Contains(globalSummaryBody, `"channel_count":2`) && !strings.Contains(globalSummaryBody, `"channel_count": 2`)) {
+		t.Fatalf("expected cross-channel digests in summary body, got %q", globalSummaryBody)
+	}
+	if !strings.Contains(globalSummaryBody, `"context_digests"`) || !strings.Contains(globalSummaryBody, `"context_id":"ctx-rollout"`) && !strings.Contains(globalSummaryBody, `"context_id": "ctx-rollout"`) {
+		t.Fatalf("expected context digests in summary body, got %q", globalSummaryBody)
+	}
+
+	globalWebReq := httptest.NewRequest(http.MethodGet, "/teams/review-room-team/r/review-room/?channel_id=main&actor_agent_id=agent://pc75/live-bravo", nil)
+	globalWebRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(globalWebRec, globalWebReq)
+	if globalWebRec.Code != http.StatusOK {
+		t.Fatalf("review-room global web status = %d, body = %s", globalWebRec.Code, globalWebRec.Body.String())
+	}
+	globalWebBody := globalWebRec.Body.String()
+	if !strings.Contains(globalWebBody, "跨频道收敛") || !strings.Contains(globalWebBody, "上下文收敛") {
+		t.Fatalf("expected global digest panels in review-room web body, got %q", globalWebBody)
+	}
+	if !strings.Contains(globalWebBody, "research") || !strings.Contains(globalWebBody, "ctx-rollout") {
+		t.Fatalf("expected research channel and shared context in review-room web body, got %q", globalWebBody)
+	}
+}
+
 func TestPluginBuildServesEmptyTeamIndex(t *testing.T) {
 	t.Parallel()
 
@@ -1248,6 +1782,16 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 		t.Fatalf("expected channel config get body, got %q", channelConfigGetRec.Body.String())
 	}
 
+	channelAPIWithConfigReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/channels/research", nil)
+	channelAPIWithConfigRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(channelAPIWithConfigRec, channelAPIWithConfigReq)
+	if channelAPIWithConfigRec.Code != http.StatusOK {
+		t.Fatalf("channel api with config status = %d, body = %s", channelAPIWithConfigRec.Code, channelAPIWithConfigRec.Body.String())
+	}
+	if !strings.Contains(channelAPIWithConfigRec.Body.String(), `"room_plugin_id": "plan-exchange"`) || !strings.Contains(channelAPIWithConfigRec.Body.String(), `"room_theme_id": "minimal"`) || !strings.Contains(channelAPIWithConfigRec.Body.String(), `"channel_config_state": "configured"`) || !strings.Contains(channelAPIWithConfigRec.Body.String(), `"available_room_themes"`) || !strings.Contains(channelAPIWithConfigRec.Body.String(), `"available_room_plugins"`) {
+		t.Fatalf("expected team channel api to include room entry summary, got %q", channelAPIWithConfigRec.Body.String())
+	}
+
 	channelConfigsReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/channel-configs", nil)
 	channelConfigsRec := httptest.NewRecorder()
 	site.Handler.ServeHTTP(channelConfigsRec, channelConfigsReq)
@@ -1268,14 +1812,112 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 		t.Fatalf("expected team detail to include channel configs, got %q", teamDetailRec.Body.String())
 	}
 
+	teamDetailPageReq := httptest.NewRequest(http.MethodGet, "/teams/project-beta", nil)
+	teamDetailPageRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(teamDetailPageRec, teamDetailPageReq)
+	if teamDetailPageRec.Code != http.StatusOK {
+		t.Fatalf("team detail page status = %d, body = %s", teamDetailPageRec.Code, teamDetailPageRec.Body.String())
+	}
+	if !strings.Contains(teamDetailPageRec.Body.String(), "频道插件入口") || !strings.Contains(teamDetailPageRec.Body.String(), "进入房间") || !strings.Contains(teamDetailPageRec.Body.String(), "theme=minimal") {
+		t.Fatalf("expected team detail page to surface room plugin entry, got %q", teamDetailPageRec.Body.String())
+	}
+
 	channelThemeReq := httptest.NewRequest(http.MethodGet, "/teams/project-beta/channels/research", nil)
 	channelThemeRec := httptest.NewRecorder()
 	site.Handler.ServeHTTP(channelThemeRec, channelThemeReq)
 	if channelThemeRec.Code != http.StatusOK {
 		t.Fatalf("channel themed page status = %d, body = %s", channelThemeRec.Code, channelThemeRec.Body.String())
 	}
-	if !strings.Contains(channelThemeRec.Body.String(), "Agent Onboarding:") || !strings.Contains(channelThemeRec.Body.String(), "Use plan mode first.") || !strings.Contains(channelThemeRec.Body.String(), "Plugin:</strong> plan-exchange@1.0") {
+	if !strings.Contains(channelThemeRec.Body.String(), "Agent Onboarding:") || !strings.Contains(channelThemeRec.Body.String(), "Use plan mode first.") || !strings.Contains(channelThemeRec.Body.String(), "Plugin:</strong> plan-exchange@1.0") || !strings.Contains(channelThemeRec.Body.String(), "进入房间") {
 		t.Fatalf("expected minimal themed channel body, got %q", channelThemeRec.Body.String())
+	}
+
+	channelWorkbenchReq := httptest.NewRequest(http.MethodGet, "/teams/project-beta/channels/research?view=channel", nil)
+	channelWorkbenchRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(channelWorkbenchRec, channelWorkbenchReq)
+	if channelWorkbenchRec.Code != http.StatusOK {
+		t.Fatalf("channel workbench status = %d, body = %s", channelWorkbenchRec.Code, channelWorkbenchRec.Body.String())
+	}
+	if !strings.Contains(channelWorkbenchRec.Body.String(), "保存 Room 配置") || !strings.Contains(channelWorkbenchRec.Body.String(), "plan-exchange") || !strings.Contains(channelWorkbenchRec.Body.String(), "minimal") {
+		t.Fatalf("expected room config form in channel workbench, got %q", channelWorkbenchRec.Body.String())
+	}
+	if !strings.Contains(channelWorkbenchRec.Body.String(), "Focus (focus)") || !strings.Contains(channelWorkbenchRec.Body.String(), "Board (board)") {
+		t.Fatalf("expected focus and board theme options in channel workbench, got %q", channelWorkbenchRec.Body.String())
+	}
+
+	channelConfigForm := url.Values{}
+	channelConfigForm.Set("actor_agent_id", "agent://pc75/live-bravo")
+	channelConfigForm.Set("plugin", "review-room@1.0")
+	channelConfigForm.Set("theme", "minimal")
+	channelConfigForm.Set("agent_onboarding", "Review decisions before merge.")
+	channelConfigForm.Set("rules", "write risks first\nrecord final decision")
+	channelConfigPageReq := httptest.NewRequest(http.MethodPost, "/teams/project-beta/channels/research/config/update", strings.NewReader(channelConfigForm.Encode()))
+	channelConfigPageReq.RemoteAddr = "127.0.0.1:12345"
+	channelConfigPageReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	channelConfigPageRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(channelConfigPageRec, channelConfigPageReq)
+	if channelConfigPageRec.Code != http.StatusSeeOther {
+		t.Fatalf("channel config page update status = %d, body = %s", channelConfigPageRec.Code, channelConfigPageRec.Body.String())
+	}
+
+	channelConfigRecheckReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/channels/research/config", nil)
+	channelConfigRecheckRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(channelConfigRecheckRec, channelConfigRecheckReq)
+	if channelConfigRecheckRec.Code != http.StatusOK {
+		t.Fatalf("channel config recheck status = %d, body = %s", channelConfigRecheckRec.Code, channelConfigRecheckRec.Body.String())
+	}
+	if !strings.Contains(channelConfigRecheckRec.Body.String(), `"plugin": "review-room@1.0"`) || !strings.Contains(channelConfigRecheckRec.Body.String(), `"agent_onboarding": "Review decisions before merge."`) {
+		t.Fatalf("expected page-driven room config update body, got %q", channelConfigRecheckRec.Body.String())
+	}
+
+	focusConfigForm := url.Values{}
+	focusConfigForm.Set("actor_agent_id", "agent://pc75/live-bravo")
+	focusConfigForm.Set("plugin", "review-room@1.0")
+	focusConfigForm.Set("theme", "focus")
+	focusConfigForm.Set("agent_onboarding", "Review decisions in focused mode.")
+	focusConfigForm.Set("rules", "capture summary first\ntrack the final decision")
+	focusConfigPageReq := httptest.NewRequest(http.MethodPost, "/teams/project-beta/channels/research/config/update", strings.NewReader(focusConfigForm.Encode()))
+	focusConfigPageReq.RemoteAddr = "127.0.0.1:12345"
+	focusConfigPageReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	focusConfigPageRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(focusConfigPageRec, focusConfigPageReq)
+	if focusConfigPageRec.Code != http.StatusSeeOther {
+		t.Fatalf("focus channel config update status = %d, body = %s", focusConfigPageRec.Code, focusConfigPageRec.Body.String())
+	}
+
+	focusThemeReq := httptest.NewRequest(http.MethodGet, "/teams/project-beta/channels/research", nil)
+	focusThemeRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(focusThemeRec, focusThemeReq)
+	if focusThemeRec.Code != http.StatusOK {
+		t.Fatalf("focus themed page status = %d, body = %s", focusThemeRec.Code, focusThemeRec.Body.String())
+	}
+	if !strings.Contains(focusThemeRec.Body.String(), "Focused room workbench") || !strings.Contains(focusThemeRec.Body.String(), "theme=focus") || !strings.Contains(focusThemeRec.Body.String(), "频道工作台") {
+		t.Fatalf("expected focus themed channel body, got %q", focusThemeRec.Body.String())
+	}
+
+	boardConfigForm := url.Values{}
+	boardConfigForm.Set("actor_agent_id", "agent://pc75/live-bravo")
+	boardConfigForm.Set("plugin", "review-room@1.0")
+	boardConfigForm.Set("theme", "board")
+	boardConfigForm.Set("agent_onboarding", "Review decisions in board mode.")
+	boardConfigForm.Set("rules", "group cards by room intent\nkeep room links visible")
+	boardConfigPageReq := httptest.NewRequest(http.MethodPost, "/teams/project-beta/channels/research/config/update", strings.NewReader(boardConfigForm.Encode()))
+	boardConfigPageReq.RemoteAddr = "127.0.0.1:12345"
+	boardConfigPageReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	boardConfigPageRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(boardConfigPageRec, boardConfigPageReq)
+	if boardConfigPageRec.Code != http.StatusSeeOther {
+		t.Fatalf("board channel config update status = %d, body = %s", boardConfigPageRec.Code, boardConfigPageRec.Body.String())
+	}
+
+	boardThemeReq := httptest.NewRequest(http.MethodGet, "/teams/project-beta/channels/research", nil)
+	boardThemeRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(boardThemeRec, boardThemeReq)
+	if boardThemeRec.Code != http.StatusOK {
+		t.Fatalf("board themed page status = %d, body = %s", boardThemeRec.Code, boardThemeRec.Body.String())
+	}
+	if !strings.Contains(boardThemeRec.Body.String(), "Board room view") || !strings.Contains(boardThemeRec.Body.String(), "theme=board") || !strings.Contains(boardThemeRec.Body.String(), "频道工作台") {
+		t.Fatalf("expected board themed channel body, got %q", boardThemeRec.Body.String())
 	}
 
 	channelDeleteReq := httptest.NewRequest(http.MethodDelete, "/api/teams/project-beta/channels/planning", nil)
@@ -1489,7 +2131,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if channelRec.Code != http.StatusOK {
 		t.Fatalf("channel page status(after create) = %d, body = %s", channelRec.Code, channelRec.Body.String())
 	}
-	if !strings.Contains(channelRec.Body.String(), "Agent Onboarding:") || !strings.Contains(channelRec.Body.String(), "Channel page form message") || !strings.Contains(channelRec.Body.String(), "Team channel message stays inside Team.") {
+	if (!strings.Contains(channelRec.Body.String(), "Agent Onboarding:") && !strings.Contains(channelRec.Body.String(), "Onboarding")) || !strings.Contains(channelRec.Body.String(), "Channel page form message") || !strings.Contains(channelRec.Body.String(), "Team channel message stays inside Team.") {
 		t.Fatalf("expected team channel page body after create, got %q", channelRec.Body.String())
 	}
 

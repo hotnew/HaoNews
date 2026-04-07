@@ -1,0 +1,13 @@
+{
+  "id": "review-room",
+  "name": "评审协作插件",
+  "version": "1.0.0",
+  "description": "在 Team Channel 中整理 review / risk / decision 三类评审信息，并提炼为 review-summary 产物。",
+  "minTeamVersion": "0.2.0",
+  "routes": {
+    "web": "/teams/{teamID}/r/review-room",
+    "api": "/api/teams/{teamID}/r/review-room"
+  },
+  "messageKinds": ["review", "risk", "decision"],
+  "artifactKinds": ["review-summary"]
+}

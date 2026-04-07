@@ -6,15 +6,17 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	teamcore "hao.news/internal/haonews/team"
 	newsplugin "hao.news/internal/plugins/haonews"
+	"hao.news/internal/plugins/haonewsteam/roomplugin"
 	roomthemes "hao.news/internal/themes/room-themes"
 )
 
-func handleTeamChannel(app *newsplugin.App, store *teamcore.Store, themeRegistry *roomthemes.Registry, teamID, channelID string, w http.ResponseWriter, r *http.Request) {
+func handleTeamChannel(app *newsplugin.App, store *teamcore.Store, roomRegistry *roomplugin.Registry, themeRegistry *roomthemes.Registry, teamID, channelID string, w http.ResponseWriter, r *http.Request) {
 	info, err := store.LoadTeamCtx(r.Context(), teamID)
 	if err != nil {
 		http.NotFound(w, r)
@@ -63,20 +65,24 @@ func handleTeamChannel(app *newsplugin.App, store *teamcore.Store, themeRegistry
 		return
 	}
 	data := teamChannelPageData{
-		Project:        app.ProjectName(),
-		Version:        app.VersionString(),
-		PageNav:        app.PageNav("/teams"),
-		NodeStatus:     app.NodeStatus(index),
-		Now:            time.Now(),
-		Team:           info,
-		Channel:        currentSummary,
-		ChannelID:      channelID,
-		Channels:       channels,
-		Messages:       messages,
-		Tasks:          relatedTasksByChannel(tasks, channelID, 12),
-		Artifacts:      relatedArtifactsByChannel(artifacts, channelID, 12),
-		ChannelConfig:  loadChannelConfigSafe(r.Context(), store, teamID, channelID),
-		RelatedHistory: channelHistory(history, channelID, 12),
+		Project:              app.ProjectName(),
+		Version:              app.VersionString(),
+		PageNav:              app.PageNav("/teams"),
+		NodeStatus:           app.NodeStatus(index),
+		Now:                  time.Now(),
+		Team:                 info,
+		Channel:              currentSummary,
+		ChannelID:            channelID,
+		ViewMode:             strings.TrimSpace(r.URL.Query().Get("view")),
+		Channels:             channels,
+		Messages:             messages,
+		Tasks:                relatedTasksByChannel(tasks, channelID, 12),
+		Artifacts:            relatedArtifactsByChannel(artifacts, channelID, 12),
+		ChannelConfig:        loadChannelConfigSafe(r.Context(), store, teamID, channelID),
+		AvailableRoomPlugins: buildRoomPluginSummaries(roomRegistry),
+		AvailableRoomThemes:  buildRoomThemeSummaries(themeRegistry),
+		ConfigNotice:         roomConfigNoticeLabel(strings.TrimSpace(r.URL.Query().Get("room_notice"))),
+		RelatedHistory:       channelHistory(history, channelID, 12),
 		SummaryStats: []newsplugin.SummaryStat{
 			{Label: "频道", Value: current.Title},
 			{Label: "消息", Value: formatTeamCount(len(messages))},
@@ -86,6 +92,11 @@ func handleTeamChannel(app *newsplugin.App, store *teamcore.Store, themeRegistry
 			{Label: "状态", Value: channelStateLabel(current.Hidden)},
 		},
 	}
+	pluginByID := roomPluginSummaryMap(roomRegistry)
+	themeByID := roomThemeSummaryMap(themeRegistry)
+	data.RoomEntry = buildTeamRoomEntry(teamID, currentSummary, data.ChannelConfig, strings.TrimSpace(data.ChannelConfig.Plugin) != "" || strings.TrimSpace(data.ChannelConfig.Theme) != "")
+	data.CurrentRoomPlugin = pluginByID[data.ChannelConfig.PluginID()]
+	data.CurrentRoomTheme = themeByID[strings.TrimSpace(data.ChannelConfig.Theme)]
 	if err := renderTeamChannelPage(app, themeRegistry, w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -93,7 +104,7 @@ func handleTeamChannel(app *newsplugin.App, store *teamcore.Store, themeRegistry
 
 func renderTeamChannelPage(app *newsplugin.App, themeRegistry *roomthemes.Registry, w http.ResponseWriter, data teamChannelPageData) error {
 	themeID := strings.TrimSpace(data.ChannelConfig.Theme)
-	if themeID != "" && themeRegistry != nil {
+	if themeID != "" && themeRegistry != nil && strings.TrimSpace(data.ViewMode) != "channel" {
 		if theme, ok := themeRegistry.Get(themeID); ok {
 			tmpl, err := theme.Templates(template.FuncMap{
 				"structuredJSON": func(value map[string]any) string {
@@ -249,7 +260,7 @@ func handleAPITeamChannels(store *teamcore.Store, teamID string, w http.Response
 	}
 }
 
-func handleAPITeamChannel(store *teamcore.Store, teamID, channelID string, w http.ResponseWriter, r *http.Request) {
+func handleAPITeamChannel(store *teamcore.Store, roomRegistry *roomplugin.Registry, themeRegistry *roomthemes.Registry, teamID, channelID string, w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		channel, err := store.LoadChannelCtx(r.Context(), teamID, channelID)
@@ -257,10 +268,20 @@ func handleAPITeamChannel(store *teamcore.Store, teamID, channelID string, w htt
 			http.NotFound(w, r)
 			return
 		}
+		cfg := loadChannelConfigSafe(r.Context(), store, teamID, channelID)
+		roomEntry := buildTeamRoomEntry(teamID, teamcore.ChannelSummary{Channel: channel}, cfg, strings.TrimSpace(cfg.Plugin) != "" || strings.TrimSpace(cfg.Theme) != "")
 		newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
-			"scope":   "team-channel",
-			"team_id": teamID,
-			"channel": channel,
+			"scope":                  "team-channel",
+			"team_id":                teamID,
+			"channel":                channel,
+			"room_plugin_id":         roomEntry.PluginID,
+			"room_plugin_route":      roomEntry.RoomWebPath,
+			"room_plugin_api":        roomEntry.RoomAPIPath,
+			"available_room_plugins": buildRoomPluginSummaries(roomRegistry),
+			"room_theme_id":          roomEntry.Theme,
+			"available_room_themes":  buildRoomThemeSummaries(themeRegistry),
+			"channel_config_state":   map[bool]string{true: "configured", false: "unconfigured"}[roomEntry.Configured],
+			"room_entry":             roomEntry,
 		})
 	case http.MethodPut:
 		handleAPITeamChannelUpdate(store, teamID, channelID, w, r)
@@ -268,6 +289,88 @@ func handleAPITeamChannel(store *teamcore.Store, teamID, channelID string, w htt
 		handleAPITeamChannelDelete(store, teamID, channelID, w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func handleTeamChannelConfigUpdate(store *teamcore.Store, roomRegistry *roomplugin.Registry, themeRegistry *roomthemes.Registry, teamID, channelID string, w http.ResponseWriter, r *http.Request) {
+	if !teamRequestTrusted(r) {
+		http.Error(w, "channel config update is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	actorAgentID := strings.TrimSpace(r.FormValue("actor_agent_id"))
+	if err := requireTeamAction(store, teamID, actorAgentID, "channel.update"); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	cfg := loadChannelConfigSafe(r.Context(), store, teamID, channelID)
+	action := strings.TrimSpace(r.FormValue("action"))
+	if action == "clear" {
+		cfg.Plugin = ""
+		cfg.Theme = ""
+		cfg.AgentOnboarding = ""
+		cfg.Rules = nil
+		cfg.ThemeConfig = nil
+		cfg.Metadata = nil
+	} else {
+		pluginChoice := strings.TrimSpace(r.FormValue("plugin"))
+		if pluginChoice != "" {
+			summary, ok := roomPluginSummaryMap(roomRegistry)[pluginChoice]
+			if !ok {
+				http.Error(w, "unknown room plugin", http.StatusBadRequest)
+				return
+			}
+			cfg.Plugin = summary.ConfigValue
+		} else {
+			cfg.Plugin = ""
+		}
+		themeChoice := strings.TrimSpace(r.FormValue("theme"))
+		if themeChoice != "" {
+			if _, ok := roomThemeSummaryMap(themeRegistry)[themeChoice]; !ok {
+				http.Error(w, "unknown room theme", http.StatusBadRequest)
+				return
+			}
+		}
+		cfg.Theme = themeChoice
+		cfg.AgentOnboarding = strings.TrimSpace(r.FormValue("agent_onboarding"))
+		cfg.Rules = parseConfigLines(r.FormValue("rules"))
+	}
+	cfg.ChannelID = channelID
+	if err := store.SaveChannelConfigCtx(r.Context(), teamID, cfg); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	notice := "saved"
+	if action == "clear" {
+		notice = "cleared"
+	}
+	http.Redirect(w, r, "/teams/"+teamID+"/channels/"+channelID+"?room_notice="+url.QueryEscape(notice), http.StatusSeeOther)
+}
+
+func parseConfigLines(raw string) []string {
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	parts := strings.Split(raw, "\n")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func roomConfigNoticeLabel(value string) string {
+	switch value {
+	case "saved":
+		return "Room Plugin 配置已更新。当前频道会按新的 plugin/theme 入口渲染。"
+	case "cleared":
+		return "Room Plugin 配置已清空，频道已回退为普通 Team Channel。"
+	default:
+		return ""
 	}
 }
 
