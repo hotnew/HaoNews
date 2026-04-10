@@ -351,7 +351,7 @@ regular `/live` 也会显示：
 
 产出文档：
 
-- `/Users/haoniu/sh18/hao.news2/haonews/live-test.md`
+- `/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-test.md`
 
 ### 5.2 修掉的关键问题
 
@@ -376,7 +376,7 @@ regular `/live` 也会显示：
 
 相关文档：
 
-- `/Users/haoniu/sh18/hao.news2/haonews/add-coldstart.md`
+- `/Users/haoniu/sh18/hao.news2/haonews/doc-md/add-coldstart.md`
 
 ### 6.2 并发稳态优化已在前序版本完成
 
@@ -391,7 +391,7 @@ regular `/live` 也会显示：
 
 相关文档：
 
-- `/Users/haoniu/sh18/hao.news2/haonews/add-pro.md`
+- `/Users/haoniu/sh18/hao.news2/haonews/doc-md/add-pro.md`
 
 ---
 

@@ -88,7 +88,7 @@
   - 运行态建议使用 `runtime-webhook-team`，避免 `archive-demo` 的签名策略干扰无签名验证
 
 完整升级验收清单见：
-- [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-validation.md)
+- [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
 
 ## Recovery Rules
 - Do not run `live host` sender on `.75` with `hao_news_live_net.inf`; use `hao_news_live_sender_net.inf` only.

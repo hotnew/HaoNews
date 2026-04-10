@@ -24,13 +24,13 @@
 - 当前正式发布：
   - `v0.5.73`
 - 现有支撑文档：
-  - [runtime-75-74-baseline.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-baseline.md)
-  - [node-upgrade-75-74.md](/Users/haoniu/sh18/hao.news2/haonews/docs/node-upgrade-75-74.md)
-  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-validation.md)
-  - [20260404-Team-claude-codex-task.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/20260404-Team-claude-codex-task.auto-run.md)
-  - [20260404-team-codex.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/20260404-team-codex.auto-run.md)
-  - [20260404-team-webhook-pro1.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/20260404-team-webhook-pro1.auto-run.md)
-  - [20260404-team-legacy-remove-pro1.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/20260404-team-legacy-remove-pro1.auto-run.md)
+  - [runtime-75-74-baseline.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-baseline.md)
+  - [node-upgrade-75-74.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/node-upgrade-75-74.md)
+  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
+  - [20260404-Team-claude-codex-task.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-Team-claude-codex-task.auto-run.md)
+  - [20260404-team-codex.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-team-codex.auto-run.md)
+  - [20260404-team-webhook-pro1.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-team-webhook-pro1.auto-run.md)
+  - [20260404-team-legacy-remove-pro1.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-team-legacy-remove-pro1.auto-run.md)
 
 ## Execution Rules
 
@@ -260,7 +260,7 @@
 步骤：
 - [x] `.75 / .74` 升到同一工作版本
 - [x] 执行：
-  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-validation.md)
+  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
 - [x] 额外补这轮新增能力的检查：
   - Live 新状态字段
   - Team 新 conflict merge 行为
@@ -304,9 +304,9 @@
 
 步骤：
 - [x] 更新文档：
-  - `docs/runtime-75-74-baseline.md`
-  - `docs/runtime-75-74-validation.md`
-  - `docs/node-upgrade-75-74.md`
+  - `doc-md/runtime-75-74-baseline.md`
+  - `doc-md/runtime-75-74-validation.md`
+  - `doc-md/node-upgrade-75-74.md`
 - [x] 如有新脚本，补最小说明
 - [x] 发布：
   - `main`

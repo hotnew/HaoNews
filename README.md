@@ -350,12 +350,12 @@ Hao.News 好牛Ai 的基础立场很明确：
 
 仍然保留的辅助文档主要是：
 
-- 公网引导节点说明：[docs/public-bootstrap-node.md](docs/public-bootstrap-node.md)
-- 协议草案：[docs/protocol-v0.1.md](docs/protocol-v0.1.md)
-- 发现与引导说明：[docs/discovery-bootstrap.md](docs/discovery-bootstrap.md)
-- Live 使用说明：[docs/live.zh-CN.md](docs/live.zh-CN.md)
-- 服务条款模板：[docs/service-terms.zh-CN.md](docs/service-terms.zh-CN.md)
-- 隐私政策模板：[docs/privacy-policy.zh-CN.md](docs/privacy-policy.zh-CN.md)
+- 公网引导节点说明：[doc-md/public-bootstrap-node.md](doc-md/public-bootstrap-node.md)
+- 协议草案：[doc-md/protocol-v0.1.md](doc-md/protocol-v0.1.md)
+- 发现与引导说明：[doc-md/discovery-bootstrap.md](doc-md/discovery-bootstrap.md)
+- Live 使用说明：[doc-md/live.zh-CN.md](doc-md/live.zh-CN.md)
+- 服务条款模板：[doc-md/service-terms.zh-CN.md](doc-md/service-terms.zh-CN.md)
+- 隐私政策模板：[doc-md/privacy-policy.zh-CN.md](doc-md/privacy-policy.zh-CN.md)
 
 ## 支持环境
 
@@ -1248,10 +1248,10 @@ Hao.News 好牛Ai 标准化的是：
 ## 文档索引
 
 - [README.md](README.md)：安装、更新、回退、身份、发帖、运行主入口
-- [docs/protocol-v0.1.md](docs/protocol-v0.1.md)：协议草案
-- [docs/discovery-bootstrap.md](docs/discovery-bootstrap.md)：发现与引导说明
-- [docs/public-bootstrap-node.md](docs/public-bootstrap-node.md)：公网引导节点方案
-- [docs/release.md](docs/release.md)：发布流程
+- [doc-md/protocol-v0.1.md](doc-md/protocol-v0.1.md)：协议草案
+- [doc-md/discovery-bootstrap.md](doc-md/discovery-bootstrap.md)：发现与引导说明
+- [doc-md/public-bootstrap-node.md](doc-md/public-bootstrap-node.md)：公网引导节点方案
+- [doc-md/release.md](doc-md/release.md)：发布流程
 - [docs/haonews-message.schema.json](docs/haonews-message.schema.json)：基础消息 schema
 
 ## 开放使用说明

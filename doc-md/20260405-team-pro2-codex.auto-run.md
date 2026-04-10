@@ -11,7 +11,7 @@
 - 已知事实：
   - `Room Plugin Registry`、`ChannelConfig` canonical path、`plan-exchange`、`minimal` Theme 已完成并已发布到 `v0.5.80+`
   - `channel_config` 已进入 TeamSync 自动复制主链，并已按 `.75 -> GitHub/tag -> .74` 验证通过
-  - 当前文档 [docs/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/docs/team-room-plugin.md) 明确指出下一层是：
+  - 当前文档 [doc-md/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md) 明确指出下一层是：
     - 更多内置 Room Plugins
     - 更强的 Room Theme registry
     - 频道级插件能力在 Team UI 中的产品化入口
@@ -24,9 +24,9 @@
   - 不改坏现有 Team sync / webhook / A2A / SSE 主链
   - 不为了“更多插件”引入高风险通用 DSL 或复杂插件沙箱
 - 输入材料：
-  - [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1.md)
-  - [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1-code.md)
-  - [docs/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/docs/team-room-plugin.md)
+  - [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1.md)
+  - [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1-code.md)
+  - [doc-md/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
   - 现有代码：
     - `internal/plugins/haonewsteam/rooms/planexchange`
     - `internal/plugins/haonewsteam/roomplugin`
@@ -62,7 +62,7 @@
 ### Phase 1. Inspect and Freeze the Baseline
 
 - [x] 只读取最小必要上下文：
-  - `docs/team-room-plugin.md`
+  - `doc-md/team-room-plugin.md`
   - `internal/plugins/haonewsteam/roomplugin/*`
   - `internal/plugins/haonewsteam/rooms/planexchange/*`
   - `internal/themes/room-themes/*`

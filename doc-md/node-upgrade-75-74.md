@@ -33,8 +33,8 @@
 - `.75` 的 live sender 必须继续使用：
   - `/Users/haoniu/.hao-news/hao_news_live_sender_net.inf`
 - 节点升级完成后，统一按：
-  - [runtime-75-74-baseline.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-baseline.md)
-  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-validation.md)
+  - [runtime-75-74-baseline.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-baseline.md)
+  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
   做运行态验收。
 
 ## Upgrade Flow
@@ -120,7 +120,7 @@ sshpass -p 'Grf123987!' ssh haoniu@192.168.102.74 'launchctl print gui/501/com.h
 
 - 升级完成后，不要只停在 bootstrap。
 - 必须继续执行：
-  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-validation.md)
+  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
 - 动态 webhook replay 建议使用：
   - `runtime-webhook-team`
 - Live 验证除了 room API，还要额外检查：

@@ -343,7 +343,7 @@
 
 - `done`
   - `P1` `.75 / .74` 节点运行基线
-    - 新增基线文档：[docs/runtime-75-74-baseline.md](/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-baseline.md)
+    - 新增基线文档：[doc-md/runtime-75-74-baseline.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-baseline.md)
     - `.75` 与 `.74` 都已收成 `launchctl -> serve -> managed sync` 的统一模式
     - `.76` 已退出当前主线
   - `P2` Live 同步回归矩阵
@@ -381,4 +381,4 @@
     - 已把 `peer_ack_prunes / expired_pending / superseded_pending / last_pruned_ack_*` 暴露到 Team Sync 页
     - 当前压缩/清理状态已进入日常可观测面
   - `P10` 节点升级 / 验收 / 回滚标准化
-    - 新增标准流程文档：[docs/node-upgrade-75-74.md](/Users/haoniu/sh18/hao.news2/haonews/docs/node-upgrade-75-74.md)
+    - 新增标准流程文档：[doc-md/node-upgrade-75-74.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/node-upgrade-75-74.md)

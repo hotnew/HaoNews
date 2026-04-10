@@ -2,7 +2,7 @@
 
 ## Goal
 
-- 把 [20260404-Team-claude.md](/Users/haoniu/sh18/hao.news2/haonews/20260404-Team-claude.md) 从“审阅建议”收成一份可直接执行的 Team 代码治理与性能优化 runbook。
+- 把 [20260404-Team-claude.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-Team-claude.md) 从“审阅建议”收成一份可直接执行的 Team 代码治理与性能优化 runbook。
 - 本 runbook 不重做已经完成的 Team 产品能力；它只处理仍然值得做的：
   - `store.go / handler.go` 结构治理
   - 明确的热点性能问题
@@ -17,7 +17,7 @@
 - 仓库：
   - `/Users/haoniu/sh18/hao.news2/haonews`
 - 源文档：
-  - [20260404-Team-claude.md](/Users/haoniu/sh18/hao.news2/haonews/20260404-Team-claude.md)
+  - [20260404-Team-claude.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-Team-claude.md)
 - 当前 Team 基线：
   - Team workspace / archive / sync / conflict / SSE / A2A / webhook / P2P 已经存在
   - `store_test.go` 已经存在，所以源文档里“缺少 store_test.go”的判断已过时
@@ -76,7 +76,7 @@
 - 把源文档中的每条建议先落成 `done / todo / defer / stale`，不在错误前提上执行。
 
 步骤：
-- [ ] 逐项核对 [20260404-Team-claude.md](/Users/haoniu/sh18/hao.news2/haonews/20260404-Team-claude.md) 的建议与当前代码现状
+- [ ] 逐项核对 [20260404-Team-claude.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-Team-claude.md) 的建议与当前代码现状
 - [ ] 在本 runbook 内写回分类结果，至少覆盖这些块：
   - `1.1 store.go 拆分`
   - `1.2 handler.go 拆分`

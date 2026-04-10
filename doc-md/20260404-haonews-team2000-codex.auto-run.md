@@ -12,7 +12,7 @@ Goal
 
 Context
 - 源文档：
-  - `/Users/haoniu/sh18/hao.news2/haonews/20260404-haonews-team2000.md`
+  - `/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-haonews-team2000.md`
 - 参考模板：
   - `/Users/haoniu/sh18/hao.news2/runbook-template.auto-run.md`
 - 当前已知基线：
@@ -21,9 +21,9 @@ Context
   - Team Store `ctx` 主入口、handler/store 拆分、task/artifact index-first、legacy 清理第一阶段已完成
   - `.75 / .74` 已作为当前双节点运行基线
   - 现有正式运维文档已经落库：
-    - `/Users/haoniu/sh18/hao.news2/haonews/docs/node-upgrade-75-74.md`
-    - `/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-baseline.md`
-    - `/Users/haoniu/sh18/hao.news2/haonews/docs/runtime-75-74-validation.md`
+    - `/Users/haoniu/sh18/hao.news2/haonews/doc-md/node-upgrade-75-74.md`
+    - `/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-baseline.md`
+    - `/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md`
 - 本轮执行约束：
   - 优先做低风险、可回滚、与现有实现一致的产品化增强
   - 不为了“好看”而重写稳定主链
@@ -57,7 +57,7 @@ Phase 1 Inspect And Classify
 - 目标：
   - 把源文档中的候选项先分成 `done / todo / defer / stale`，避免重复做已存在能力。
 - 必读文件：
-  - `/Users/haoniu/sh18/hao.news2/haonews/20260404-haonews-team2000.md`
+  - `/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260404-haonews-team2000.md`
   - `/Users/haoniu/sh18/hao.news2/haonews/internal/plugins/haonewsteam/handler.go`
   - `/Users/haoniu/sh18/hao.news2/haonews/internal/plugins/haonewsteam/handler_sync.go`
   - `/Users/haoniu/sh18/hao.news2/haonews/internal/plugins/haonewsteam/handler_webhook.go`

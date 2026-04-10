@@ -2,15 +2,15 @@
 
 ## Goal
 
-- 补齐 [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1.md) 和 [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1-code.md) 中**已明确要求、但上一轮未真正落地**的 Team 新架构核心缺口，使 `Room Plugin + Channel Config + Room Theme` 不再停留在“能挂载”，而进入“按文档定义可长期扩展”的状态。
+- 补齐 [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1.md) 和 [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1-code.md) 中**已明确要求、但上一轮未真正落地**的 Team 新架构核心缺口，使 `Room Plugin + Channel Config + Room Theme` 不再停留在“能挂载”，而进入“按文档定义可长期扩展”的状态。
 
 ## Context
 
 - 仓库 / 工作目录：
   - `/Users/haoniu/sh18/hao.news2/haonews`
 - 输入文档：
-  - [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1.md)
-  - [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1-code.md)
+  - [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1.md)
+  - [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1-code.md)
   - 模板：[runbook-template.auto-run.md](/Users/haoniu/sh18/hao.news2/runbook-template.auto-run.md)
 - 已完成基线：
   - Room Plugin Registry 已存在
@@ -164,7 +164,7 @@
   - `go build ./...`
   - `go test ./...`
 - [ ] 更新：
-  - [docs/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/docs/team-room-plugin.md)
+  - [doc-md/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
   - 明确写出：
     - canonical `channel_config` 路径
     - Manifest 新字段
@@ -276,7 +276,7 @@
       - [internal/themes/room-themes/minimal/web/templates/room_channel.html](/Users/haoniu/sh18/hao.news2/haonews/internal/themes/room-themes/minimal/web/templates/room_channel.html)
       - 现在按 `[PLAN] / [SKILL] / [SNIPPET]` 渲染消息项
     - 文档更新：
-      - [docs/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/docs/team-room-plugin.md)
+      - [doc-md/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
     - 测试补齐：
       - [internal/haonews/team/channel_config_test.go](/Users/haoniu/sh18/hao.news2/haonews/internal/haonews/team/channel_config_test.go)
       - [internal/plugins/haonewsteam/roomplugin/registry_test.go](/Users/haoniu/sh18/hao.news2/haonews/internal/plugins/haonewsteam/roomplugin/registry_test.go)

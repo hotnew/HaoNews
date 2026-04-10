@@ -2,15 +2,15 @@
 
 ## Goal
 
-- 严格按 [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1.md) 与 [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1-code.md) 的架构与实施步骤，完成 Team 的本质性重构：引入 `Room Plugin + Channel Config + Room Theme` 框架，并落地第一个 `plan-exchange` 插件与 `minimal` 主题，同时保持 Team 现有主链和 P2P 同步语义不回退。
+- 严格按 [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1.md) 与 [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1-code.md) 的架构与实施步骤，完成 Team 的本质性重构：引入 `Room Plugin + Channel Config + Room Theme` 框架，并落地第一个 `plan-exchange` 插件与 `minimal` 主题，同时保持 Team 现有主链和 P2P 同步语义不回退。
 
 ## Context
 
 - 仓库 / 工作目录：
   - `/Users/haoniu/sh18/hao.news2/haonews`
 - 输入文档：
-  - [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1.md)
-  - [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/20260405-team-pro1-code.md)
+  - [20260405-team-pro1.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1.md)
+  - [20260405-team-pro1-code.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260405-team-pro1-code.md)
   - 参考模板：[runbook-template.auto-run.md](/Users/haoniu/sh18/hao.news2/runbook-template.auto-run.md)
 - 本轮必须遵守的硬约束：
   - 不改动 `internal/haonews/team/sync.go`
@@ -202,7 +202,7 @@
   - `GET /api/teams/{teamID}/r/plan-exchange/?channel_id=...&kind=...`
   - `POST /api/teams/{teamID}/r/plan-exchange/distill`
 - [ ] 新建文档：
-  - [docs/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/docs/team-room-plugin.md)
+  - [doc-md/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
   - 内容必须包括：
     - Room Plugin 接口
     - 注册方式
@@ -317,7 +317,7 @@
     - `P4` 测试与文档：
       - [internal/haonews/team/channel_config_test.go](/Users/haoniu/sh18/hao.news2/haonews/internal/haonews/team/channel_config_test.go)
       - [internal/plugins/haonewsteam/roomplugin/registry_test.go](/Users/haoniu/sh18/hao.news2/haonews/internal/plugins/haonewsteam/roomplugin/registry_test.go)
-      - [docs/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/docs/team-room-plugin.md)
+      - [doc-md/team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
     - 额外收口：
       - [internal/plugins/haonews/index_cache.go](/Users/haoniu/sh18/hao.news2/haonews/internal/plugins/haonews/index_cache.go)
       - 调整为 `governanceIndex → ApplySubscriptionRules → moderation decisions`

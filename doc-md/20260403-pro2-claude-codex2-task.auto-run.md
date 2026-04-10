@@ -2,7 +2,7 @@
 
 ## Goal
 
-- 把 [20260403-pro2-claude.md](/Users/haoniu/sh18/hao.news2/haonews/20260403-pro2-claude.md) 收敛成一份可直接执行的 `haonews` 改良 runbook。
+- 把 [20260403-pro2-claude.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260403-pro2-claude.md) 收敛成一份可直接执行的 `haonews` 改良 runbook。
 - 目标不是机械完成原文所有条目，而是：
   - 先核对原文判断和当前代码现实是否一致
   - 再按关键路径执行仍然值得做的项
@@ -14,7 +14,7 @@
 - 仓库：
   - `/Users/haoniu/sh18/hao.news2/haonews`
 - 源文档：
-  - [20260403-pro2-claude.md](/Users/haoniu/sh18/hao.news2/haonews/20260403-pro2-claude.md)
+  - [20260403-pro2-claude.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260403-pro2-claude.md)
 - 后续执行模式目标：
   - `$auto-run-plan2`
 - 当前规划必须假设：
