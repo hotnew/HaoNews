@@ -64,19 +64,20 @@ type teamSyncPeerAck struct {
 }
 
 type teamSyncConflict struct {
-	Key           string                   `json:"key,omitempty"`
-	Type          string                   `json:"type,omitempty"`
-	TeamID        string                   `json:"team_id,omitempty"`
-	SubjectID     string                   `json:"subject_id,omitempty"`
-	SourceNode    string                   `json:"source_node,omitempty"`
-	Reason        string                   `json:"reason,omitempty"`
-	LocalVersion  time.Time                `json:"local_version,omitempty"`
-	RemoteVersion time.Time                `json:"remote_version,omitempty"`
-	Resolution    string                   `json:"resolution,omitempty"`
-	ResolvedBy    string                   `json:"resolved_by,omitempty"`
-	ResolvedAt    time.Time                `json:"resolved_at,omitempty"`
-	Sync          teamcore.TeamSyncMessage `json:"sync,omitempty"`
-	UpdatedAt     time.Time                `json:"updated_at,omitempty"`
+	Key            string                   `json:"key,omitempty"`
+	Type           string                   `json:"type,omitempty"`
+	TeamID         string                   `json:"team_id,omitempty"`
+	SubjectID      string                   `json:"subject_id,omitempty"`
+	SourceNode     string                   `json:"source_node,omitempty"`
+	Reason         string                   `json:"reason,omitempty"`
+	AutoResolvable bool                     `json:"auto_resolvable,omitempty"`
+	LocalVersion   time.Time                `json:"local_version,omitempty"`
+	RemoteVersion  time.Time                `json:"remote_version,omitempty"`
+	Resolution     string                   `json:"resolution,omitempty"`
+	ResolvedBy     string                   `json:"resolved_by,omitempty"`
+	ResolvedAt     time.Time                `json:"resolved_at,omitempty"`
+	Sync           teamcore.TeamSyncMessage `json:"sync,omitempty"`
+	UpdatedAt      time.Time                `json:"updated_at,omitempty"`
 }
 
 type teamSyncPendingState struct {
@@ -1373,14 +1374,17 @@ func mergeTeamSyncConflictState(dst, src map[string]teamSyncConflict) {
 	for key, incoming := range src {
 		current, ok := dst[key]
 		if !ok {
-			dst[key] = incoming
 			continue
 		}
 		if incoming.UpdatedAt.After(current.UpdatedAt) {
+			if strings.TrimSpace(incoming.Resolution) != "" && strings.TrimSpace(current.Resolution) == "" {
+				incoming.UpdatedAt = time.Now().UTC()
+			}
 			dst[key] = incoming
 			continue
 		}
 		if strings.TrimSpace(current.Resolution) == "" && strings.TrimSpace(incoming.Resolution) != "" {
+			incoming.UpdatedAt = time.Now().UTC()
 			dst[key] = incoming
 		}
 	}
@@ -1619,19 +1623,20 @@ func (r *teamPubSubRuntime) persistConflict(syncMsg teamcore.TeamSyncMessage, co
 	state := normalizeTeamSyncState(r.state)
 	now := time.Now().UTC()
 	state.Conflicts[conflictKey] = teamSyncConflict{
-		Key:           conflictKey,
-		Type:          strings.TrimSpace(conflict.Type),
-		TeamID:        teamcore.NormalizeTeamID(conflict.TeamID),
-		SubjectID:     strings.TrimSpace(conflict.SubjectID),
-		SourceNode:    strings.TrimSpace(conflict.SourceNode),
-		Reason:        strings.TrimSpace(conflict.Reason),
-		LocalVersion:  conflict.LocalVersion.UTC(),
-		RemoteVersion: conflict.RemoteVersion.UTC(),
-		Resolution:    strings.TrimSpace(conflict.Resolution),
-		ResolvedBy:    strings.TrimSpace(conflict.ResolvedBy),
-		ResolvedAt:    conflict.ResolvedAt.UTC(),
-		Sync:          syncMsg,
-		UpdatedAt:     now,
+		Key:            conflictKey,
+		Type:           strings.TrimSpace(conflict.Type),
+		TeamID:         teamcore.NormalizeTeamID(conflict.TeamID),
+		SubjectID:      strings.TrimSpace(conflict.SubjectID),
+		SourceNode:     strings.TrimSpace(conflict.SourceNode),
+		Reason:         strings.TrimSpace(conflict.Reason),
+		AutoResolvable: teamSyncConflictAutoResolvable(conflict, syncMsg),
+		LocalVersion:   conflict.LocalVersion.UTC(),
+		RemoteVersion:  conflict.RemoteVersion.UTC(),
+		Resolution:     strings.TrimSpace(conflict.Resolution),
+		ResolvedBy:     strings.TrimSpace(conflict.ResolvedBy),
+		ResolvedAt:     conflict.ResolvedAt.UTC(),
+		Sync:           syncMsg,
+		UpdatedAt:      now,
 	}
 	peerPruned, prunedPeer, prunedKey, conflictPruned, conflictPrunedKey := compactTeamSyncState(&state)
 	r.state = state
@@ -1656,6 +1661,36 @@ func updateTeamSyncStatusFromState(status *SyncTeamSyncStatus, state teamSyncPer
 	status.PendingAcks = countPendingStatus(state, "pending")
 	status.ExpiredPending = countPendingStatus(state, "expired")
 	status.SupersededPending = countPendingStatus(state, "superseded")
+}
+
+func teamSyncConflictAutoResolvable(conflict teamcore.TeamSyncConflict, sync teamcore.TeamSyncMessage) bool {
+	switch strings.TrimSpace(sync.Type) {
+	case teamcore.TeamSyncTypeMessage:
+		return true
+	case teamcore.TeamSyncTypeTask:
+		return conflict.AutoResolvable
+	case teamcore.TeamSyncTypePolicy:
+		return false
+	default:
+		return conflict.AutoResolvable
+	}
+}
+
+func teamSyncConflictAutoAction(conflict teamSyncConflict) (string, error) {
+	if !conflict.AutoResolvable {
+		return "", os.ErrInvalid
+	}
+	switch conflict.Sync.Normalize().Type {
+	case teamcore.TeamSyncTypeTask:
+		if conflict.RemoteVersion.After(conflict.LocalVersion) {
+			return "accept_remote", nil
+		}
+		return "keep_local", nil
+	case teamcore.TeamSyncTypeMessage:
+		return "keep_local", nil
+	default:
+		return "keep_local", nil
+	}
 }
 
 func compactTeamSyncState(state *teamSyncPersistedState) (int, string, string, int, string) {
@@ -1720,7 +1755,7 @@ func compactTeamSyncState(state *teamSyncPersistedState) (int, string, string, i
 			continue
 		}
 		resolvedAt := item.ResolvedAt.UTC()
-		if resolvedAt.IsZero() {
+		if resolvedAt.IsZero() || item.UpdatedAt.After(resolvedAt) {
 			resolvedAt = item.UpdatedAt.UTC()
 		}
 		if resolvedAt.IsZero() || resolvedAt.After(now.Add(-teamSyncConflictResolvedTTL)) {
@@ -1791,7 +1826,6 @@ func writeTeamSyncState(path string, state teamSyncPersistedState) error {
 	if current, err := loadTeamSyncState(path); err == nil {
 		state = mergeTeamSyncState(current, state)
 	}
-	_, _, _, _, _ = compactTeamSyncState(&state)
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
@@ -1812,19 +1846,20 @@ type TeamSyncConflictFilter struct {
 }
 
 type TeamSyncConflictRecord struct {
-	Key           string    `json:"key"`
-	Type          string    `json:"type"`
-	TeamID        string    `json:"team_id"`
-	SubjectID     string    `json:"subject_id,omitempty"`
-	SourceNode    string    `json:"source_node,omitempty"`
-	Reason        string    `json:"reason,omitempty"`
-	LocalVersion  time.Time `json:"local_version,omitempty"`
-	RemoteVersion time.Time `json:"remote_version,omitempty"`
-	Resolution    string    `json:"resolution,omitempty"`
-	ResolvedBy    string    `json:"resolved_by,omitempty"`
-	ResolvedAt    time.Time `json:"resolved_at,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at,omitempty"`
-	SyncType      string    `json:"sync_type,omitempty"`
+	Key            string    `json:"key"`
+	Type           string    `json:"type"`
+	TeamID         string    `json:"team_id"`
+	SubjectID      string    `json:"subject_id,omitempty"`
+	SourceNode     string    `json:"source_node,omitempty"`
+	Reason         string    `json:"reason,omitempty"`
+	AutoResolvable bool      `json:"auto_resolvable,omitempty"`
+	LocalVersion   time.Time `json:"local_version,omitempty"`
+	RemoteVersion  time.Time `json:"remote_version,omitempty"`
+	Resolution     string    `json:"resolution,omitempty"`
+	ResolvedBy     string    `json:"resolved_by,omitempty"`
+	ResolvedAt     time.Time `json:"resolved_at,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+	SyncType       string    `json:"sync_type,omitempty"`
 }
 
 func LoadTeamSyncConflicts(storeRoot, teamID string, filter TeamSyncConflictFilter) ([]TeamSyncConflictRecord, error) {
@@ -1851,19 +1886,20 @@ func LoadTeamSyncConflicts(storeRoot, teamID string, filter TeamSyncConflictFilt
 			continue
 		}
 		items = append(items, TeamSyncConflictRecord{
-			Key:           item.Key,
-			Type:          item.Type,
-			TeamID:        item.TeamID,
-			SubjectID:     item.SubjectID,
-			SourceNode:    item.SourceNode,
-			Reason:        item.Reason,
-			LocalVersion:  item.LocalVersion,
-			RemoteVersion: item.RemoteVersion,
-			Resolution:    item.Resolution,
-			ResolvedBy:    item.ResolvedBy,
-			ResolvedAt:    item.ResolvedAt,
-			UpdatedAt:     item.UpdatedAt,
-			SyncType:      item.Sync.Type,
+			Key:            item.Key,
+			Type:           item.Type,
+			TeamID:         item.TeamID,
+			SubjectID:      item.SubjectID,
+			SourceNode:     item.SourceNode,
+			Reason:         item.Reason,
+			AutoResolvable: item.AutoResolvable,
+			LocalVersion:   item.LocalVersion,
+			RemoteVersion:  item.RemoteVersion,
+			Resolution:     item.Resolution,
+			ResolvedBy:     item.ResolvedBy,
+			ResolvedAt:     item.ResolvedAt,
+			UpdatedAt:      item.UpdatedAt,
+			SyncType:       item.Sync.Type,
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -1888,6 +1924,13 @@ func ResolveTeamSyncConflict(storeRoot, teamID, key, action, actorAgentID string
 		return TeamSyncConflictRecord{}, os.ErrNotExist
 	}
 	action = strings.TrimSpace(action)
+	if action == "auto" {
+		resolvedAction, err := teamSyncConflictAutoAction(conflict)
+		if err != nil {
+			return TeamSyncConflictRecord{}, err
+		}
+		action = resolvedAction
+	}
 	switch action {
 	case "dismiss", "keep_local":
 	case "accept_remote":
@@ -1914,19 +1957,20 @@ func ResolveTeamSyncConflict(storeRoot, teamID, key, action, actorAgentID string
 		return TeamSyncConflictRecord{}, err
 	}
 	return TeamSyncConflictRecord{
-		Key:           conflict.Key,
-		Type:          conflict.Type,
-		TeamID:        conflict.TeamID,
-		SubjectID:     conflict.SubjectID,
-		SourceNode:    conflict.SourceNode,
-		Reason:        conflict.Reason,
-		LocalVersion:  conflict.LocalVersion,
-		RemoteVersion: conflict.RemoteVersion,
-		Resolution:    conflict.Resolution,
-		ResolvedBy:    conflict.ResolvedBy,
-		ResolvedAt:    conflict.ResolvedAt,
-		UpdatedAt:     conflict.UpdatedAt,
-		SyncType:      conflict.Sync.Type,
+		Key:            conflict.Key,
+		Type:           conflict.Type,
+		TeamID:         conflict.TeamID,
+		SubjectID:      conflict.SubjectID,
+		SourceNode:     conflict.SourceNode,
+		Reason:         conflict.Reason,
+		AutoResolvable: conflict.AutoResolvable,
+		LocalVersion:   conflict.LocalVersion,
+		RemoteVersion:  conflict.RemoteVersion,
+		Resolution:     conflict.Resolution,
+		ResolvedBy:     conflict.ResolvedBy,
+		ResolvedAt:     conflict.ResolvedAt,
+		UpdatedAt:      conflict.UpdatedAt,
+		SyncType:       conflict.Sync.Type,
 	}, nil
 }
 

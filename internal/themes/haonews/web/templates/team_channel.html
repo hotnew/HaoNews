@@ -164,6 +164,12 @@
               <span>Agent Onboarding</span>
               <textarea name="agent_onboarding" rows="3" placeholder="进入房间前团队成员应该先做什么">{{.ChannelConfig.AgentOnboarding}}</textarea>
             </label>
+            {{if .AgentContextPrompt}}
+            <label class="team-form-wide">
+              <span>Agent Prompt Preview</span>
+              <textarea rows="10" readonly>{{.AgentContextPrompt}}</textarea>
+            </label>
+            {{end}}
             <label class="team-form-wide">
               <span>Room Rules（每行一条）</span>
               <textarea name="rules" rows="4" placeholder="先写结论，再写风险，再写动作">{{range .ChannelConfig.Rules}}{{.}}

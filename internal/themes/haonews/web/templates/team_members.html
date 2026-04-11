@@ -223,6 +223,11 @@
                     {{if .Status}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/members?status={{urlquery .Status}}">{{.Status}}</a>{{end}}
                     {{if .Role}}<a class="filter-chip" href="/teams/{{$.Team.TeamID}}/members?role={{urlquery .Role}}">{{.Role}}</a>{{end}}
                   </div>
+                  {{$stats := index $.MemberStats .AgentID}}
+                  {{if $stats.AgentID}}
+                  <p class="micro-copy">消息 {{$stats.MessageCount}} · 任务 {{$stats.TaskCreated}}/{{$stats.TaskClosed}} · 产物 {{$stats.ArtifactCount}}</p>
+                  {{if not $stats.LastActiveAt.IsZero}}<p class="micro-copy">最后活跃：{{$stats.LastActiveAt.Format "01-02 15:04:05"}}</p>{{end}}
+                  {{end}}
                   {{if .OriginPublicKey}}<p class="micro-copy">子公钥：<code>{{printf "%.16s" .OriginPublicKey}}</code></p>{{end}}
                   {{if .ParentPublicKey}}<p class="micro-copy">父公钥：<code>{{printf "%.16s" .ParentPublicKey}}</code></p>{{end}}
                   <form method="post" action="/teams/{{$.Team.TeamID}}/members/update" class="settings-form team-form-grid">

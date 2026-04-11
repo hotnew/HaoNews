@@ -466,7 +466,7 @@ func handleAPITeamTask(store *teamcore.Store, teamID, taskID string, w http.Resp
 		http.NotFound(w, r)
 		return
 	}
-	messages, err := store.LoadTaskMessagesCtx(r.Context(), teamID, taskID, 100)
+	thread, err := store.LoadTaskThreadCtx(r.Context(), teamID, taskID, 100)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -476,8 +476,9 @@ func handleAPITeamTask(store *teamcore.Store, teamID, taskID string, w http.Resp
 		"team_id":       info.TeamID,
 		"task_id":       task.TaskID,
 		"task":          task,
-		"message_count": len(messages),
-		"messages":      messages,
+		"dispatch":      thread.Dispatch,
+		"message_count": len(thread.Messages),
+		"messages":      thread.Messages,
 	})
 }
 
@@ -569,6 +570,118 @@ func handleAPITeamContext(store *teamcore.Store, teamID, contextID string, w htt
 		"tasks":         tasks,
 		"messages":      messages,
 	})
+}
+
+func handleAPITeamTaskThread(store *teamcore.Store, teamID, taskID string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	limit := clampTeamListLimit(r.URL.Query().Get("limit"), 100, 200)
+	thread, err := store.LoadTaskThreadCtx(r.Context(), teamID, taskID, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"scope":         "team-task-thread",
+		"team_id":       teamID,
+		"task_id":       taskID,
+		"limit":         limit,
+		"task":          thread.Task,
+		"dispatch":      thread.Dispatch,
+		"message_count": len(thread.Messages),
+		"messages":      thread.Messages,
+	})
+}
+
+func handleAPITeamTaskDispatch(store *teamcore.Store, teamID, taskID string, w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		dispatch, err := store.LoadTaskDispatchCtx(r.Context(), teamID, taskID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+			"scope":    "team-task-dispatch",
+			"team_id":  teamID,
+			"task_id":  taskID,
+			"dispatch": dispatch,
+		})
+	case http.MethodPost, http.MethodPut:
+		if !teamRequestTrusted(r) {
+			http.Error(w, "team task update is limited to local or LAN requests", http.StatusForbidden)
+			return
+		}
+		var payload struct {
+			ActorAgentID     string `json:"actor_agent_id"`
+			AssignedAgentID  string `json:"assigned_agent_id"`
+			MatchReason      string `json:"match_reason"`
+			Status           string `json:"status"`
+			RetryCount       int    `json:"retry_count"`
+			TimeoutSeconds   int    `json:"timeout_seconds"`
+			CurrentQueueSize int    `json:"current_queue_size"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := requireTeamAction(store, teamID, payload.ActorAgentID, teamcore.ActionTaskTransition); err != nil {
+			if resp, ok := classifyTeamAPIError(teamID, err); ok {
+				writeTeamAPIError(w, http.StatusForbidden, resp)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		task, err := store.LoadTaskCtx(r.Context(), teamID, taskID)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		dispatch := teamcore.TaskDispatch{
+			TaskID:           taskID,
+			AssignedAgentID:  payload.AssignedAgentID,
+			MatchReason:      payload.MatchReason,
+			Status:           payload.Status,
+			RetryCount:       payload.RetryCount,
+			TimeoutSeconds:   payload.TimeoutSeconds,
+			CurrentQueueSize: payload.CurrentQueueSize,
+			LastResponseAt:   time.Now().UTC(),
+		}
+		if err := store.SaveTaskDispatchCtx(r.Context(), teamID, dispatch); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !teamcore.IsTerminalState(task.Status) && teamcore.NormalizeTeamID(task.TeamID) != "" && normalizeTeamChannel(task.ChannelID) != "" {
+			updated := task
+			updated.Status = teamcore.TaskStateDispatched
+			updated.UpdatedAt = time.Now().UTC()
+			if err := store.SaveTaskCtx(r.Context(), teamID, updated); err != nil {
+				if !errors.Is(err, teamcore.ErrInvalidState) {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			} else {
+				task = updated
+			}
+		}
+		saved, err := store.LoadTaskDispatchCtx(r.Context(), teamID, taskID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+			"scope":    "team-task-dispatch",
+			"team_id":  teamID,
+			"task_id":  taskID,
+			"task":     task,
+			"dispatch": saved,
+		})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func handleAPITeamTaskCreate(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
@@ -810,6 +923,15 @@ func handleAPITeamTaskUpdate(store *teamcore.Store, teamID, taskID string, w htt
 	}
 	if payload.CreatedAt.IsZero() {
 		payload.CreatedAt = existing.CreatedAt
+	}
+	if strings.TrimSpace(payload.ParentTaskID) == "" {
+		payload.ParentTaskID = existing.ParentTaskID
+	}
+	if len(payload.DependsOn) == 0 {
+		payload.DependsOn = append([]string(nil), existing.DependsOn...)
+	}
+	if strings.TrimSpace(payload.MilestoneID) == "" {
+		payload.MilestoneID = existing.MilestoneID
 	}
 	payload.UpdatedAt = time.Now().UTC()
 	if err := requireTeamAction(store, teamID, payload.CreatedBy, "task.update"); err != nil {

@@ -673,6 +673,10 @@ func taskHistory(history []teamcore.ChangeEvent, taskID string, limit int) []tea
 }
 
 func handleAPITeamIndex(store *teamcore.Store, w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		handleAPITeamCreate(store, w, r)
+		return
+	}
 	teams, err := store.ListTeamsCtx(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -706,6 +710,11 @@ func handleAPITeam(store *teamcore.Store, teamID string, w http.ResponseWriter, 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	milestones, err := store.ListMilestoneProgressCtx(r.Context(), teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	channelConfigSummary := summarizeTeamChannelConfigs(channelConfigs)
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":                "team-detail",
@@ -714,9 +723,102 @@ func handleAPITeam(store *teamcore.Store, teamID string, w http.ResponseWriter, 
 		"policy":               policy,
 		"member_count":         len(members),
 		"members":              members,
+		"milestone_count":      len(milestones),
+		"milestones":           milestones,
 		"channel_config_count": len(channelConfigs),
 		"channel_configs":      channelConfigs,
 		"channels_config":      channelConfigSummary,
+	})
+}
+
+func handleAPITeamCreate(store *teamcore.Store, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !teamRequestTrusted(r) {
+		http.Error(w, "team create is limited to local or LAN requests", http.StatusForbidden)
+		return
+	}
+	var payload struct {
+		Team          teamcore.Info            `json:"team"`
+		AgentBindings map[string]string        `json:"agent_bindings"`
+		Channels      []teamcore.Channel       `json:"channels,omitempty"`
+		Policy        *teamcore.Policy         `json:"policy,omitempty"`
+		ChannelConfig []teamcore.ChannelConfig `json:"channel_configs,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	info := payload.Team
+	info.TeamID = teamcore.NormalizeTeamID(info.TeamID)
+	if info.TeamID == "" {
+		http.Error(w, "empty team_id", http.StatusBadRequest)
+		return
+	}
+	if info.Title == "" {
+		info.Title = info.TeamID
+	}
+	info.CreatedAt = time.Now().UTC()
+	info.UpdatedAt = info.CreatedAt
+	templateID := strings.TrimSpace(r.URL.Query().Get("from_template"))
+	var (
+		template teamcore.TeamTemplate
+		err      error
+	)
+	if templateID != "" {
+		info, template, err = store.CreateTeamFromTemplateCtx(r.Context(), info, templateID, payload.AgentBindings)
+		if err != nil {
+			if resp, ok := classifyTeamAPIError(info.TeamID, err); ok {
+				writeTeamAPIError(w, http.StatusBadRequest, resp)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	} else {
+		if err := store.SaveTeamCtx(r.Context(), info); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		for _, channel := range payload.Channels {
+			if err := store.SaveChannelCtx(r.Context(), info.TeamID, channel); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		for _, cfg := range payload.ChannelConfig {
+			if err := store.SaveChannelConfigCtx(r.Context(), info.TeamID, cfg); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		if payload.Policy != nil {
+			if err := store.SavePolicyCtx(r.Context(), info.TeamID, *payload.Policy); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	_ = appendTeamHistoryCtx(r.Context(), store, historyActor{
+		AgentID: info.OwnerAgentID,
+		Source:  "api",
+	}, info.TeamID, "team", "create", info.TeamID, "创建 Team", map[string]any{
+		"title_after":    info.Title,
+		"template_id":    template.TemplateID,
+		"channel_count":  len(info.Channels),
+		"owner_agent_id": info.OwnerAgentID,
+	})
+	milestones, _ := store.ListMilestoneProgressCtx(r.Context(), info.TeamID)
+	channelConfigs, _ := store.ListChannelConfigsCtx(r.Context(), info.TeamID)
+	newsplugin.WriteJSON(w, http.StatusCreated, map[string]any{
+		"scope":           "team-create",
+		"team_id":         info.TeamID,
+		"team":            info,
+		"template":        template,
+		"milestones":      milestones,
+		"channel_configs": channelConfigs,
 	})
 }
 
@@ -1819,21 +1921,27 @@ func memberHistoryMetadata(before, after teamcore.Member) map[string]any {
 
 func taskHistoryMetadata(before, after teamcore.Task) map[string]any {
 	return map[string]any{
-		"channel_before":   strings.TrimSpace(before.ChannelID),
-		"channel_after":    strings.TrimSpace(after.ChannelID),
-		"title_before":     strings.TrimSpace(before.Title),
-		"title_after":      strings.TrimSpace(after.Title),
-		"status_before":    strings.TrimSpace(before.Status),
-		"status_after":     strings.TrimSpace(after.Status),
-		"priority_before":  strings.TrimSpace(before.Priority),
-		"priority_after":   strings.TrimSpace(after.Priority),
-		"due_before":       before.DueAt,
-		"due_after":        after.DueAt,
-		"assignees_before": before.Assignees,
-		"assignees_after":  after.Assignees,
-		"labels_before":    before.Labels,
-		"labels_after":     after.Labels,
-		"diff_summary":     "任务频道/标题/状态/优先级/截止时间/指派/标签已更新",
+		"channel_before":     strings.TrimSpace(before.ChannelID),
+		"channel_after":      strings.TrimSpace(after.ChannelID),
+		"title_before":       strings.TrimSpace(before.Title),
+		"title_after":        strings.TrimSpace(after.Title),
+		"status_before":      strings.TrimSpace(before.Status),
+		"status_after":       strings.TrimSpace(after.Status),
+		"priority_before":    strings.TrimSpace(before.Priority),
+		"priority_after":     strings.TrimSpace(after.Priority),
+		"due_before":         before.DueAt,
+		"due_after":          after.DueAt,
+		"assignees_before":   before.Assignees,
+		"assignees_after":    after.Assignees,
+		"labels_before":      before.Labels,
+		"labels_after":       after.Labels,
+		"parent_task_before": strings.TrimSpace(before.ParentTaskID),
+		"parent_task_after":  strings.TrimSpace(after.ParentTaskID),
+		"depends_on_before":  before.DependsOn,
+		"depends_on_after":   after.DependsOn,
+		"milestone_before":   strings.TrimSpace(before.MilestoneID),
+		"milestone_after":    strings.TrimSpace(after.MilestoneID),
+		"diff_summary":       "任务频道/标题/状态/优先级/截止时间/指派/标签/依赖已更新",
 	}
 }
 
@@ -2027,13 +2135,16 @@ func buildTeamHistoryDiff(scope string, metadata map[string]any) map[string]team
 		}
 	case "task":
 		pairs = map[string][2]string{
-			"channel":   {"channel_before", "channel_after"},
-			"title":     {"title_before", "title_after"},
-			"status":    {"status_before", "status_after"},
-			"priority":  {"priority_before", "priority_after"},
-			"due":       {"due_before", "due_after"},
-			"assignees": {"assignees_before", "assignees_after"},
-			"labels":    {"labels_before", "labels_after"},
+			"channel":      {"channel_before", "channel_after"},
+			"title":        {"title_before", "title_after"},
+			"status":       {"status_before", "status_after"},
+			"priority":     {"priority_before", "priority_after"},
+			"due":          {"due_before", "due_after"},
+			"assignees":    {"assignees_before", "assignees_after"},
+			"labels":       {"labels_before", "labels_after"},
+			"parent_task":  {"parent_task_before", "parent_task_after"},
+			"depends_on":   {"depends_on_before", "depends_on_after"},
+			"milestone_id": {"milestone_before", "milestone_after"},
 		}
 	case "artifact":
 		pairs = map[string][2]string{
@@ -2076,33 +2187,7 @@ func teamRequestTrusted(r *http.Request) bool {
 }
 
 func requireTeamAction(store *teamcore.Store, teamID, actorAgentID, action string) error {
-	actorAgentID = strings.TrimSpace(actorAgentID)
-	info, err := store.LoadTeamCtx(context.Background(), teamID)
-	if err != nil {
-		return err
-	}
-	fallbackRole := ""
-	if actorAgentID == "" {
-		actorAgentID = strings.TrimSpace(info.OwnerAgentID)
-		if actorAgentID == "" {
-			fallbackRole = "owner"
-		}
-	}
-	role := fallbackRole
-	if actorAgentID != "" {
-		role, err = teamActorRole(store, teamID, actorAgentID, info)
-		if err != nil {
-			return err
-		}
-	}
-	policy, err := store.LoadPolicyCtx(context.Background(), teamID)
-	if err != nil {
-		return err
-	}
-	if !policy.Allows(action, role) {
-		return fmt.Errorf("team policy denied action %q for role %q", action, role)
-	}
-	return nil
+	return teamcore.RequireAction(context.Background(), store, teamID, actorAgentID, action)
 }
 
 func requireTeamConflictAction(store *teamcore.Store, teamID, actorAgentID string) error {

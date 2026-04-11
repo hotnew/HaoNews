@@ -1206,33 +1206,7 @@ func clientIP(r *http.Request) netip.Addr {
 }
 
 func requireAction(store *teamcore.Store, teamID, actorAgentID, action string) error {
-	actorAgentID = strings.TrimSpace(actorAgentID)
-	info, err := store.LoadTeamCtx(context.Background(), teamID)
-	if err != nil {
-		return err
-	}
-	fallbackRole := ""
-	if actorAgentID == "" {
-		actorAgentID = strings.TrimSpace(info.OwnerAgentID)
-		if actorAgentID == "" {
-			fallbackRole = "owner"
-		}
-	}
-	role := fallbackRole
-	if actorAgentID != "" {
-		role, err = actorRole(store, teamID, actorAgentID, info)
-		if err != nil {
-			return err
-		}
-	}
-	policy, err := store.LoadPolicyCtx(context.Background(), teamID)
-	if err != nil {
-		return err
-	}
-	if !policy.Allows(action, role) {
-		return fmt.Errorf("team policy denied action %q for role %q", action, role)
-	}
-	return nil
+	return teamcore.RequireAction(context.Background(), store, teamID, actorAgentID, action)
 }
 
 func actorRole(store *teamcore.Store, teamID, actorAgentID string, info teamcore.Info) (string, error) {

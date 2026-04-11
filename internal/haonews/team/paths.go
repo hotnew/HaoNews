@@ -60,6 +60,14 @@ func (s *Store) webhookDeliveryPath(teamID string) string {
 	return filepath.Join(s.root, NormalizeTeamID(teamID), "webhook-deliveries.json")
 }
 
+func (s *Store) teamInfoPath(teamID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), "team.json")
+}
+
+func (s *Store) milestonePath(teamID string) string {
+	return filepath.Join(s.root, NormalizeTeamID(teamID), "milestones.json")
+}
+
 func (s *Store) withTeamLock(teamID string, fn func() error) error {
 	return s.withTeamLockCtx(context.Background(), teamID, 10*time.Second, fn)
 }

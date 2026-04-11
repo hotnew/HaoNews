@@ -3,14 +3,15 @@ package team
 import "strings"
 
 const (
-	TaskStateOpen      = "open"
-	TaskStateDoing     = "doing"
-	TaskStateBlocked   = "blocked"
-	TaskStateReview    = "review"
-	TaskStateDone      = "done"
-	TaskStateFailed    = "failed"
-	TaskStateCancelled = "cancelled"
-	TaskStateRejected  = "rejected"
+	TaskStateOpen       = "open"
+	TaskStateDispatched = "dispatched"
+	TaskStateDoing      = "doing"
+	TaskStateBlocked    = "blocked"
+	TaskStateReview     = "review"
+	TaskStateDone       = "done"
+	TaskStateFailed     = "failed"
+	TaskStateCancelled  = "cancelled"
+	TaskStateRejected   = "rejected"
 )
 
 type TaskTransitionRule struct {
@@ -33,14 +34,16 @@ func IsValidTransition(from, to string) bool {
 		to = TaskStateOpen
 	}
 	if from == "" {
-		return inNormalizedStatusSet(to, TaskStateOpen, TaskStateDoing, TaskStateBlocked, TaskStateReview, TaskStateDone, TaskStateFailed, TaskStateCancelled, TaskStateRejected)
+		return inNormalizedStatusSet(to, TaskStateOpen, TaskStateDispatched, TaskStateDoing, TaskStateBlocked, TaskStateReview, TaskStateDone, TaskStateFailed, TaskStateCancelled, TaskStateRejected)
 	}
 	if from == to {
 		return true
 	}
 	switch from {
 	case TaskStateOpen:
-		return inNormalizedStatusSet(to, TaskStateDoing, TaskStateBlocked, TaskStateReview, TaskStateDone, TaskStateFailed, TaskStateCancelled, TaskStateRejected)
+		return inNormalizedStatusSet(to, TaskStateDispatched, TaskStateDoing, TaskStateBlocked, TaskStateReview, TaskStateDone, TaskStateFailed, TaskStateCancelled, TaskStateRejected)
+	case TaskStateDispatched:
+		return inNormalizedStatusSet(to, TaskStateDoing, TaskStateBlocked, TaskStateCancelled, TaskStateFailed)
 	case TaskStateDoing:
 		return inNormalizedStatusSet(to, TaskStateBlocked, TaskStateReview, TaskStateDone, TaskStateFailed, TaskStateCancelled)
 	case TaskStateBlocked:

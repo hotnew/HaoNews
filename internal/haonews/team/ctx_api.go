@@ -22,6 +22,8 @@ func ctxErr(ctx context.Context) error {
 	}
 }
 
+// ListTeamsCtx 返回当前 store 下所有 Team 的摘要视图。
+// 副作用：无；会并发读取 team/member/channel 相关文件。
 func (s *Store) ListTeamsCtx(ctx context.Context) ([]Summary, error) {
 	if s == nil {
 		return nil, nil
@@ -119,11 +121,22 @@ func (s *Store) ListTeamsCtx(ctx context.Context) ([]Summary, error) {
 	return out, nil
 }
 
+// LoadTeamCtx 读取单个 Team 的基础信息。
+// 前置条件：teamID 必须可规范化；副作用：无。
 func (s *Store) LoadTeamCtx(ctx context.Context, teamID string) (Info, error) {
 	if err := ctxErr(ctx); err != nil {
 		return Info{}, err
 	}
 	return s.loadTeamNoCtx(teamID)
+}
+
+// SaveTeamCtx 保存 Team 基础信息。
+// 前置条件：info.TeamID/title 等字段应已可用；副作用：会覆盖 team.json。
+func (s *Store) SaveTeamCtx(ctx context.Context, info Info) error {
+	if err := ctxErr(ctx); err != nil {
+		return err
+	}
+	return s.saveTeamNoCtx(info)
 }
 
 func (s *Store) LoadMembersCtx(ctx context.Context, teamID string) ([]Member, error) {
@@ -161,6 +174,8 @@ func (s *Store) LoadChannelSnapshotCtx(ctx context.Context, teamID, channelID st
 	return s.loadChannelSnapshotNoCtx(teamID, channelID)
 }
 
+// LoadChannelConfigCtx 读取单个频道配置。
+// 副作用：无；兼容 canonical 路径与旧路径读取。
 func (s *Store) LoadChannelConfigCtx(ctx context.Context, teamID, channelID string) (ChannelConfig, error) {
 	if err := ctxErr(ctx); err != nil {
 		return ChannelConfig{}, err
@@ -168,6 +183,8 @@ func (s *Store) LoadChannelConfigCtx(ctx context.Context, teamID, channelID stri
 	return s.loadChannelConfigNoCtx(teamID, channelID)
 }
 
+// LoadMessagesCtx 按频道读取消息，limit=0 表示全量。
+// 副作用：无；会读取 JSONL 或分片 JSONL。
 func (s *Store) LoadMessagesCtx(ctx context.Context, teamID, channelID string, limit int) ([]Message, error) {
 	if err := ctxErr(ctx); err != nil {
 		return nil, err
@@ -179,6 +196,8 @@ func (s *Store) LoadAllMessagesCtx(ctx context.Context, teamID, channelID string
 	return s.LoadMessagesCtx(ctx, teamID, channelID, 0)
 }
 
+// LoadChannelCtx 读取单个频道定义。
+// 前置条件：teamID/channelID 必须可规范化；副作用：无。
 func (s *Store) LoadChannelCtx(ctx context.Context, teamID, channelID string) (Channel, error) {
 	if err := ctxErr(ctx); err != nil {
 		return Channel{}, err
@@ -186,6 +205,8 @@ func (s *Store) LoadChannelCtx(ctx context.Context, teamID, channelID string) (C
 	return s.loadChannelNoCtx(teamID, channelID)
 }
 
+// ListChannelsCtx 列出 Team 下所有频道摘要。
+// 副作用：无；会合并频道配置与消息统计。
 func (s *Store) ListChannelsCtx(ctx context.Context, teamID string) ([]ChannelSummary, error) {
 	if err := ctxErr(ctx); err != nil {
 		return nil, err
@@ -193,6 +214,8 @@ func (s *Store) ListChannelsCtx(ctx context.Context, teamID string) ([]ChannelSu
 	return s.listChannelsNoCtx(teamID)
 }
 
+// ListChannelConfigsCtx 列出 Team 下所有频道配置。
+// 副作用：无；用于 Room Plugin / Theme / Onboarding 聚合。
 func (s *Store) ListChannelConfigsCtx(ctx context.Context, teamID string) ([]ChannelConfig, error) {
 	if err := ctxErr(ctx); err != nil {
 		return nil, err
@@ -200,6 +223,8 @@ func (s *Store) ListChannelConfigsCtx(ctx context.Context, teamID string) ([]Cha
 	return s.listChannelConfigsNoCtx(teamID)
 }
 
+// LoadTasksCtx 读取 Team 任务列表，limit=0 表示全量。
+// 副作用：无；返回值已按当前索引/存储内容归一化。
 func (s *Store) LoadTasksCtx(ctx context.Context, teamID string, limit int) ([]Task, error) {
 	if err := ctxErr(ctx); err != nil {
 		return nil, err
@@ -207,6 +232,8 @@ func (s *Store) LoadTasksCtx(ctx context.Context, teamID string, limit int) ([]T
 	return s.loadTasksNoCtx(teamID, limit)
 }
 
+// LoadTaskCtx 读取单个任务。
+// 前置条件：taskID 必须存在；副作用：无。
 func (s *Store) LoadTaskCtx(ctx context.Context, teamID, taskID string) (Task, error) {
 	if err := ctxErr(ctx); err != nil {
 		return Task{}, err
@@ -214,6 +241,35 @@ func (s *Store) LoadTaskCtx(ctx context.Context, teamID, taskID string) (Task, e
 	return s.loadTaskNoCtx(teamID, taskID)
 }
 
+// ListMilestonesCtx 读取 Team 里程碑列表。
+// 副作用：无；返回值已做时间与字段归一化。
+func (s *Store) ListMilestonesCtx(ctx context.Context, teamID string) ([]Milestone, error) {
+	if err := ctxErr(ctx); err != nil {
+		return nil, err
+	}
+	return s.loadMilestonesNoCtx(teamID)
+}
+
+// LoadMilestoneCtx 读取单个里程碑。
+// 前置条件：milestoneID 必须可定位；副作用：无。
+func (s *Store) LoadMilestoneCtx(ctx context.Context, teamID, milestoneID string) (Milestone, error) {
+	if err := ctxErr(ctx); err != nil {
+		return Milestone{}, err
+	}
+	return s.loadMilestoneNoCtx(teamID, milestoneID)
+}
+
+// ListMilestoneProgressCtx 读取里程碑进度聚合视图。
+// 副作用：无；会聚合 milestone 与 task 进度。
+func (s *Store) ListMilestoneProgressCtx(ctx context.Context, teamID string) ([]MilestoneProgress, error) {
+	if err := ctxErr(ctx); err != nil {
+		return nil, err
+	}
+	return s.listMilestoneProgressNoCtx(teamID)
+}
+
+// LoadArtifactsCtx 读取 Team 产物列表，limit=0 表示全量。
+// 副作用：无。
 func (s *Store) LoadArtifactsCtx(ctx context.Context, teamID string, limit int) ([]Artifact, error) {
 	if err := ctxErr(ctx); err != nil {
 		return nil, err
@@ -228,6 +284,8 @@ func (s *Store) LoadArtifactCtx(ctx context.Context, teamID, artifactID string) 
 	return s.loadArtifactNoCtx(teamID, artifactID)
 }
 
+// LoadHistoryCtx 读取 Team 历史事件，limit=0 表示全量。
+// 副作用：无；结果按时间倒序返回。
 func (s *Store) LoadHistoryCtx(ctx context.Context, teamID string, limit int) ([]ChangeEvent, error) {
 	if err := ctxErr(ctx); err != nil {
 		return nil, err
@@ -351,6 +409,8 @@ func (s *Store) LoadMessagesByContextCtx(ctx context.Context, teamID, contextID 
 	})
 }
 
+// SaveMembersCtx 保存成员快照。
+// 副作用：会覆盖 members.json，并影响权限与成员统计。
 func (s *Store) SaveMembersCtx(ctx context.Context, teamID string, members []Member) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -358,6 +418,8 @@ func (s *Store) SaveMembersCtx(ctx context.Context, teamID string, members []Mem
 	return s.saveMembersNoCtx(teamID, members)
 }
 
+// SaveWebhookConfigsCtx 保存 Team webhook 配置。
+// 副作用：会覆盖 webhook 配置集合并影响后续投递行为。
 func (s *Store) SaveWebhookConfigsCtx(ctx context.Context, teamID string, configs []PushNotificationConfig) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -365,6 +427,8 @@ func (s *Store) SaveWebhookConfigsCtx(ctx context.Context, teamID string, config
 	return s.saveWebhookConfigsNoCtx(teamID, configs)
 }
 
+// SavePolicyCtx 保存 Team policy。
+// 副作用：会覆盖 policy.json，并影响权限检查与状态流转。
 func (s *Store) SavePolicyCtx(ctx context.Context, teamID string, policy Policy) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -372,6 +436,8 @@ func (s *Store) SavePolicyCtx(ctx context.Context, teamID string, policy Policy)
 	return s.savePolicyNoCtx(teamID, policy)
 }
 
+// SaveChannelConfigCtx 保存频道配置。
+// 副作用：会覆盖 channel config，并影响 Room Plugin / Theme / Agent Onboarding。
 func (s *Store) SaveChannelConfigCtx(ctx context.Context, teamID string, cfg ChannelConfig) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -379,6 +445,8 @@ func (s *Store) SaveChannelConfigCtx(ctx context.Context, teamID string, cfg Cha
 	return s.saveChannelConfigNoCtx(teamID, cfg)
 }
 
+// AppendMessageCtx 追加一条 Team 消息。
+// 前置条件：teamID 可用、消息内容非空；副作用：会写消息文件、可能写通知、会发布 TeamEvent。
 func (s *Store) AppendMessageCtx(ctx context.Context, teamID string, msg Message) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -386,11 +454,31 @@ func (s *Store) AppendMessageCtx(ctx context.Context, teamID string, msg Message
 	return s.appendMessageNoCtx(teamID, msg)
 }
 
+// SaveChannelCtx 保存频道定义。
+// 副作用：会覆盖频道配置并影响频道列表与消息入口。
 func (s *Store) SaveChannelCtx(ctx context.Context, teamID string, channel Channel) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
 	}
 	return s.saveChannelNoCtx(teamID, channel)
+}
+
+// SaveMilestoneCtx 保存里程碑。
+// 副作用：会覆盖 milestone 数据，并影响任务进度聚合。
+func (s *Store) SaveMilestoneCtx(ctx context.Context, teamID string, milestone Milestone) error {
+	if err := ctxErr(ctx); err != nil {
+		return err
+	}
+	return s.saveMilestoneNoCtx(teamID, milestone)
+}
+
+// DeleteMilestoneCtx 删除里程碑。
+// 前置条件：调用方应先处理挂接任务；副作用：会移除 milestone 记录。
+func (s *Store) DeleteMilestoneCtx(ctx context.Context, teamID, milestoneID string) error {
+	if err := ctxErr(ctx); err != nil {
+		return err
+	}
+	return s.deleteMilestoneNoCtx(teamID, milestoneID)
 }
 
 func (s *Store) HideChannelCtx(ctx context.Context, teamID, channelID string) error {
@@ -400,6 +488,8 @@ func (s *Store) HideChannelCtx(ctx context.Context, teamID, channelID string) er
 	return s.hideChannelNoCtx(teamID, channelID)
 }
 
+// AppendTaskCtx 追加创建一条任务。
+// 前置条件：title 必填，状态与依赖需通过校验；副作用：会写任务、通知和 TeamEvent。
 func (s *Store) AppendTaskCtx(ctx context.Context, teamID string, task Task) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -407,6 +497,8 @@ func (s *Store) AppendTaskCtx(ctx context.Context, teamID string, task Task) err
 	return s.appendTaskNoCtx(teamID, task)
 }
 
+// SaveTaskCtx 保存现有任务。
+// 前置条件：task.TaskID 必填；副作用：会更新任务、通知、hook 与 TeamEvent。
 func (s *Store) SaveTaskCtx(ctx context.Context, teamID string, task Task) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -421,6 +513,8 @@ func (s *Store) DeleteTaskCtx(ctx context.Context, teamID, taskID string) error 
 	return s.deleteTaskNoCtx(teamID, taskID)
 }
 
+// AppendArtifactCtx 追加创建一条产物。
+// 前置条件：artifact.Title 必填；副作用：会写产物并发布 TeamEvent。
 func (s *Store) AppendArtifactCtx(ctx context.Context, teamID string, artifact Artifact) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -428,6 +522,8 @@ func (s *Store) AppendArtifactCtx(ctx context.Context, teamID string, artifact A
 	return s.appendArtifactNoCtx(teamID, artifact)
 }
 
+// SaveArtifactCtx 保存现有产物。
+// 前置条件：artifact.ArtifactID 必填；副作用：会更新产物并影响检索结果。
 func (s *Store) SaveArtifactCtx(ctx context.Context, teamID string, artifact Artifact) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -435,6 +531,8 @@ func (s *Store) SaveArtifactCtx(ctx context.Context, teamID string, artifact Art
 	return s.saveArtifactNoCtx(teamID, artifact)
 }
 
+// DeleteArtifactCtx 删除产物。
+// 前置条件：artifactID 必须存在；副作用：会移除产物并影响相关检索结果。
 func (s *Store) DeleteArtifactCtx(ctx context.Context, teamID, artifactID string) error {
 	if err := ctxErr(ctx); err != nil {
 		return err
@@ -442,6 +540,8 @@ func (s *Store) DeleteArtifactCtx(ctx context.Context, teamID, artifactID string
 	return s.deleteArtifactNoCtx(teamID, artifactID)
 }
 
+// AppendHistoryCtx 追加一条 Team 历史事件。
+// 前置条件：event.Scope 和 event.Action 不能为空；副作用：会写 history.jsonl 并发布 TeamEvent。
 func (s *Store) AppendHistoryCtx(ctx context.Context, teamID string, event ChangeEvent) error {
 	if err := ctxErr(ctx); err != nil {
 		return err

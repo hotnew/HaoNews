@@ -21,6 +21,13 @@ func (s *Store) loadTaskCurrent(teamID, taskID string) (Task, error) {
 	return s.loadTaskFromIndex(teamID, taskID)
 }
 
+func (s *Store) loadTaskCurrentLocked(teamID, taskID string) (Task, error) {
+	if err := s.ensureTaskIndexLocked(teamID); err != nil {
+		return Task{}, err
+	}
+	return s.loadTaskFromIndex(teamID, taskID)
+}
+
 func (s *Store) appendTaskCurrentLocked(teamID string, task Task) error {
 	if err := s.ensureTaskIndexLocked(teamID); err != nil {
 		return err

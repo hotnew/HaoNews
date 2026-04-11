@@ -423,8 +423,16 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 			handleAPITeamChannels(store, teamID, w, r)
 			return
 		}
+		if len(parts) == 2 && parts[1] == "milestones" {
+			handleAPITeamMilestones(store, teamID, w, r)
+			return
+		}
 		if len(parts) == 2 && parts[1] == "channel-configs" {
 			handleAPITeamChannelConfigs(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "milestones" {
+			handleAPITeamMilestone(store, teamID, parts[2], w, r)
 			return
 		}
 		if len(parts) == 3 && parts[1] == "channels" {
@@ -443,6 +451,15 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 				return
 			}
 			handleAPITeamChannelConfig(store, teamID, channelID, w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "channels" && parts[3] == "context" {
+			channelID := normalizeTeamChannel(parts[2])
+			if channelID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			handleAPITeamChannelContext(store, teamID, channelID, w, r)
 			return
 		}
 		if len(parts) == 2 && parts[1] == "policy" {
@@ -505,6 +522,14 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 			handleAPITeamEvents(store, teamID, w, r)
 			return
 		}
+		if len(parts) == 2 && parts[1] == "notifications" {
+			handleAPITeamNotifications(store, teamID, w, r)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "notifications" && parts[2] == "stream" {
+			handleAPITeamNotificationsStream(store, teamID, w, r)
+			return
+		}
 		if len(parts) == 2 && parts[1] == "agents" {
 			handleAPITeamAgents(store, teamID, w, r)
 			return
@@ -528,6 +553,14 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 		}
 		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "comment" {
 			handleAPITeamTaskCommentCreate(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "thread" {
+			handleAPITeamTaskThread(store, teamID, parts[2], w, r)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "tasks" && parts[3] == "dispatch" {
+			handleAPITeamTaskDispatch(store, teamID, parts[2], w, r)
 			return
 		}
 		if len(parts) == 3 && parts[1] == "tasks" {

@@ -14,7 +14,7 @@ import (
 
 const teamSearchSectionLimit = 12
 
-func handleTeamSearch(app *newsplugin.App, store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+func handleTeamSearch(app *newsplugin.App, store teamcore.TeamReader, teamID string, w http.ResponseWriter, r *http.Request) {
 	info, err := store.LoadTeamCtx(r.Context(), teamID)
 	if err != nil {
 		http.NotFound(w, r)
@@ -59,7 +59,7 @@ func handleTeamSearch(app *newsplugin.App, store *teamcore.Store, teamID string,
 	}
 }
 
-func handleAPITeamSearch(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+func handleAPITeamSearch(store teamcore.TeamReader, teamID string, w http.ResponseWriter, r *http.Request) {
 	if _, err := store.LoadTeamCtx(r.Context(), teamID); err != nil {
 		http.NotFound(w, r)
 		return
@@ -90,7 +90,7 @@ func handleAPITeamSearch(store *teamcore.Store, teamID string, w http.ResponseWr
 	})
 }
 
-func buildTeamSearchSections(ctx context.Context, store *teamcore.Store, teamID, query, scope string) ([]teamSearchSectionView, []teamSearchScopeOption, string, error) {
+func buildTeamSearchSections(ctx context.Context, store teamcore.TeamReader, teamID, query, scope string) ([]teamSearchSectionView, []teamSearchScopeOption, string, error) {
 	query = strings.TrimSpace(query)
 	scope = normalizeTeamSearchScope(scope)
 	sections := []teamSearchSectionView{
@@ -202,7 +202,7 @@ func searchTeamArtifacts(items []teamcore.Artifact, teamID, query string) ([]tea
 	return trimTeamSearchResults(matches, teamSearchSectionLimit), len(matches)
 }
 
-func searchTeamMessages(ctx context.Context, store *teamcore.Store, teamID string, channels []teamcore.ChannelSummary, query string) ([]teamSearchResultView, int, error) {
+func searchTeamMessages(ctx context.Context, store teamcore.TeamReader, teamID string, channels []teamcore.ChannelSummary, query string) ([]teamSearchResultView, int, error) {
 	needle := normalizeTeamSearchQuery(query)
 	matches := make([]teamSearchResultView, 0)
 	for _, channel := range channels {

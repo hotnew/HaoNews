@@ -120,87 +120,136 @@ func structuredDataContextID(values map[string]any) string {
 	return normalizeContextID(fmt.Sprint(value))
 }
 
+func normalizeParentMessageID(value string) string {
+	return strings.TrimSpace(value)
+}
+
 func normalizeMemberRole(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "owner":
-		return "owner"
-	case "maintainer":
-		return "maintainer"
-	case "observer":
-		return "observer"
-	case "member":
-		return "member"
+	case MemberRoleOwner:
+		return MemberRoleOwner
+	case MemberRoleMaintainer:
+		return MemberRoleMaintainer
+	case MemberRoleObserver:
+		return MemberRoleObserver
+	case MemberRoleMember:
+		return MemberRoleMember
 	default:
-		return "member"
+		return MemberRoleMember
 	}
 }
 
 func normalizeMemberStatus(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "pending":
-		return "pending"
-	case "muted":
-		return "muted"
-	case "removed":
-		return "removed"
-	case "active":
-		return "active"
+	case MemberStatusPending:
+		return MemberStatusPending
+	case MemberStatusMuted:
+		return MemberStatusMuted
+	case MemberStatusRemoved:
+		return MemberStatusRemoved
+	case MemberStatusActive:
+		return MemberStatusActive
 	default:
-		return "active"
+		return MemberStatusActive
 	}
 }
 
 func normalizeArtifactKind(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "markdown":
-		return "markdown"
-	case "json":
-		return "json"
-	case "link":
-		return "link"
-	case "post":
-		return "post"
-	case "skill-doc":
-		return "skill-doc"
-	case "plan-summary":
-		return "plan-summary"
-	case "review-summary":
-		return "review-summary"
+	case ArtifactKindMarkdown:
+		return ArtifactKindMarkdown
+	case ArtifactKindJSON:
+		return ArtifactKindJSON
+	case ArtifactKindLink:
+		return ArtifactKindLink
+	case ArtifactKindPost:
+		return ArtifactKindPost
+	case ArtifactKindSkillDoc:
+		return ArtifactKindSkillDoc
+	case ArtifactKindPlanSummary:
+		return ArtifactKindPlanSummary
+	case ArtifactKindReviewSummary:
+		return ArtifactKindReviewSummary
+	case ArtifactKindIncident:
+		return ArtifactKindIncident
+	case ArtifactKindHandoff:
+		return ArtifactKindHandoff
+	case ArtifactKindArtifactBrief:
+		return ArtifactKindArtifactBrief
+	case ArtifactKindDecisionNote:
+		return ArtifactKindDecisionNote
 	default:
-		return "markdown"
+		return ArtifactKindMarkdown
 	}
 }
 
 func normalizeTaskStatus(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "open":
+	case "", TaskStateOpen:
 		return strings.TrimSpace(strings.ToLower(value))
 	case "todo":
-		return "open"
-	case "doing", "in-progress", "in_progress", "progress":
-		return "doing"
-	case "blocked", "hold":
-		return "blocked"
-	case "review", "reviewing":
-		return "review"
-	case "done", "closed", "complete", "completed":
-		return "done"
+		return TaskStateOpen
+	case TaskStateDispatched:
+		return TaskStateDispatched
+	case TaskStateDoing, "in-progress", "in_progress", "progress":
+		return TaskStateDoing
+	case TaskStateBlocked, "hold":
+		return TaskStateBlocked
+	case TaskStateReview, "reviewing":
+		return TaskStateReview
+	case TaskStateDone, "closed", "complete", "completed":
+		return TaskStateDone
 	default:
 		return strings.TrimSpace(strings.ToLower(value))
 	}
 }
 
+func normalizeTaskRefID(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func normalizeTaskRefList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = normalizeTaskRefID(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func normalizeTaskPriority(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "low", "medium", "high":
+	case "", TaskPriorityLow, TaskPriorityMedium, TaskPriorityHigh:
 		return strings.TrimSpace(strings.ToLower(value))
 	case "med", "normal":
-		return "medium"
+		return TaskPriorityMedium
 	case "urgent", "critical":
-		return "high"
+		return TaskPriorityHigh
 	default:
 		return strings.TrimSpace(strings.ToLower(value))
 	}
+}
+
+func normalizeMilestoneID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return NormalizeTeamID(value)
 }
 
 func sanitizeArchiveID(value string) string {

@@ -176,9 +176,12 @@ func TestAgentCardCRUDAndMatchAgentsForTask(t *testing.T) {
 	}
 
 	card := AgentCard{
-		AgentID:     "agent://pc75/coder",
-		Name:        "Code Agent",
-		Description: "Writes and reviews code",
+		AgentID:         "agent://pc75/coder",
+		Name:            "Code Agent",
+		Description:     "Writes and reviews code",
+		QueueLength:     3,
+		LastHeartbeatAt: time.Date(2026, 4, 10, 4, 0, 0, 0, time.UTC),
+		LastResponseAt:  time.Date(2026, 4, 10, 4, 1, 0, 0, time.UTC),
 		Skills: []AgentSkill{
 			{ID: "code-review", Name: "Code Review", Tags: []string{"review", "code"}},
 			{ID: "code-write", Name: "Code Writing", Tags: []string{"coding", "implementation"}},
@@ -192,8 +195,8 @@ func TestAgentCardCRUDAndMatchAgentsForTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAgentCard error = %v", err)
 	}
-	if loaded.Name != "Code Agent" {
-		t.Fatalf("loaded.Name = %q", loaded.Name)
+	if loaded.Name != "Code Agent" || loaded.QueueLength != 3 || loaded.LastHeartbeatAt.IsZero() || loaded.LastResponseAt.IsZero() {
+		t.Fatalf("loaded = %#v", loaded)
 	}
 
 	cards, err := store.ListAgentCards("agent-test")
@@ -207,6 +210,83 @@ func TestAgentCardCRUDAndMatchAgentsForTask(t *testing.T) {
 	matched := MatchAgentsForTask(cards, Task{Labels: []string{"implementation"}})
 	if len(matched) != 1 || matched[0].AgentID != "agent://pc75/coder" {
 		t.Fatalf("MatchAgentsForTask = %#v", matched)
+	}
+}
+
+func TestNotificationsForMentionsAndTaskState(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	teamRoot := filepath.Join(root, "team", "notify-test")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"notify-test","title":"Notify Test"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent-owner","role":"owner","status":"active"},
+  {"agent_id":"agent-member","role":"member","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+	store, err := OpenStore(root)
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	ctx := context.Background()
+	if err := store.AppendTaskCtx(ctx, "notify-test", Task{
+		TaskID:    "task-notify",
+		TeamID:    "notify-test",
+		ChannelID: "main",
+		Title:     "Notify task",
+		Status:    TaskStateOpen,
+		CreatedBy: "agent-owner",
+		Assignees: []string{"agent-member"},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendTaskCtx error = %v", err)
+	}
+	if err := store.AppendMessageCtx(ctx, "notify-test", Message{
+		TeamID:        "notify-test",
+		ChannelID:     "main",
+		AuthorAgentID: "agent-owner",
+		MessageType:   "chat",
+		Content:       "请处理一下 @agent://pc75/live-alpha",
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendMessageCtx error = %v", err)
+	}
+	task, err := store.LoadTaskCtx(ctx, "notify-test", "task-notify")
+	if err != nil {
+		t.Fatalf("LoadTaskCtx error = %v", err)
+	}
+	task.Status = TaskStateBlocked
+	task.UpdatedAt = time.Now().UTC()
+	if err := store.SaveTaskCtx(ctx, "notify-test", task); err != nil {
+		t.Fatalf("SaveTaskCtx error = %v", err)
+	}
+	notifications, err := store.ListNotificationsCtx(ctx, "notify-test", NotificationFilter{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListNotificationsCtx error = %v", err)
+	}
+	if len(notifications) < 3 {
+		t.Fatalf("notifications = %#v", notifications)
+	}
+	var mentionFound, assignedFound, blockedFound bool
+	for _, notification := range notifications {
+		switch notification.Kind {
+		case NotificationKindMention:
+			mentionFound = mentionFound || notification.AgentID == "agent://pc75/live-alpha"
+		case NotificationKindTaskAssigned:
+			assignedFound = assignedFound || notification.AgentID == "agent-member"
+		case NotificationKindTaskBlocked:
+			blockedFound = blockedFound || notification.AgentID == "agent-member"
+		}
+	}
+	if !mentionFound || !assignedFound || !blockedFound {
+		t.Fatalf("notification kinds missing: %#v", notifications)
 	}
 }
 
@@ -1468,7 +1548,7 @@ func TestStoreTaskStateMachineRejectsInvalidTransition(t *testing.T) {
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt.Add(15 * time.Minute),
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid task status transition") {
+	if err == nil || !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("expected invalid transition error, got %v", err)
 	}
 }
@@ -1512,7 +1592,7 @@ func TestStoreTaskStateMachineUsesPolicyOverrides(t *testing.T) {
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt.Add(15 * time.Minute),
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid task status transition") {
+	if err == nil || !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("expected policy transition error, got %v", err)
 	}
 	if err := store.SaveTask("project-task-policy", Task{

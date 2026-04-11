@@ -171,6 +171,7 @@ type teamMembersPageData struct {
 	AppliedFilters []string
 	Statuses       []string
 	Roles          []string
+	MemberStats    map[string]teamcore.MemberStats
 	StatusCounts   map[string]int
 	RoleCounts     map[string]int
 	SummaryStats   []newsplugin.SummaryStat
@@ -200,6 +201,8 @@ type teamHistoryPageData struct {
 
 type teamSyncConflictView struct {
 	Record             corehaonews.TeamSyncConflictRecord `json:"record"`
+	AutoResolvable     bool                               `json:"auto_resolvable"`
+	AutoResolutionHint string                             `json:"auto_resolution_hint,omitempty"`
 	AllowAcceptRemote  bool                               `json:"allow_accept_remote"`
 	AllowKeepLocal     bool                               `json:"allow_keep_local"`
 	SuggestedAction    string                             `json:"suggested_action,omitempty"`
@@ -343,6 +346,8 @@ type teamChannelPageData struct {
 	Tasks                []teamcore.Task
 	Artifacts            []teamcore.Artifact
 	ChannelConfig        teamcore.ChannelConfig
+	ChannelContext       teamcore.ChannelContext
+	AgentContextPrompt   string
 	RoomEntry            teamRoomEntry
 	CurrentRoomPlugin    teamRoomPluginSummary
 	CurrentRoomTheme     teamRoomThemeSummary

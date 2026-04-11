@@ -36,6 +36,13 @@ h1, h2 { font-size: 16px; margin: 8px 0; }
 </div>
 {{end}}
 
+{{if .AgentContextPrompt}}
+<div class="onboarding">
+<strong>Agent Prompt Preview:</strong>
+<pre>{{.AgentContextPrompt}}</pre>
+</div>
+{{end}}
+
 {{if .ChannelConfig.Rules}}
 <div class="rules">
 <strong>Rules:</strong>

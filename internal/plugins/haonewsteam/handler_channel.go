@@ -92,6 +92,12 @@ func handleTeamChannel(app *newsplugin.App, store *teamcore.Store, roomRegistry 
 			{Label: "状态", Value: channelStateLabel(current.Hidden)},
 		},
 	}
+	if provider := teamcore.NewChannelContextProvider(store); provider != nil {
+		if snapshot, err := provider.GetChannelContext(r.Context(), teamID, channelID); err == nil {
+			data.ChannelContext = snapshot
+			data.AgentContextPrompt = snapshot.AgentPrompt
+		}
+	}
 	pluginByID := roomPluginSummaryMap(roomRegistry)
 	themeByID := roomThemeSummaryMap(themeRegistry)
 	data.RoomEntry = buildTeamRoomEntry(teamID, currentSummary, data.ChannelConfig, strings.TrimSpace(data.ChannelConfig.Plugin) != "" || strings.TrimSpace(data.ChannelConfig.Theme) != "")
@@ -292,6 +298,28 @@ func handleAPITeamChannel(store *teamcore.Store, roomRegistry *roomplugin.Regist
 	}
 }
 
+func handleAPITeamChannelContext(store *teamcore.Store, teamID, channelID string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	provider := teamcore.NewChannelContextProvider(store)
+	snapshot, err := provider.GetChannelContext(r.Context(), teamID, channelID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
+		"scope":         "team-channel-context",
+		"team_id":       teamID,
+		"channel_id":    channelID,
+		"context":       snapshot,
+		"task_count":    len(snapshot.ActiveTasks),
+		"message_count": len(snapshot.RecentMessages),
+		"member_count":  len(snapshot.ActiveMembers),
+	})
+}
+
 func handleTeamChannelConfigUpdate(store *teamcore.Store, roomRegistry *roomplugin.Registry, themeRegistry *roomthemes.Registry, teamID, channelID string, w http.ResponseWriter, r *http.Request) {
 	if !teamRequestTrusted(r) {
 		http.Error(w, "channel config update is limited to local or LAN requests", http.StatusForbidden)
@@ -403,7 +431,24 @@ func handleAPITeamChannelConfig(store *teamcore.Store, teamID, channelID string,
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		newsplugin.WriteJSON(w, http.StatusOK, cfg)
+		resp := map[string]any{
+			"channel_id":        cfg.ChannelID,
+			"plugin":            cfg.Plugin,
+			"theme":             cfg.Theme,
+			"agent_onboarding":  cfg.AgentOnboarding,
+			"rules":             cfg.Rules,
+			"metadata":          cfg.Metadata,
+			"updated_at":        cfg.UpdatedAt,
+			"agent_prompt":      "",
+			"context_api_path":  "/api/teams/" + teamID + "/channels/" + channelID + "/context",
+			"thread_api_prefix": "/api/teams/" + teamID + "/tasks/",
+		}
+		if provider := teamcore.NewChannelContextProvider(store); provider != nil {
+			if snapshot, err := provider.GetChannelContext(r.Context(), teamID, channelID); err == nil {
+				resp["agent_prompt"] = snapshot.AgentPrompt
+			}
+		}
+		newsplugin.WriteJSON(w, http.StatusOK, resp)
 	case http.MethodPut:
 		if !teamRequestTrusted(r) {
 			http.Error(w, "channel config update is limited to local or LAN requests", http.StatusForbidden)

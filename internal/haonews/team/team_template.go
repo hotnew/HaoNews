@@ -1,0 +1,183 @@
+package team
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+)
+
+type TemplateRoleBinding struct {
+	Alias  string `json:"alias"`
+	Role   string `json:"role"`
+	Status string `json:"status,omitempty"`
+}
+
+type TeamTemplate struct {
+	TemplateID     string                `json:"template_id"`
+	Title          string                `json:"title"`
+	Description    string                `json:"description,omitempty"`
+	Channels       []Channel             `json:"channels,omitempty"`
+	Policy         Policy                `json:"policy"`
+	ChannelConfigs []ChannelConfig       `json:"channel_configs,omitempty"`
+	RoleBindings   []TemplateRoleBinding `json:"role_bindings,omitempty"`
+	SeedMilestones []Milestone           `json:"seed_milestones,omitempty"`
+}
+
+func BuiltinTeamTemplates() []TeamTemplate {
+	return []TeamTemplate{
+		{
+			TemplateID:  "incident-response",
+			Title:       "Incident Response",
+			Description: "故障响应模板，包含分诊、时间线和恢复频道。",
+			Channels: []Channel{
+				{ChannelID: "main", Title: "Command"},
+				{ChannelID: "timeline", Title: "Timeline"},
+				{ChannelID: "recovery", Title: "Recovery"},
+			},
+			Policy: DefaultPolicy(),
+			ChannelConfigs: []ChannelConfig{
+				{ChannelID: "main", Plugin: "incident-room@1.0", Theme: "focus", AgentOnboarding: "聚焦事故分诊、阻塞项和恢复状态。"},
+				{ChannelID: "timeline", Plugin: "handoff-room@1.0", Theme: "board", AgentOnboarding: "维护故障时间线、交接和 checkpoint。"},
+			},
+			RoleBindings: []TemplateRoleBinding{
+				{Alias: "owner", Role: MemberRoleOwner, Status: MemberStatusActive},
+				{Alias: "incident-commander", Role: MemberRoleMaintainer, Status: MemberStatusActive},
+				{Alias: "observer", Role: MemberRoleObserver, Status: MemberStatusActive},
+			},
+			SeedMilestones: []Milestone{
+				{MilestoneID: "stabilize", Title: "恢复稳定", Status: MilestoneStateOpen},
+			},
+		},
+		{
+			TemplateID:  "code-review",
+			Title:       "Code Review",
+			Description: "评审模板，包含 review 决策和产物沉淀频道。",
+			Channels: []Channel{
+				{ChannelID: "main", Title: "Review"},
+				{ChannelID: "decisions", Title: "Decisions"},
+			},
+			Policy: DefaultPolicy(),
+			ChannelConfigs: []ChannelConfig{
+				{ChannelID: "main", Plugin: "review-room@1.0", Theme: "focus", AgentOnboarding: "沉淀 review、risk、decision，并尽快归并到任务。"},
+				{ChannelID: "decisions", Plugin: "decision-room@1.0", Theme: "board", AgentOnboarding: "记录 proposal、option、decision 结论。"},
+			},
+			RoleBindings: []TemplateRoleBinding{
+				{Alias: "owner", Role: MemberRoleOwner, Status: MemberStatusActive},
+				{Alias: "reviewer", Role: MemberRoleMaintainer, Status: MemberStatusActive},
+			},
+			SeedMilestones: []Milestone{
+				{MilestoneID: "review-ready", Title: "完成评审结论", Status: MilestoneStateOpen},
+			},
+		},
+		{
+			TemplateID:  "planning",
+			Title:       "Planning",
+			Description: "规划模板，包含方案交换、决策和产物沉淀频道。",
+			Channels: []Channel{
+				{ChannelID: "main", Title: "Planning"},
+				{ChannelID: "decisions", Title: "Decisions"},
+				{ChannelID: "artifacts", Title: "Artifacts"},
+			},
+			Policy: DefaultPolicy(),
+			ChannelConfigs: []ChannelConfig{
+				{ChannelID: "main", Plugin: "plan-exchange@1.0", Theme: "minimal", AgentOnboarding: "交换计划、方案和 skill/snippet。"},
+				{ChannelID: "decisions", Plugin: "decision-room@1.0", Theme: "focus", AgentOnboarding: "把规划结论快速收成 decision。"},
+				{ChannelID: "artifacts", Plugin: "artifact-room@1.0", Theme: "board", AgentOnboarding: "沉淀 proposal、revision、publish 产物。"},
+			},
+			RoleBindings: []TemplateRoleBinding{
+				{Alias: "owner", Role: MemberRoleOwner, Status: MemberStatusActive},
+				{Alias: "planner", Role: MemberRoleMaintainer, Status: MemberStatusActive},
+			},
+			SeedMilestones: []Milestone{
+				{MilestoneID: "plan-approved", Title: "规划通过", Status: MilestoneStateOpen},
+			},
+		},
+	}
+}
+
+func LookupBuiltinTeamTemplate(templateID string) (TeamTemplate, bool) {
+	templateID = strings.TrimSpace(templateID)
+	for _, item := range BuiltinTeamTemplates() {
+		if item.TemplateID == templateID {
+			return item, true
+		}
+	}
+	return TeamTemplate{}, false
+}
+
+func (s *Store) CreateTeamFromTemplateCtx(ctx context.Context, info Info, templateID string, agentBindings map[string]string) (Info, TeamTemplate, error) {
+	template, ok := LookupBuiltinTeamTemplate(templateID)
+	if !ok {
+		return Info{}, TeamTemplate{}, NewNotFoundError("template_id")
+	}
+	info = normalizeInfo(info)
+	if info.TeamID == "" {
+		return Info{}, TeamTemplate{}, NewEmptyIDError("team_id")
+	}
+	if info.Title == "" {
+		info.Title = template.Title
+	}
+	if len(info.Channels) == 0 {
+		info.Channels = make([]string, 0, len(template.Channels))
+		for _, channel := range template.Channels {
+			info.Channels = append(info.Channels, channel.ChannelID)
+		}
+	}
+	if info.CreatedAt.IsZero() {
+		info.CreatedAt = time.Now().UTC()
+	}
+	info.UpdatedAt = info.CreatedAt
+	if err := s.SaveTeamCtx(ctx, info); err != nil {
+		return Info{}, TeamTemplate{}, err
+	}
+	for _, channel := range template.Channels {
+		if err := s.SaveChannelCtx(ctx, info.TeamID, channel); err != nil {
+			return Info{}, TeamTemplate{}, err
+		}
+	}
+	for _, cfg := range template.ChannelConfigs {
+		if err := s.SaveChannelConfigCtx(ctx, info.TeamID, cfg); err != nil {
+			return Info{}, TeamTemplate{}, err
+		}
+	}
+	if err := s.SavePolicyCtx(ctx, info.TeamID, template.Policy); err != nil {
+		return Info{}, TeamTemplate{}, err
+	}
+	members := make([]Member, 0, len(template.RoleBindings))
+	for _, binding := range template.RoleBindings {
+		agentID := strings.TrimSpace(agentBindings[binding.Alias])
+		if binding.Alias == "owner" && agentID == "" {
+			agentID = info.OwnerAgentID
+		}
+		if agentID == "" {
+			continue
+		}
+		members = append(members, Member{
+			AgentID:   agentID,
+			Role:      binding.Role,
+			Status:    binding.Status,
+			JoinedAt:  time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		})
+	}
+	if len(members) > 0 {
+		if err := s.SaveMembersCtx(ctx, info.TeamID, members); err != nil {
+			return Info{}, TeamTemplate{}, err
+		}
+	}
+	for _, milestone := range template.SeedMilestones {
+		milestone.TeamID = info.TeamID
+		if milestone.MilestoneID == "" {
+			milestone.MilestoneID = NormalizeTeamID(fmt.Sprintf("%s-%s", template.TemplateID, milestone.Title))
+		}
+		if err := s.SaveMilestoneCtx(ctx, info.TeamID, milestone); err != nil {
+			return Info{}, TeamTemplate{}, err
+		}
+	}
+	saved, err := s.LoadTeamCtx(ctx, info.TeamID)
+	if err != nil {
+		saved = info
+	}
+	return saved, template, nil
+}

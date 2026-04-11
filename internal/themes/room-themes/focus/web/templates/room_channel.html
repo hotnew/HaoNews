@@ -40,6 +40,7 @@ body { font-family: monospace; max-width: 1040px; margin: 0 auto; padding: 18px;
   </div>
   <div class="side-card">
     {{if .ChannelConfig.AgentOnboarding}}<div><strong>Onboarding</strong><div>{{.ChannelConfig.AgentOnboarding}}</div></div>{{end}}
+    {{if .AgentContextPrompt}}<div><strong>Agent Prompt Preview</strong><pre>{{.AgentContextPrompt}}</pre></div>{{end}}
     {{if .ChannelConfig.Rules}}
       <div class="rules">
         <strong>Rules</strong>

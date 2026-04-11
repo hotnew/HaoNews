@@ -150,6 +150,18 @@ func (s *Store) LoadTaskMessages(teamID, taskID string, limit int) ([]Message, e
 	return s.LoadTaskMessagesCtx(context.Background(), teamID, taskID, limit)
 }
 
+func (s *Store) LoadTaskDispatch(teamID, taskID string) (TaskDispatch, error) {
+	return s.LoadTaskDispatchCtx(context.Background(), teamID, taskID)
+}
+
+func (s *Store) SaveTaskDispatch(teamID string, dispatch TaskDispatch) error {
+	return s.SaveTaskDispatchCtx(context.Background(), teamID, dispatch)
+}
+
+func (s *Store) LoadTaskThread(teamID, taskID string, limit int) (TaskThread, error) {
+	return s.LoadTaskThreadCtx(context.Background(), teamID, taskID, limit)
+}
+
 func (s *Store) LoadMessagesByContext(teamID, contextID string, limit int) ([]Message, error) {
 	return s.LoadMessagesByContextCtx(context.Background(), teamID, contextID, limit)
 }

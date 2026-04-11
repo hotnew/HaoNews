@@ -2,8 +2,11 @@ package haonewsteam
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
+
+	teamcore "hao.news/internal/haonews/team"
 )
 
 type teamErrorResponse struct {
@@ -35,14 +38,14 @@ func classifyTeamAPIError(teamID string, err error) (teamErrorResponse, bool) {
 			Help:    "请在消息里携带有效的 Ed25519 签名；如果只是网页快捷发送，请先查看 Team Policy 再改用带签名的 API 请求。",
 			DocURL:  "/api/teams/" + teamID + "/policy",
 		}, true
-	case strings.Contains(message, "policy denied action"):
+	case errors.Is(err, teamcore.ErrForbidden):
 		return teamErrorResponse{
 			Error:   "permission_denied",
 			Message: "当前角色没有执行这个 Team 动作的权限。",
 			Help:    "请检查 Team Policy 中的角色权限设置，或改用具备权限的成员身份执行。",
 			DocURL:  "/api/teams/" + teamID + "/policy",
 		}, true
-	case strings.Contains(message, "invalid task status transition"):
+	case errors.Is(err, teamcore.ErrInvalidState):
 		return teamErrorResponse{
 			Error:   "invalid_task_transition",
 			Message: "当前任务状态不能按这个方向流转。",

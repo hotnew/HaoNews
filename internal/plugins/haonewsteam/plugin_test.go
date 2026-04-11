@@ -547,6 +547,9 @@ func TestPluginBuildTeamAgentCardAPI(t *testing.T) {
   "card": {
     "agent_id": "agent://pc75/coder",
     "name": "Code Agent",
+    "queue_length": 4,
+    "last_heartbeat_at": "2026-04-10T04:00:00Z",
+    "last_response_at": "2026-04-10T04:02:00Z",
     "skills": [
       {"id":"code-write","name":"Code Writing","tags":["coding","implementation"]}
     ]
@@ -565,7 +568,7 @@ func TestPluginBuildTeamAgentCardAPI(t *testing.T) {
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("agent list status = %d, body = %s", listRec.Code, listRec.Body.String())
 	}
-	if !strings.Contains(listRec.Body.String(), "\"scope\": \"team-agents\"") || !strings.Contains(listRec.Body.String(), "\"matched_count\": 1") || !strings.Contains(listRec.Body.String(), "agent://pc75/coder") {
+	if !strings.Contains(listRec.Body.String(), "\"scope\": \"team-agents\"") || !strings.Contains(listRec.Body.String(), "\"matched_count\": 1") || !strings.Contains(listRec.Body.String(), "agent://pc75/coder") || !strings.Contains(listRec.Body.String(), "\"queue_length\": 4") {
 		t.Fatalf("expected team agents body, got %q", listRec.Body.String())
 	}
 
@@ -575,8 +578,157 @@ func TestPluginBuildTeamAgentCardAPI(t *testing.T) {
 	if getRec.Code != http.StatusOK {
 		t.Fatalf("agent get status = %d, body = %s", getRec.Code, getRec.Body.String())
 	}
-	if !strings.Contains(getRec.Body.String(), "\"scope\": \"team-agent-card\"") || !strings.Contains(getRec.Body.String(), "\"name\": \"Code Agent\"") {
+	if !strings.Contains(getRec.Body.String(), "\"scope\": \"team-agent-card\"") || !strings.Contains(getRec.Body.String(), "\"name\": \"Code Agent\"") || !strings.Contains(getRec.Body.String(), "\"last_heartbeat_at\": \"2026-04-10T04:00:00Z\"") || !strings.Contains(getRec.Body.String(), "\"last_response_at\": \"2026-04-10T04:02:00Z\"") {
 		t.Fatalf("expected team agent card body, got %q", getRec.Body.String())
+	}
+}
+
+func TestPluginBuildServesTeamNotifications(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	store, err := teamcore.OpenStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	teamRoot := filepath.Join(root, "store", "team", "notify-api-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{"team_id":"notify-api-team","title":"Notify API Team"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent-owner","role":"owner","status":"active"},
+  {"agent_id":"agent-member","role":"member","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+	if err := store.AppendTaskCtx(context.Background(), "notify-api-team", teamcore.Task{
+		TaskID:    "task-notify-api",
+		TeamID:    "notify-api-team",
+		ChannelID: "main",
+		Title:     "Notify API task",
+		Status:    teamcore.TaskStateOpen,
+		CreatedBy: "agent-owner",
+		Assignees: []string{"agent-member"},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendTaskCtx error = %v", err)
+	}
+	if err := store.AppendMessageCtx(context.Background(), "notify-api-team", teamcore.Message{
+		TeamID:        "notify-api-team",
+		ChannelID:     "main",
+		AuthorAgentID: "agent-owner",
+		MessageType:   "chat",
+		Content:       "ping @agent://pc75/live-alpha",
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendMessageCtx error = %v", err)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/teams/notify-api-team/notifications?agent_id=agent-member", nil)
+	listRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("notifications status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	if !strings.Contains(listRec.Body.String(), `"scope": "team-notifications"`) || !strings.Contains(listRec.Body.String(), `"agent_id": "agent-member"`) || !strings.Contains(listRec.Body.String(), `"task_assigned"`) {
+		t.Fatalf("expected notifications body, got %q", listRec.Body.String())
+	}
+
+	server := httptest.NewServer(site.Handler)
+	defer server.Close()
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/teams/notify-api-team/notifications/stream?agent_id=agent://pc75/live-alpha", nil)
+	if err != nil {
+		t.Fatalf("NewRequest error = %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("stream request error = %v", err)
+	}
+	defer resp.Body.Close()
+	eventCh := make(chan teamcore.TeamEvent, 1)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var event teamcore.TeamEvent
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+				continue
+			}
+			eventCh <- event
+			return
+		}
+	}()
+	time.Sleep(150 * time.Millisecond)
+	if err := store.AppendMessageCtx(context.Background(), "notify-api-team", teamcore.Message{
+		TeamID:        "notify-api-team",
+		ChannelID:     "main",
+		AuthorAgentID: "agent-owner",
+		MessageType:   "chat",
+		Content:       "follow-up @agent://pc75/live-alpha",
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendMessageCtx(stream) error = %v", err)
+	}
+	select {
+	case event := <-eventCh:
+		if event.Kind != "notification" || strings.TrimSpace(event.Metadata["agent_id"].(string)) != "agent://pc75/live-alpha" {
+			t.Fatalf("unexpected notification event = %#v", event)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for notification stream event")
+	}
+}
+
+func TestPluginBuildCreatesTeamFromTemplateAndServesMilestones(t *testing.T) {
+	t.Parallel()
+
+	site, _ := buildTeamSite(t)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/teams?from_template=planning", strings.NewReader(`{
+  "team": {
+    "team_id": "templated-team",
+    "title": "Templated Team",
+    "owner_agent_id": "agent-owner"
+  },
+  "agent_bindings": {
+    "planner": "agent-planner"
+  }
+}`))
+	createReq.RemoteAddr = "127.0.0.1:12345"
+	createRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+	if !strings.Contains(createRec.Body.String(), `"template_id":"planning"`) && !strings.Contains(createRec.Body.String(), `"template_id": "planning"`) {
+		t.Fatalf("expected planning template in body, got %s", createRec.Body.String())
+	}
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/teams/templated-team", nil)
+	detailRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, body = %s", detailRec.Code, detailRec.Body.String())
+	}
+	body := detailRec.Body.String()
+	if !strings.Contains(body, `"milestone_count":1`) && !strings.Contains(body, `"milestone_count": 1`) {
+		t.Fatalf("expected milestone_count in detail body, got %s", body)
+	}
+	if !strings.Contains(body, `"channel_config_count":3`) && !strings.Contains(body, `"channel_config_count": 3`) {
+		t.Fatalf("expected channel configs in detail body, got %s", body)
+	}
+
+	milestoneReq := httptest.NewRequest(http.MethodGet, "/api/teams/templated-team/milestones", nil)
+	milestoneRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(milestoneRec, milestoneReq)
+	if milestoneRec.Code != http.StatusOK || !strings.Contains(milestoneRec.Body.String(), `"milestone_id":"plan-approved"`) && !strings.Contains(milestoneRec.Body.String(), `"milestone_id": "plan-approved"`) {
+		t.Fatalf("milestones status = %d, body = %s", milestoneRec.Code, milestoneRec.Body.String())
 	}
 }
 
@@ -936,6 +1088,10 @@ func TestPluginBuildConfiguresAndFiresTeamWebhook(t *testing.T) {
 	t.Parallel()
 
 	site, root := buildTeamSite(t)
+	store, err := teamcore.OpenStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
 	teamRoot := filepath.Join(root, "store", "team", "webhook-api-team")
 	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll error = %v", err)
@@ -996,6 +1152,16 @@ func TestPluginBuildConfiguresAndFiresTeamWebhook(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for webhook api delivery")
 	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		status, err := store.LoadWebhookDeliveryStatusCtx(context.Background(), "webhook-api-team")
+		if err == nil && status.DeliveredCount >= 1 && status.RetryingCount == 0 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for webhook delivery status to settle")
 }
 
 func TestPluginBuildServesReviewRoom(t *testing.T) {
@@ -2485,6 +2651,82 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 		t.Fatalf("expected team context api body, got %q", contextRec.Body.String())
 	}
 
+	if err := store.AppendTask("project-beta", teamcore.Task{
+		TaskID:    "team-task-dispatch-target",
+		CreatedBy: "agent://pc75/live-bravo",
+		Title:     "Dispatch target",
+		ChannelID: "research",
+		Status:    teamcore.TaskStateOpen,
+		UpdatedAt: time.Date(2026, 4, 1, 3, 47, 0, 0, time.UTC),
+		CreatedAt: time.Date(2026, 4, 1, 3, 47, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendTask(dispatch target) error = %v", err)
+	}
+	if err := store.AppendMessage("project-beta", teamcore.Message{
+		ChannelID:       "research",
+		AuthorAgentID:   "agent://pc75/live-bravo",
+		MessageType:     "decision",
+		Content:         "Dispatch target parent message",
+		ParentMessageID: "dispatch-parent",
+		StructuredData: map[string]any{
+			"task_id": "team-task-dispatch-target",
+		},
+		CreatedAt: time.Date(2026, 4, 1, 3, 48, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("AppendMessage(dispatch task message) error = %v", err)
+	}
+	dispatchTask, err := store.LoadTask("project-beta", "team-task-dispatch-target")
+	if err != nil {
+		t.Fatalf("LoadTask(dispatch target) error = %v", err)
+	}
+	dispatchContextReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/tasks/team-task-dispatch-target/thread", nil)
+	dispatchContextRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(dispatchContextRec, dispatchContextReq)
+	if dispatchContextRec.Code != http.StatusOK {
+		t.Fatalf("task thread status = %d, body = %s", dispatchContextRec.Code, dispatchContextRec.Body.String())
+	}
+	if !strings.Contains(dispatchContextRec.Body.String(), `"scope": "team-task-thread"`) || !strings.Contains(dispatchContextRec.Body.String(), `"task_id": "team-task-dispatch-target"`) || !strings.Contains(dispatchContextRec.Body.String(), `dispatch-parent`) {
+		t.Fatalf("expected task thread body, got %q", dispatchContextRec.Body.String())
+	}
+
+	dispatchPutReq := httptest.NewRequest(http.MethodPost, "/api/teams/project-beta/tasks/team-task-dispatch-target/dispatch", strings.NewReader(`{
+  "actor_agent_id": "agent://pc75/live-bravo",
+  "assigned_agent_id": "agent://pc75/live-charlie",
+  "match_reason": "rule:review-owner",
+  "status": "queued",
+  "timeout_seconds": 120
+}`))
+	dispatchPutReq.RemoteAddr = "127.0.0.1:12345"
+	dispatchPutReq.Header.Set("Content-Type", "application/json")
+	dispatchPutRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(dispatchPutRec, dispatchPutReq)
+	if dispatchPutRec.Code != http.StatusOK {
+		t.Fatalf("task dispatch put status = %d, body = %s", dispatchPutRec.Code, dispatchPutRec.Body.String())
+	}
+	if !strings.Contains(dispatchPutRec.Body.String(), `"scope": "team-task-dispatch"`) || !strings.Contains(dispatchPutRec.Body.String(), `"assigned_agent_id": "agent://pc75/live-charlie"`) || !strings.Contains(dispatchPutRec.Body.String(), `"status": "dispatched"`) {
+		t.Fatalf("expected task dispatch put body, got %q", dispatchPutRec.Body.String())
+	}
+
+	dispatchGetReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/tasks/team-task-dispatch-target/dispatch", nil)
+	dispatchGetRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(dispatchGetRec, dispatchGetReq)
+	if dispatchGetRec.Code != http.StatusOK {
+		t.Fatalf("task dispatch get status = %d, body = %s", dispatchGetRec.Code, dispatchGetRec.Body.String())
+	}
+	if !strings.Contains(dispatchGetRec.Body.String(), `"assigned_agent_id": "agent://pc75/live-charlie"`) || !strings.Contains(dispatchGetRec.Body.String(), `"timeout_seconds": 120`) {
+		t.Fatalf("expected task dispatch get body, got %q", dispatchGetRec.Body.String())
+	}
+
+	dispatchThreadReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/tasks/team-task-dispatch-target/thread", nil)
+	dispatchThreadRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(dispatchThreadRec, dispatchThreadReq)
+	if dispatchThreadRec.Code != http.StatusOK {
+		t.Fatalf("task thread recheck status = %d, body = %s", dispatchThreadRec.Code, dispatchThreadRec.Body.String())
+	}
+	if !strings.Contains(dispatchThreadRec.Body.String(), `"assigned_agent_id": "agent://pc75/live-charlie"`) || !strings.Contains(dispatchThreadRec.Body.String(), `"dispatch"`) || !strings.Contains(dispatchThreadRec.Body.String(), dispatchTask.ContextID) {
+		t.Fatalf("expected task thread to include dispatch payload, got %q", dispatchThreadRec.Body.String())
+	}
+
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta", nil)
 	apiRec := httptest.NewRecorder()
 	site.Handler.ServeHTTP(apiRec, apiReq)
@@ -2575,7 +2817,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if channelConfigGetRec.Code != http.StatusOK {
 		t.Fatalf("channel config get status = %d, body = %s", channelConfigGetRec.Code, channelConfigGetRec.Body.String())
 	}
-	if !strings.Contains(channelConfigGetRec.Body.String(), `"channel_id": "research"`) || !strings.Contains(channelConfigGetRec.Body.String(), `"agent_onboarding": "Use plan mode first."`) {
+	if !strings.Contains(channelConfigGetRec.Body.String(), `"channel_id": "research"`) || !strings.Contains(channelConfigGetRec.Body.String(), `"agent_onboarding": "Use plan mode first."`) || !strings.Contains(channelConfigGetRec.Body.String(), `"agent_prompt":`) || !strings.Contains(channelConfigGetRec.Body.String(), `"context_api_path": "/api/teams/project-beta/channels/research/context"`) {
 		t.Fatalf("expected channel config get body, got %q", channelConfigGetRec.Body.String())
 	}
 
@@ -2587,6 +2829,24 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	}
 	if !strings.Contains(channelAPIWithConfigRec.Body.String(), `"room_plugin_id": "plan-exchange"`) || !strings.Contains(channelAPIWithConfigRec.Body.String(), `"room_theme_id": "minimal"`) || !strings.Contains(channelAPIWithConfigRec.Body.String(), `"channel_config_state": "configured"`) || !strings.Contains(channelAPIWithConfigRec.Body.String(), `"available_room_themes"`) || !strings.Contains(channelAPIWithConfigRec.Body.String(), `"available_room_plugins"`) {
 		t.Fatalf("expected team channel api to include room entry summary, got %q", channelAPIWithConfigRec.Body.String())
+	}
+
+	channelContextReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/channels/research/context", nil)
+	channelContextRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(channelContextRec, channelContextReq)
+	if channelContextRec.Code != http.StatusOK {
+		t.Fatalf("channel context status = %d, body = %s", channelContextRec.Code, channelContextRec.Body.String())
+	}
+	if !strings.Contains(channelContextRec.Body.String(), `"scope": "team-channel-context"`) ||
+		!strings.Contains(channelContextRec.Body.String(), `"channel_id": "research"`) ||
+		!strings.Contains(channelContextRec.Body.String(), `"agent_onboarding": "Use plan mode first."`) ||
+		!strings.Contains(channelContextRec.Body.String(), `"agent_prompt":`) ||
+		!strings.Contains(channelContextRec.Body.String(), `Thread Summary:`) ||
+		!strings.Contains(channelContextRec.Body.String(), `"task_count": 2`) ||
+		!strings.Contains(channelContextRec.Body.String(), `"message_count": 3`) ||
+		!strings.Contains(channelContextRec.Body.String(), `"member_count": 1`) ||
+		!strings.Contains(channelContextRec.Body.String(), `Research channel keeps long-running coordination notes.`) {
+		t.Fatalf("expected channel context body, got %q", channelContextRec.Body.String())
 	}
 
 	channelConfigsReq := httptest.NewRequest(http.MethodGet, "/api/teams/project-beta/channel-configs", nil)
@@ -2625,7 +2885,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if channelThemeRec.Code != http.StatusOK {
 		t.Fatalf("channel themed page status = %d, body = %s", channelThemeRec.Code, channelThemeRec.Body.String())
 	}
-	if !strings.Contains(channelThemeRec.Body.String(), "Agent Onboarding:") || !strings.Contains(channelThemeRec.Body.String(), "Use plan mode first.") || !strings.Contains(channelThemeRec.Body.String(), "Plugin:</strong> plan-exchange@1.0") || !strings.Contains(channelThemeRec.Body.String(), "进入房间") {
+	if !strings.Contains(channelThemeRec.Body.String(), "Agent Onboarding:") || !strings.Contains(channelThemeRec.Body.String(), "Use plan mode first.") || !strings.Contains(channelThemeRec.Body.String(), "Agent Prompt Preview:") || !strings.Contains(channelThemeRec.Body.String(), "Plugin:</strong> plan-exchange@1.0") || !strings.Contains(channelThemeRec.Body.String(), "进入房间") {
 		t.Fatalf("expected minimal themed channel body, got %q", channelThemeRec.Body.String())
 	}
 
@@ -2635,7 +2895,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if channelWorkbenchRec.Code != http.StatusOK {
 		t.Fatalf("channel workbench status = %d, body = %s", channelWorkbenchRec.Code, channelWorkbenchRec.Body.String())
 	}
-	if !strings.Contains(channelWorkbenchRec.Body.String(), "保存 Room 配置") || !strings.Contains(channelWorkbenchRec.Body.String(), "plan-exchange") || !strings.Contains(channelWorkbenchRec.Body.String(), "minimal") {
+	if !strings.Contains(channelWorkbenchRec.Body.String(), "保存 Room 配置") || !strings.Contains(channelWorkbenchRec.Body.String(), "plan-exchange") || !strings.Contains(channelWorkbenchRec.Body.String(), "minimal") || !strings.Contains(channelWorkbenchRec.Body.String(), "Agent Prompt Preview") || !strings.Contains(channelWorkbenchRec.Body.String(), "Thread Summary:") {
 		t.Fatalf("expected room config form in channel workbench, got %q", channelWorkbenchRec.Body.String())
 	}
 	if !strings.Contains(channelWorkbenchRec.Body.String(), "Focus (focus)") || !strings.Contains(channelWorkbenchRec.Body.String(), "Board (board)") {
@@ -2688,7 +2948,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if focusThemeRec.Code != http.StatusOK {
 		t.Fatalf("focus themed page status = %d, body = %s", focusThemeRec.Code, focusThemeRec.Body.String())
 	}
-	if !strings.Contains(focusThemeRec.Body.String(), "Focused room workbench") || !strings.Contains(focusThemeRec.Body.String(), "theme=focus") || !strings.Contains(focusThemeRec.Body.String(), "频道工作台") {
+	if !strings.Contains(focusThemeRec.Body.String(), "Focused room workbench") || !strings.Contains(focusThemeRec.Body.String(), "theme=focus") || !strings.Contains(focusThemeRec.Body.String(), "频道工作台") || !strings.Contains(focusThemeRec.Body.String(), "Agent Prompt Preview") {
 		t.Fatalf("expected focus themed channel body, got %q", focusThemeRec.Body.String())
 	}
 
@@ -2713,7 +2973,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if boardThemeRec.Code != http.StatusOK {
 		t.Fatalf("board themed page status = %d, body = %s", boardThemeRec.Code, boardThemeRec.Body.String())
 	}
-	if !strings.Contains(boardThemeRec.Body.String(), "Board room view") || !strings.Contains(boardThemeRec.Body.String(), "theme=board") || !strings.Contains(boardThemeRec.Body.String(), "频道工作台") {
+	if !strings.Contains(boardThemeRec.Body.String(), "Board room view") || !strings.Contains(boardThemeRec.Body.String(), "theme=board") || !strings.Contains(boardThemeRec.Body.String(), "频道工作台") || !strings.Contains(boardThemeRec.Body.String(), "Agent Prompt Preview") {
 		t.Fatalf("expected board themed channel body, got %q", boardThemeRec.Body.String())
 	}
 
@@ -2734,7 +2994,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if membersRec.Code != http.StatusOK {
 		t.Fatalf("members api status = %d, body = %s", membersRec.Code, membersRec.Body.String())
 	}
-	if !strings.Contains(membersRec.Body.String(), "\"scope\": \"team-members\"") || !strings.Contains(membersRec.Body.String(), "\"member_count\": 2") || !strings.Contains(membersRec.Body.String(), "\"pending\": 1") {
+	if !strings.Contains(membersRec.Body.String(), "\"scope\": \"team-members\"") || !strings.Contains(membersRec.Body.String(), "\"member_count\": 2") || !strings.Contains(membersRec.Body.String(), "\"pending\": 1") || !strings.Contains(membersRec.Body.String(), "\"member_stats\"") {
 		t.Fatalf("expected team members api body, got %q", membersRec.Body.String())
 	}
 
@@ -2744,7 +3004,7 @@ func TestPluginBuildServesTeamDetailAndAPI(t *testing.T) {
 	if membersPageRec.Code != http.StatusOK {
 		t.Fatalf("members page status = %d, body = %s", membersPageRec.Code, membersPageRec.Body.String())
 	}
-	if !strings.Contains(membersPageRec.Body.String(), "成员治理") || !strings.Contains(membersPageRec.Body.String(), "批量治理") || !strings.Contains(membersPageRec.Body.String(), "agent://pc75/live-charlie") {
+	if !strings.Contains(membersPageRec.Body.String(), "成员治理") || !strings.Contains(membersPageRec.Body.String(), "批量治理") || !strings.Contains(membersPageRec.Body.String(), "agent://pc75/live-charlie") || !strings.Contains(membersPageRec.Body.String(), "最后活跃") {
 		t.Fatalf("expected members page body, got %q", membersPageRec.Body.String())
 	}
 
@@ -3555,12 +3815,13 @@ func TestPluginBuildServesAndResolvesTeamSyncConflicts(t *testing.T) {
 	writeTeamSyncStateFixture(t, root, map[string]any{
 		"conflicts": map[string]any{
 			"task:task-conflict-1:2026-04-04T15:00:00Z": map[string]any{
-				"key":         "task:task-conflict-1:2026-04-04T15:00:00Z",
-				"type":        "task",
-				"team_id":     "sync-conflict-team",
-				"subject_id":  "task-conflict-1",
-				"source_node": "node-75",
-				"reason":      "local_newer",
+				"key":             "task:task-conflict-1:2026-04-04T15:00:00Z",
+				"type":            "task",
+				"team_id":         "sync-conflict-team",
+				"subject_id":      "task-conflict-1",
+				"source_node":     "node-75",
+				"reason":          "local_newer",
+				"auto_resolvable": true,
 				"sync": map[string]any{
 					"type":        "task",
 					"team_id":     "sync-conflict-team",
@@ -3590,13 +3851,23 @@ func TestPluginBuildServesAndResolvesTeamSyncConflicts(t *testing.T) {
 	if conflictsRec.Code != http.StatusOK {
 		t.Fatalf("conflicts api status = %d, body = %s", conflictsRec.Code, conflictsRec.Body.String())
 	}
-	if !strings.Contains(conflictsRec.Body.String(), `"scope": "team-sync-conflicts"`) || !strings.Contains(conflictsRec.Body.String(), `"reason": "local_newer"`) {
+	if !strings.Contains(conflictsRec.Body.String(), `"scope": "team-sync-conflicts"`) || !strings.Contains(conflictsRec.Body.String(), `"reason": "local_newer"`) || !strings.Contains(conflictsRec.Body.String(), `"auto_resolvable": true`) {
 		t.Fatalf("expected conflicts api body, got %q", conflictsRec.Body.String())
+	}
+
+	syncPageReq := httptest.NewRequest(http.MethodGet, "/teams/sync-conflict-team/sync", nil)
+	syncPageRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(syncPageRec, syncPageReq)
+	if syncPageRec.Code != http.StatusOK {
+		t.Fatalf("team sync page status = %d, body = %s", syncPageRec.Code, syncPageRec.Body.String())
+	}
+	if !strings.Contains(syncPageRec.Body.String(), "自动收敛") {
+		t.Fatalf("expected auto-resolvable conflict action on sync page, got %q", syncPageRec.Body.String())
 	}
 
 	resolveReq := httptest.NewRequest(http.MethodPost, "/api/teams/sync-conflict-team/sync/conflicts/"+url.PathEscape("task:task-conflict-1:2026-04-04T15:00:00Z")+"/resolve", strings.NewReader(`{
   "actor_agent_id":"agent://pc75/live-alpha",
-  "action":"dismiss"
+  "action":"auto"
 }`))
 	resolveReq.RemoteAddr = "127.0.0.1:12345"
 	resolveRec := httptest.NewRecorder()
@@ -3604,7 +3875,7 @@ func TestPluginBuildServesAndResolvesTeamSyncConflicts(t *testing.T) {
 	if resolveRec.Code != http.StatusOK {
 		t.Fatalf("resolve api status = %d, body = %s", resolveRec.Code, resolveRec.Body.String())
 	}
-	if !strings.Contains(resolveRec.Body.String(), `"scope": "team-sync-conflict-resolve"`) || !strings.Contains(resolveRec.Body.String(), `"resolution": "dismiss"`) {
+	if !strings.Contains(resolveRec.Body.String(), `"scope": "team-sync-conflict-resolve"`) || !strings.Contains(resolveRec.Body.String(), `"resolution": "keep_local"`) {
 		t.Fatalf("expected resolve api body, got %q", resolveRec.Body.String())
 	}
 
@@ -3614,7 +3885,7 @@ func TestPluginBuildServesAndResolvesTeamSyncConflicts(t *testing.T) {
 	if historyRec.Code != http.StatusOK {
 		t.Fatalf("history api status = %d, body = %s", historyRec.Code, historyRec.Body.String())
 	}
-	if !strings.Contains(historyRec.Body.String(), `"scope": "team-history"`) || !strings.Contains(historyRec.Body.String(), `"resolution_after": "dismiss"`) {
+	if !strings.Contains(historyRec.Body.String(), `"scope": "team-history"`) || !strings.Contains(historyRec.Body.String(), `"resolution_after": "keep_local"`) {
 		t.Fatalf("expected conflict resolution history body, got %q", historyRec.Body.String())
 	}
 
@@ -3644,12 +3915,13 @@ func TestBuildTeamSyncConflictViewsExplainsSuggestions(t *testing.T) {
 
 	views := buildTeamSyncConflictViews([]corehaonews.TeamSyncConflictRecord{
 		{
-			Key:       "task:task-1:remote",
-			Type:      "task",
-			SyncType:  "task",
-			TeamID:    "team-1",
-			SubjectID: "task-1",
-			Reason:    "local_newer",
+			Key:            "task:task-1:remote",
+			Type:           "task",
+			SyncType:       "task",
+			TeamID:         "team-1",
+			SubjectID:      "task-1",
+			Reason:         "local_newer",
+			AutoResolvable: true,
 		},
 		{
 			Key:       "artifact:artifact-1:remote",
@@ -3671,13 +3943,13 @@ func TestBuildTeamSyncConflictViewsExplainsSuggestions(t *testing.T) {
 	if len(views) != 3 {
 		t.Fatalf("views = %d, want 3", len(views))
 	}
-	if views[0].SuggestedAction != "keep_local" || !strings.Contains(views[0].ReasonLabel, "本地") || !strings.Contains(views[0].ActionHint, "保留本地") {
+	if views[0].SuggestedAction != "auto" || !strings.Contains(views[0].ReasonLabel, "本地") || !strings.Contains(views[0].ActionHint, "自动收敛") {
 		t.Fatalf("unexpected local_newer view: %#v", views[0])
 	}
 	if views[0].ConflictClass != "safe-local" || !views[0].AllowKeepLocal || views[0].SubjectLabel != "Task / task-1" {
 		t.Fatalf("unexpected local_newer metadata: %#v", views[0])
 	}
-	if views[0].SeverityLabel != "attention" || !strings.Contains(views[0].ConsequenceHint, "旧版本覆盖") {
+	if views[0].SeverityLabel != "attention" || !strings.Contains(views[0].ConsequenceHint, "旧版本覆盖") || !strings.Contains(views[0].AutoResolutionHint, "自动收敛") {
 		t.Fatalf("unexpected local_newer severity metadata: %#v", views[0])
 	}
 	if views[1].SuggestedAction != "accept_remote" || !strings.Contains(views[1].ReasonLabel, "内容不同") || !strings.Contains(views[1].ActionHint, "接受远端") {

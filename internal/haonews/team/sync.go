@@ -2,6 +2,7 @@ package team
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"sort"
@@ -33,16 +34,17 @@ type TeamSyncAck struct {
 }
 
 type TeamSyncConflict struct {
-	Type          string    `json:"type"`
-	TeamID        string    `json:"team_id"`
-	SubjectID     string    `json:"subject_id,omitempty"`
-	SourceNode    string    `json:"source_node,omitempty"`
-	Reason        string    `json:"reason,omitempty"`
-	LocalVersion  time.Time `json:"local_version,omitempty"`
-	RemoteVersion time.Time `json:"remote_version,omitempty"`
-	Resolution    string    `json:"resolution,omitempty"`
-	ResolvedBy    string    `json:"resolved_by,omitempty"`
-	ResolvedAt    time.Time `json:"resolved_at,omitempty"`
+	Type           string    `json:"type"`
+	TeamID         string    `json:"team_id"`
+	SubjectID      string    `json:"subject_id,omitempty"`
+	SourceNode     string    `json:"source_node,omitempty"`
+	Reason         string    `json:"reason,omitempty"`
+	AutoResolvable bool      `json:"auto_resolvable,omitempty"`
+	LocalVersion   time.Time `json:"local_version,omitempty"`
+	RemoteVersion  time.Time `json:"remote_version,omitempty"`
+	Resolution     string    `json:"resolution,omitempty"`
+	ResolvedBy     string    `json:"resolved_by,omitempty"`
+	ResolvedAt     time.Time `json:"resolved_at,omitempty"`
 }
 
 type TeamSyncMessage struct {
@@ -73,6 +75,7 @@ func (m TeamSyncMessage) Normalize() TeamSyncMessage {
 		msg.TeamID = m.TeamID
 		msg.ChannelID = normalizeChannelID(msg.ChannelID)
 		msg.ContextID = normalizeContextID(msg.ContextID)
+		msg.ParentMessageID = normalizeParentMessageID(msg.ParentMessageID)
 		if strings.TrimSpace(msg.MessageID) == "" {
 			msg.MessageID = buildMessageID(msg)
 		}
@@ -185,56 +188,113 @@ func (m TeamSyncMessage) Key() string {
 	return ""
 }
 
+func (m TeamSyncMessage) Validate() error {
+	m = m.Normalize()
+	if m.TeamID == "" {
+		return NewEmptyIDError("team_id")
+	}
+	switch m.Type {
+	case TeamSyncTypeMessage:
+		if m.Message == nil {
+			return fmt.Errorf("sync type=%s requires message payload", m.Type)
+		}
+		if strings.TrimSpace(m.Message.MessageID) == "" || normalizeChannelID(m.Message.ChannelID) == "" {
+			return fmt.Errorf("sync type=%s requires message_id and channel_id", m.Type)
+		}
+	case TeamSyncTypeHistory:
+		if m.History == nil || strings.TrimSpace(m.History.EventID) == "" {
+			return fmt.Errorf("sync type=%s requires history payload", m.Type)
+		}
+	case TeamSyncTypeTask:
+		if m.Task == nil || strings.TrimSpace(m.Task.TaskID) == "" {
+			return fmt.Errorf("sync type=%s requires task payload", m.Type)
+		}
+	case TeamSyncTypeArtifact:
+		if m.Artifact == nil || strings.TrimSpace(m.Artifact.ArtifactID) == "" {
+			return fmt.Errorf("sync type=%s requires artifact payload", m.Type)
+		}
+	case TeamSyncTypeMember:
+		if len(m.Members) == 0 {
+			return fmt.Errorf("sync type=%s requires members payload", m.Type)
+		}
+	case TeamSyncTypePolicy:
+		if m.Policy == nil {
+			return fmt.Errorf("sync type=%s requires policy payload", m.Type)
+		}
+	case TeamSyncTypeChannel:
+		if m.Channel == nil || strings.TrimSpace(m.Channel.ChannelID) == "" {
+			return fmt.Errorf("sync type=%s requires channel payload", m.Type)
+		}
+	case TeamSyncTypeChannelConfig:
+		if m.ChannelConfig == nil || strings.TrimSpace(m.ChannelConfig.ChannelID) == "" {
+			return fmt.Errorf("sync type=%s requires channel_config payload", m.Type)
+		}
+	case TeamSyncTypeAck:
+		if m.Ack == nil || strings.TrimSpace(m.Ack.AckedKey) == "" {
+			return fmt.Errorf("sync type=%s requires ack payload", m.Type)
+		}
+	default:
+		return NewUnsupportedError("team sync type")
+	}
+	return nil
+}
+
+func NewMessageSyncMsg(teamID, sourceNode string, msg Message) TeamSyncMessage {
+	return TeamSyncMessage{
+		Type:       TeamSyncTypeMessage,
+		TeamID:     teamID,
+		Message:    &msg,
+		SourceNode: sourceNode,
+	}.Normalize()
+}
+
+func NewTaskSyncMsg(teamID, sourceNode string, task Task) TeamSyncMessage {
+	return TeamSyncMessage{
+		Type:       TeamSyncTypeTask,
+		TeamID:     teamID,
+		Task:       &task,
+		SourceNode: sourceNode,
+	}.Normalize()
+}
+
+func NewMemberSyncMsg(teamID, sourceNode string, members []Member) TeamSyncMessage {
+	return TeamSyncMessage{
+		Type:       TeamSyncTypeMember,
+		TeamID:     teamID,
+		Members:    members,
+		SourceNode: sourceNode,
+	}.Normalize()
+}
+
 func (s *Store) ApplyReplicatedSync(sync TeamSyncMessage) (bool, error) {
 	if s == nil {
-		return false, errors.New("nil team store")
+		return false, NewNilStoreError("Store")
 	}
 	sync = sync.Normalize()
-	if sync.TeamID == "" {
-		return false, errors.New("empty team id")
+	if err := sync.Validate(); err != nil {
+		return false, err
 	}
 	switch sync.Type {
 	case TeamSyncTypeMessage:
-		if sync.Message == nil {
-			return false, errors.New("missing team sync message payload")
-		}
 		return s.ApplyReplicatedMessage(sync.TeamID, *sync.Message)
 	case TeamSyncTypeHistory:
-		if sync.History == nil {
-			return false, errors.New("missing team sync history payload")
-		}
 		return s.ApplyReplicatedHistory(sync.TeamID, *sync.History)
 	case TeamSyncTypeTask:
-		if sync.Task == nil {
-			return false, errors.New("missing team sync task payload")
-		}
 		return s.ApplyReplicatedTask(sync.TeamID, *sync.Task)
 	case TeamSyncTypeArtifact:
-		if sync.Artifact == nil {
-			return false, errors.New("missing team sync artifact payload")
-		}
 		return s.ApplyReplicatedArtifact(sync.TeamID, *sync.Artifact)
 	case TeamSyncTypeMember:
 		return s.ApplyReplicatedMembers(sync.TeamID, sync.Members, sync.CreatedAt)
 	case TeamSyncTypePolicy:
-		if sync.Policy == nil {
-			return false, errors.New("missing team sync policy payload")
-		}
 		return s.ApplyReplicatedPolicy(sync.TeamID, *sync.Policy, sync.CreatedAt)
 	case TeamSyncTypeChannel:
-		if sync.Channel == nil {
-			return false, errors.New("missing team sync channel payload")
-		}
 		return s.ApplyReplicatedChannel(sync.TeamID, *sync.Channel, sync.CreatedAt)
 	case TeamSyncTypeChannelConfig:
-		if sync.ChannelConfig == nil {
-			return false, errors.New("missing team sync channel config payload")
-		}
 		return s.ApplyReplicatedChannelConfig(sync.TeamID, *sync.ChannelConfig, sync.CreatedAt)
 	case TeamSyncTypeAck:
 		return false, nil
 	default:
-		return false, errors.New("unsupported team sync type")
+		return false, NewUnsupportedError("team sync type")
 	}
 }
 
@@ -267,13 +327,14 @@ func (s *Store) DetectReplicatedConflict(sync TeamSyncMessage) (TeamSyncConflict
 				reason = "same_version_diverged"
 			}
 			return TeamSyncConflict{
-				Type:          sync.Type,
-				TeamID:        sync.TeamID,
-				SubjectID:     remote.TaskID,
-				SourceNode:    sync.SourceNode,
-				Reason:        reason,
-				LocalVersion:  localVersion,
-				RemoteVersion: remoteVersion,
+				Type:           sync.Type,
+				TeamID:         sync.TeamID,
+				SubjectID:      remote.TaskID,
+				SourceNode:     sync.SourceNode,
+				Reason:         reason,
+				AutoResolvable: taskSyncStatusConflictAutoResolvable(current, remote),
+				LocalVersion:   localVersion,
+				RemoteVersion:  remoteVersion,
 			}, true, nil
 		}
 	case TeamSyncTypeArtifact:
@@ -878,6 +939,26 @@ func taskVersion(task Task) time.Time {
 		return task.UpdatedAt.UTC()
 	}
 	return task.CreatedAt.UTC()
+}
+
+func taskSyncStatusConflictAutoResolvable(current, remote Task) bool {
+	return current.TeamID == remote.TeamID &&
+		current.TaskID == remote.TaskID &&
+		current.ChannelID == remote.ChannelID &&
+		current.ContextID == remote.ContextID &&
+		current.ParentTaskID == remote.ParentTaskID &&
+		current.MilestoneID == remote.MilestoneID &&
+		current.Title == remote.Title &&
+		current.Description == remote.Description &&
+		current.CreatedBy == remote.CreatedBy &&
+		current.Priority == remote.Priority &&
+		current.OriginPublicKey == remote.OriginPublicKey &&
+		current.ParentPublicKey == remote.ParentPublicKey &&
+		current.CreatedAt.UTC().Equal(remote.CreatedAt.UTC()) &&
+		current.DueAt.UTC().Equal(remote.DueAt.UTC()) &&
+		reflect.DeepEqual(normalizeNonEmptyStrings(current.Assignees), normalizeNonEmptyStrings(remote.Assignees)) &&
+		reflect.DeepEqual(normalizeNonEmptyStrings(current.Labels), normalizeNonEmptyStrings(remote.Labels)) &&
+		reflect.DeepEqual(normalizeTaskRefList(current.DependsOn), normalizeTaskRefList(remote.DependsOn))
 }
 
 func membersSnapshotVersion(members []Member) time.Time {

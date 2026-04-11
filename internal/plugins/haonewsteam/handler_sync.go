@@ -219,6 +219,8 @@ func buildTeamSyncConflictViews(records []corehaonews.TeamSyncConflictRecord) []
 		allowKeepLocal, allowAcceptRemote := conflictActionPermissions(record, supportsAcceptRemoteConflict(syncType))
 		views = append(views, teamSyncConflictView{
 			Record:             record,
+			AutoResolvable:     record.AutoResolvable,
+			AutoResolutionHint: describeTeamSyncConflictAutoResolution(record),
 			AllowAcceptRemote:  allowAcceptRemote,
 			AllowKeepLocal:     allowKeepLocal,
 			SuggestedAction:    suggestedAction,
@@ -274,9 +276,19 @@ func buildTeamSyncConflictActions(record corehaonews.TeamSyncConflictRecord, all
 	if strings.TrimSpace(record.Resolution) != "" {
 		return nil
 	}
-	actions := []teamSyncConflictActionView{
-		{Value: "dismiss", Label: "忽略", Primary: suggestedAction == "dismiss"},
+	actions := make([]teamSyncConflictActionView, 0, 4)
+	if record.AutoResolvable {
+		actions = append(actions, teamSyncConflictActionView{
+			Value:   "auto",
+			Label:   "自动收敛",
+			Primary: suggestedAction == "auto",
+		})
 	}
+	actions = append(actions, teamSyncConflictActionView{
+		Value:   "dismiss",
+		Label:   "忽略",
+		Primary: suggestedAction == "dismiss",
+	})
 	if allowKeepLocal {
 		actions = append(actions, teamSyncConflictActionView{
 			Value:   "keep_local",
@@ -462,11 +474,17 @@ func describeTeamSyncConflict(record corehaonews.TeamSyncConflictRecord, allowAc
 	reason := strings.TrimSpace(record.Reason)
 	switch {
 	case reason == "local_newer":
+		if record.AutoResolvable {
+			return "本地版本更新较新", "这类冲突只涉及任务状态或追加语义，可以直接自动收敛。", "auto"
+		}
 		if allowAcceptRemote {
 			return "本地版本更新较新", "建议保留本地版本，除非你明确要覆盖为远端。", "keep_local"
 		}
 		return "本地版本更新较新", "建议人工复核后再决定是否保留本地版本。", "dismiss"
 	case reason == "same_version_diverged":
+		if record.AutoResolvable {
+			return "版本相同但状态分叉", "这类任务状态分叉可按时间戳自动收敛，不需要人工逐条判断。", "auto"
+		}
 		if allowAcceptRemote {
 			return "版本相同但内容不同", "两个节点在同一版本号上出现了不同内容。通常先接受远端或保留本地，统一到一个结果。", "accept_remote"
 		}
@@ -490,6 +508,20 @@ func describeTeamSyncConflict(record corehaonews.TeamSyncConflictRecord, allowAc
 			return reason, "建议人工复核后再决定是否接收远端。", "review_accept_remote"
 		}
 		return reason, "建议人工复核后再决定。", "dismiss"
+	}
+}
+
+func describeTeamSyncConflictAutoResolution(record corehaonews.TeamSyncConflictRecord) string {
+	if !record.AutoResolvable {
+		return ""
+	}
+	switch strings.TrimSpace(record.SyncType) {
+	case "task":
+		return "任务状态冲突可按更新时间自动收敛，避免把人工冲突留给页面处理。"
+	case "message":
+		return "消息同步默认按追加语义处理，可自动收敛。"
+	default:
+		return "该冲突可按默认策略自动收敛。"
 	}
 }
 

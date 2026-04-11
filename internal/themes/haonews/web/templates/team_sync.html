@@ -151,11 +151,13 @@
                     {{if .ConflictClass}}<span>{{.ConflictClass}}</span>{{end}}
                     {{if .SeverityLabel}}<span>{{.SeverityLabel}}</span>{{end}}
                     {{if .ReasonLabel}}<span>{{.ReasonLabel}}</span>{{end}}
+                    {{if .AutoResolvable}}<span>auto</span>{{end}}
                     {{if .Record.SourceNode}}<span>{{.Record.SourceNode}}</span>{{end}}
                     {{if .Record.UpdatedAt.IsZero}}{{else}}<span>{{.Record.UpdatedAt.Local.Format "2006-01-02 15:04"}}</span>{{end}}
                   </div>
                   <h2>复制冲突：{{if .SubjectLabel}}{{.SubjectLabel}}{{else if .Record.SubjectID}}{{.Record.SubjectID}}{{else}}{{.Record.Key}}{{end}}</h2>
                   {{if .SeverityLabel}}<p class="micro-copy">严重程度：{{.SeverityLabel}}</p>{{end}}
+                  {{if .AutoResolutionHint}}<p class="micro-copy">{{.AutoResolutionHint}}</p>{{end}}
                   {{if .ActionHint}}<p class="micro-copy">{{.ActionHint}}</p>{{end}}
                   {{if .ConsequenceHint}}<p class="micro-copy">{{.ConsequenceHint}}</p>{{end}}
                   <div class="facet-list-inline team-inline-tags">

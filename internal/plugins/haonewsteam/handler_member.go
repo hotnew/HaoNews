@@ -12,7 +12,7 @@ import (
 	newsplugin "hao.news/internal/plugins/haonews"
 )
 
-func handleTeamMembers(app *newsplugin.App, store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+func handleTeamMembers(app *newsplugin.App, store teamcore.TeamReader, teamID string, w http.ResponseWriter, r *http.Request) {
 	info, err := store.LoadTeamCtx(r.Context(), teamID)
 	if err != nil {
 		http.NotFound(w, r)
@@ -38,6 +38,11 @@ func handleTeamMembers(app *newsplugin.App, store *teamcore.Store, teamID string
 	filterAgent := strings.TrimSpace(r.URL.Query().Get("agent"))
 	statusCounts := memberStatusCounts(members)
 	roleCounts := memberRoleCounts(members)
+	memberStats, err := store.ComputeMemberStatsCtx(r.Context(), teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	filtered := filterMembers(members, filterStatus, filterRole, filterAgent)
 	data := teamMembersPageData{
 		Project:        app.ProjectName(),
@@ -59,6 +64,7 @@ func handleTeamMembers(app *newsplugin.App, store *teamcore.Store, teamID string
 		),
 		Statuses:     memberStatuses(members),
 		Roles:        memberRoles(members),
+		MemberStats:  memberStats,
 		StatusCounts: statusCounts,
 		RoleCounts:   roleCounts,
 		SummaryStats: []newsplugin.SummaryStat{
@@ -215,9 +221,14 @@ func handleTeamMemberBulkAction(store *teamcore.Store, teamID string, w http.Res
 	http.Redirect(w, r, "/teams/"+teamID, http.StatusSeeOther)
 }
 
-func handleAPITeamMembers(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+func handleAPITeamMembers(store teamcore.TeamReader, teamID string, w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		handleAPITeamMemberUpdate(store, teamID, w, r)
+		writable, ok := store.(*teamcore.Store)
+		if !ok {
+			http.Error(w, "team member write path requires writable store", http.StatusInternalServerError)
+			return
+		}
+		handleAPITeamMemberUpdate(writable, teamID, w, r)
 		return
 	}
 	info, err := store.LoadTeamCtx(r.Context(), teamID)
@@ -234,11 +245,17 @@ func handleAPITeamMembers(store *teamcore.Store, teamID string, w http.ResponseW
 	filterRole := strings.TrimSpace(r.URL.Query().Get("role"))
 	filterAgent := strings.TrimSpace(r.URL.Query().Get("agent"))
 	filtered := filterMembers(members, filterStatus, filterRole, filterAgent)
+	memberStats, err := store.ComputeMemberStatsCtx(r.Context(), teamID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	newsplugin.WriteJSON(w, http.StatusOK, map[string]any{
 		"scope":        "team-members",
 		"team_id":      info.TeamID,
 		"member_count": len(filtered),
 		"members":      filtered,
+		"member_stats": memberStats,
 		"applied_filters": map[string]string{
 			"status": filterStatus,
 			"role":   filterRole,

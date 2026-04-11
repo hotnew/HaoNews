@@ -11,17 +11,20 @@ import (
 )
 
 type AgentCard struct {
-	AgentID      string       `json:"agent_id"`
-	Name         string       `json:"name"`
-	Description  string       `json:"description,omitempty"`
-	Version      string       `json:"version,omitempty"`
-	Skills       []AgentSkill `json:"skills,omitempty"`
-	InputModes   []string     `json:"input_modes,omitempty"`
-	OutputModes  []string     `json:"output_modes,omitempty"`
-	Capabilities AgentCaps    `json:"capabilities,omitempty"`
-	PublicKey    string       `json:"public_key,omitempty"`
-	Endpoint     string       `json:"endpoint,omitempty"`
-	UpdatedAt    time.Time    `json:"updated_at,omitempty"`
+	AgentID         string       `json:"agent_id"`
+	Name            string       `json:"name"`
+	Description     string       `json:"description,omitempty"`
+	Version         string       `json:"version,omitempty"`
+	Skills          []AgentSkill `json:"skills,omitempty"`
+	InputModes      []string     `json:"input_modes,omitempty"`
+	OutputModes     []string     `json:"output_modes,omitempty"`
+	Capabilities    AgentCaps    `json:"capabilities,omitempty"`
+	PublicKey       string       `json:"public_key,omitempty"`
+	Endpoint        string       `json:"endpoint,omitempty"`
+	QueueLength     int          `json:"queue_length,omitempty"`
+	LastHeartbeatAt time.Time    `json:"last_heartbeat_at,omitempty"`
+	LastResponseAt  time.Time    `json:"last_response_at,omitempty"`
+	UpdatedAt       time.Time    `json:"updated_at,omitempty"`
 }
 
 type AgentSkill struct {
@@ -189,6 +192,12 @@ func normalizeAgentCard(card AgentCard) AgentCard {
 	card.Version = strings.TrimSpace(card.Version)
 	card.PublicKey = strings.TrimSpace(card.PublicKey)
 	card.Endpoint = strings.TrimSpace(card.Endpoint)
+	if !card.LastHeartbeatAt.IsZero() {
+		card.LastHeartbeatAt = card.LastHeartbeatAt.UTC()
+	}
+	if !card.LastResponseAt.IsZero() {
+		card.LastResponseAt = card.LastResponseAt.UTC()
+	}
 	card.InputModes = normalizeStringList(card.InputModes)
 	card.OutputModes = normalizeStringList(card.OutputModes)
 	card.Skills = normalizeAgentSkills(card.Skills)
