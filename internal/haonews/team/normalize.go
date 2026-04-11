@@ -155,7 +155,8 @@ func normalizeMemberStatus(value string) string {
 }
 
 func normalizeArtifactKind(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
+	raw := strings.TrimSpace(value)
+	switch strings.ToLower(raw) {
 	case ArtifactKindMarkdown:
 		return ArtifactKindMarkdown
 	case ArtifactKindJSON:
@@ -179,7 +180,10 @@ func normalizeArtifactKind(value string) string {
 	case ArtifactKindDecisionNote:
 		return ArtifactKindDecisionNote
 	default:
-		return ArtifactKindMarkdown
+		if raw == "" {
+			return ArtifactKindMarkdown
+		}
+		return strings.ToLower(raw)
 	}
 }
 

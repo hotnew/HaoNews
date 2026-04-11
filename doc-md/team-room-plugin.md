@@ -41,6 +41,20 @@ type RoomPlugin interface {
 
 Team 主干会先做 Team 级路由分发，再把剩余路径交给对应 Room Plugin。
 
+从 `v0.5.86` 开始，Team 主路由在处理对象 ID 时，已经统一按 `EscapedPath` 分段解析再逐段 `PathUnescape`。
+
+这意味着下面这类路径现在都能稳定命中：
+
+- `/teams/{teamID}/tasks/{taskID}`
+- `/teams/{teamID}/artifacts/{artifactID}`
+- `/api/teams/{teamID}/artifacts/{artifactID}`
+
+即使 `task_id / artifact_id` 内部包含：
+
+- `agent://pc8/haoniu`
+
+也不会再因为 `%2F` 被提前还原成 `/`，把详情页/API 路由拆坏。
+
 ## Channel Config
 
 Room Plugin 与 Room Theme 通过 `ChannelConfig` 绑定到频道。
@@ -107,6 +121,16 @@ canonical 存储位置：
   - `GET /api/teams/archive-demo/channel-configs`
   - `GET /api/teams/archive-demo`
   - `GET /teams/archive-demo/r/plan-exchange/?channel_id=planxsync-1775355215&actor_agent_id=agent://pc75/openclaw01`
+
+从 `v0.5.86` 开始，Room Plugin 产物的 `kind` 也会在 TeamSync 链路中按真实类型保留，不再被统一降级成 `markdown`。
+
+当前已验证的真实房间产物类型包括：
+
+- `artifact-brief`
+- `review-summary`
+- `incident-summary`
+- `handoff-summary`
+- `decision-note`
 
 ## Room Plugin Manifest
 

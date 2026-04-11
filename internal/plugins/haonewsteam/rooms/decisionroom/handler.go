@@ -398,7 +398,13 @@ func handleSyncAllDecisionRoomTasks(store *teamcore.Store, teamID string, w http
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	history, err := store.LoadHistoryCtx(r.Context(), teamID, 200)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	filtered := filterDecisionRoomMessages(messages, "")
+	taskBindings := buildDecisionRoomTaskBindings(req.ChannelID, history)
 	synced, taskCreated, artifactCreated := 0, 0, 0
 	suggestedDoingCount, suggestedDoneCount := 0, 0
 	createdTaskIDs := make([]string, 0, len(filtered))
@@ -410,7 +416,15 @@ func handleSyncAllDecisionRoomTasks(store *teamcore.Store, teamID string, w http
 		case "done":
 			suggestedDoneCount++
 		}
-		taskID, _, created, err := syncDecisionRoomTask(r.Context(), store, teamID, req.ChannelID, msg, strings.TrimSpace(stringField(msg.StructuredData, "task_id")), req.ActorAgentID)
+		taskID, _, created, err := syncDecisionRoomTask(
+			r.Context(),
+			store,
+			teamID,
+			req.ChannelID,
+			msg,
+			firstNonEmpty(strings.TrimSpace(stringField(msg.StructuredData, "task_id")), taskBindings[msg.MessageID]),
+			req.ActorAgentID,
+		)
 		if err != nil {
 			continue
 		}

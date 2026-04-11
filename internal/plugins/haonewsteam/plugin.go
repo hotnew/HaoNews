@@ -144,18 +144,38 @@ func filepathBase(path string) string {
 	return path
 }
 
+func splitEscapedPathSegments(r *http.Request, prefix string) []string {
+	if r == nil {
+		return nil
+	}
+	trimmed := strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), prefix), "/")
+	if trimmed == "" {
+		return nil
+	}
+	rawParts := strings.Split(trimmed, "/")
+	parts := make([]string, 0, len(rawParts))
+	for _, raw := range rawParts {
+		part, err := url.PathUnescape(raw)
+		if err != nil {
+			parts = append(parts, raw)
+			continue
+		}
+		parts = append(parts, part)
+	}
+	return parts
+}
+
 func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, roomRegistry *roomplugin.Registry, themeRegistry *roomthemes.Registry) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/agent.json", func(w http.ResponseWriter, r *http.Request) {
 		handleA2AWellKnownAgent(app, store, w, r)
 	})
 	mux.HandleFunc("/a2a/teams/", func(w http.ResponseWriter, r *http.Request) {
-		trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/a2a/teams/"), "/")
-		if trimmed == "" {
+		parts := splitEscapedPathSegments(r, "/a2a/teams/")
+		if len(parts) == 0 {
 			http.NotFound(w, r)
 			return
 		}
-		parts := strings.Split(trimmed, "/")
 		teamID := teamcore.NormalizeTeamID(parts[0])
 		if teamID == "" || len(parts) < 2 {
 			http.NotFound(w, r)
@@ -171,12 +191,11 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 		handleTeamArchiveIndex(app, store, w, r)
 	})
 	mux.HandleFunc("/archive/team/", func(w http.ResponseWriter, r *http.Request) {
-		trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/archive/team/"), "/")
-		if trimmed == "" {
+		parts := splitEscapedPathSegments(r, "/archive/team/")
+		if len(parts) == 0 {
 			http.NotFound(w, r)
 			return
 		}
-		parts := strings.Split(trimmed, "/")
 		teamID := teamcore.NormalizeTeamID(parts[0])
 		if teamID == "" {
 			http.NotFound(w, r)
@@ -200,12 +219,11 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 		handleTeamIndex(app, store, w, r)
 	})
 	mux.HandleFunc("/teams/", func(w http.ResponseWriter, r *http.Request) {
-		trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/teams/"), "/")
-		if trimmed == "" {
+		parts := splitEscapedPathSegments(r, "/teams/")
+		if len(parts) == 0 {
 			http.NotFound(w, r)
 			return
 		}
-		parts := strings.Split(trimmed, "/")
 		teamID := teamcore.NormalizeTeamID(parts[0])
 		if teamID == "" {
 			http.NotFound(w, r)
@@ -385,12 +403,11 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 		handleAPITeamIndex(store, w, r)
 	})
 	mux.HandleFunc("/api/teams/", func(w http.ResponseWriter, r *http.Request) {
-		trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/teams/"), "/")
-		if trimmed == "" {
+		parts := splitEscapedPathSegments(r, "/api/teams/")
+		if len(parts) == 0 {
 			http.NotFound(w, r)
 			return
 		}
-		parts := strings.Split(trimmed, "/")
 		if len(parts) > 5 && !(len(parts) >= 3 && parts[1] == "agents") && !(len(parts) >= 3 && parts[1] == "r") {
 			http.NotFound(w, r)
 			return
@@ -598,12 +615,11 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 		handleAPITeamArchiveIndex(store, w, r)
 	})
 	mux.HandleFunc("/api/archive/team/", func(w http.ResponseWriter, r *http.Request) {
-		trimmed := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/archive/team/"), "/")
-		if trimmed == "" {
+		parts := splitEscapedPathSegments(r, "/api/archive/team/")
+		if len(parts) == 0 {
 			http.NotFound(w, r)
 			return
 		}
-		parts := strings.Split(trimmed, "/")
 		teamID := teamcore.NormalizeTeamID(parts[0])
 		if teamID == "" {
 			http.NotFound(w, r)

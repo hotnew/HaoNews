@@ -2470,6 +2470,38 @@ func TestPluginBuildServesDecisionRoom(t *testing.T) {
 			t.Fatalf("expected %q in decision-room summary-after-sync body, got %q", needle, summaryAfterSyncBody)
 		}
 	}
+	tasksAfterFirstSync, err := store.LoadTasks("decision-room-team", 20)
+	if err != nil {
+		t.Fatalf("LoadTasks(after first sync) error = %v", err)
+	}
+	if len(tasksAfterFirstSync) != 2 {
+		t.Fatalf("expected 2 tasks after first decision-room sync, got %#v", tasksAfterFirstSync)
+	}
+
+	syncAllAgainReq := httptest.NewRequest(http.MethodPost, "/api/teams/decision-room-team/r/decision-room/task-sync-all", strings.NewReader(`{
+  "channel_id":"main",
+  "actor_agent_id":"agent://pc75/live-alpha"
+}`))
+	syncAllAgainReq.RemoteAddr = "127.0.0.1:12345"
+	syncAllAgainReq.Header.Set("Content-Type", "application/json")
+	syncAllAgainRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(syncAllAgainRec, syncAllAgainReq)
+	if syncAllAgainRec.Code != http.StatusOK {
+		t.Fatalf("decision-room task-sync-all(second run) status = %d, body = %s", syncAllAgainRec.Code, syncAllAgainRec.Body.String())
+	}
+	syncAllAgainBody := strings.ReplaceAll(syncAllAgainRec.Body.String(), " ", "")
+	for _, needle := range []string{`"status":"synced"`, `"synced_items":2`, `"task_created":0`} {
+		if !strings.Contains(syncAllAgainBody, needle) {
+			t.Fatalf("expected %q in second decision-room task-sync-all body, got %q", needle, syncAllAgainBody)
+		}
+	}
+	tasksAfterSecondSync, err := store.LoadTasks("decision-room-team", 20)
+	if err != nil {
+		t.Fatalf("LoadTasks(after second sync) error = %v", err)
+	}
+	if len(tasksAfterSecondSync) != len(tasksAfterFirstSync) {
+		t.Fatalf("expected no duplicate tasks after second sync, before=%d after=%d tasks=%#v", len(tasksAfterFirstSync), len(tasksAfterSecondSync), tasksAfterSecondSync)
+	}
 
 	webReq := httptest.NewRequest(http.MethodGet, "/teams/decision-room-team/r/decision-room/?channel_id=main&actor_agent_id=agent://pc75/live-alpha", nil)
 	webRec := httptest.NewRecorder()
@@ -3907,6 +3939,88 @@ func TestPluginBuildServesAndResolvesTeamSyncConflicts(t *testing.T) {
 	}
 	if !strings.Contains(pageRec.Body.String(), "最近复制冲突") || !strings.Contains(pageRec.Body.String(), "冲突 JSON") {
 		t.Fatalf("expected conflict summary on team history page, got %q", pageRec.Body.String())
+	}
+}
+
+func TestPluginBuildSupportsEscapedTaskAndArtifactIDs(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	store, err := teamcore.OpenStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	teamRoot := filepath.Join(root, "store", "team", "escaped-id-team")
+	if err := os.MkdirAll(teamRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(teamRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "team.json"), []byte(`{
+  "team_id":"escaped-id-team",
+  "title":"Escaped ID Team",
+  "owner_agent_id":"agent://pc75/live-alpha"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(team.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "members.json"), []byte(`[
+  {"agent_id":"agent://pc75/live-alpha","role":"owner","status":"active"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(members.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamRoot, "channels.json"), []byte(`[
+  {"channel_id":"main","title":"Main","created_at":"2026-04-11T06:00:00Z","updated_at":"2026-04-11T06:00:00Z"}
+]`), 0o644); err != nil {
+		t.Fatalf("WriteFile(channels.json) error = %v", err)
+	}
+
+	taskID := "escaped-id-team:agent://pc75/live-alpha:2026-04-11T06:00:00Z:task"
+	if err := store.AppendTask("escaped-id-team", teamcore.Task{
+		TeamID:    "escaped-id-team",
+		TaskID:    taskID,
+		ChannelID: "main",
+		Title:     "Escaped Task",
+		Status:    "open",
+		CreatedBy: "agent://pc75/live-alpha",
+		CreatedAt: time.Date(2026, 4, 11, 6, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 4, 11, 6, 0, 1, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("SaveTask error = %v", err)
+	}
+
+	artifactID := "escaped-id-team:agent://pc75/live-alpha:2026-04-11T06:00:02Z:artifact"
+	if err := store.AppendArtifact("escaped-id-team", teamcore.Artifact{
+		TeamID:     "escaped-id-team",
+		ArtifactID: artifactID,
+		ChannelID:  "main",
+		TaskID:     taskID,
+		Title:      "Escaped Artifact",
+		Kind:       "decision-note",
+		Summary:    "Preserve escaped IDs in routing",
+		Content:    "Escaped artifact body",
+		CreatedBy:  "agent://pc75/live-alpha",
+		CreatedAt:  time.Date(2026, 4, 11, 6, 0, 2, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 4, 11, 6, 0, 3, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("SaveArtifact error = %v", err)
+	}
+
+	taskPageReq := httptest.NewRequest(http.MethodGet, "/teams/escaped-id-team/tasks/"+url.PathEscape(taskID), nil)
+	taskPageRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(taskPageRec, taskPageReq)
+	if taskPageRec.Code != http.StatusOK {
+		t.Fatalf("task page status = %d, body = %s", taskPageRec.Code, taskPageRec.Body.String())
+	}
+	if !strings.Contains(taskPageRec.Body.String(), "Escaped Task") {
+		t.Fatalf("expected escaped task page body, got %q", taskPageRec.Body.String())
+	}
+
+	artifactAPIReq := httptest.NewRequest(http.MethodGet, "/api/teams/escaped-id-team/artifacts/"+url.PathEscape(artifactID), nil)
+	artifactAPIRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(artifactAPIRec, artifactAPIReq)
+	if artifactAPIRec.Code != http.StatusOK {
+		t.Fatalf("artifact api status = %d, body = %s", artifactAPIRec.Code, artifactAPIRec.Body.String())
+	}
+	if !strings.Contains(artifactAPIRec.Body.String(), `"kind": "decision-note"`) {
+		t.Fatalf("expected escaped artifact api body, got %q", artifactAPIRec.Body.String())
 	}
 }
 

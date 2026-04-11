@@ -2431,6 +2431,30 @@ func TestStoreApplyReplicatedSyncTaskArtifactAndDeleteHistory(t *testing.T) {
 	if loadedArtifact.TaskID != "task-sync-1" || loadedArtifact.Title != "replicated artifact" {
 		t.Fatalf("unexpected replicated artifact: %#v", loadedArtifact)
 	}
+	if loadedArtifact.Kind != "markdown" {
+		t.Fatalf("expected replicated artifact kind markdown, got %q", loadedArtifact.Kind)
+	}
+
+	customArtifact := artifact
+	customArtifact.ArtifactID = "artifact-sync-2"
+	customArtifact.Kind = "decision-note"
+	customArtifact.Title = "replicated decision note"
+	customArtifact.CreatedAt = time.Date(2026, 4, 3, 12, 11, 2, 0, time.UTC)
+	customArtifact.UpdatedAt = time.Date(2026, 4, 3, 12, 11, 3, 0, time.UTC)
+	applied, err = store.ApplyReplicatedSync(TeamSyncMessage{Type: TeamSyncTypeArtifact, TeamID: "project-sync-objects", Artifact: &customArtifact}.Normalize())
+	if err != nil {
+		t.Fatalf("ApplyReplicatedSync(custom artifact) error = %v", err)
+	}
+	if !applied {
+		t.Fatalf("expected custom replicated artifact to apply")
+	}
+	loadedCustomArtifact, err := store.LoadArtifact("project-sync-objects", "artifact-sync-2")
+	if err != nil {
+		t.Fatalf("LoadArtifact(custom) error = %v", err)
+	}
+	if loadedCustomArtifact.Kind != "decision-note" {
+		t.Fatalf("expected custom replicated artifact kind to be preserved, got %#v", loadedCustomArtifact)
+	}
 
 	deleteTaskHistory := ChangeEvent{
 		EventID:   "task-delete-event-1",
