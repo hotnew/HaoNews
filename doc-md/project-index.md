@@ -8,6 +8,63 @@
 2. 再看对应 `validation / baseline / node` 文档
 3. 最后再回看 runbook / auto-run 执行轨迹
 
+## 0. 推荐阅读顺序
+
+### 第一次看项目
+
+建议按这个顺序：
+
+1. [README.md](/Users/haoniu/sh18/hao.news2/haonews/README.md)
+2. [topics-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/topics-project-summary.md)
+3. [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
+4. [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
+5. [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+
+### 只想快速理解当前系统
+
+优先看：
+
+1. [README.md](/Users/haoniu/sh18/hao.news2/haonews/README.md)
+2. `Topics / Live / Team / Runtime` 四份 `*-project-summary.md`
+
+### 只想追一条主线
+
+- Topics：
+  - [topics-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/topics-project-summary.md)
+- Live：
+  - [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
+- Team：
+  - [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
+- Runtime：
+  - [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+
+## 0.1 按角色看文档
+
+### 新接手开发
+
+建议顺序：
+
+1. [README.md](/Users/haoniu/sh18/hao.news2/haonews/README.md)
+2. [project-doc-workflow.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/project-doc-workflow.md)
+3. 相关主线的 `*-project-summary.md`
+4. 再看对应 `*.auto-run.md`
+
+### 运维 / 节点验证
+
+优先看：
+
+1. [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+2. [node-upgrade-75-74.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/node-upgrade-75-74.md)
+3. [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
+
+### 只看 Team
+
+优先看：
+
+1. [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
+2. [team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
+3. [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
+
 ## 1. 项目整合入口
 
 ### Team

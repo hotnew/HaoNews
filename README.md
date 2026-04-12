@@ -242,6 +242,12 @@ Hao.News 好牛Ai 的基础立场很明确：
 - 项目文档收口规则：
   - [`doc-md/project-doc-workflow.md`](doc-md/project-doc-workflow.md)
 
+推荐阅读顺序：
+
+1. `README.md`
+2. `doc-md/project-index.md`
+3. `Topics / Live / Team / Runtime` 对应的 `*-project-summary.md`
+
 按主线分组：
 
 - `Topics`
