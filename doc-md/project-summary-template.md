@@ -80,6 +80,16 @@
   - 运行基线
   - release
 
+## 10. 版本与入口状态
+
+- 当前 summary 对应的最新版本：
+  - `main commit`
+  - `tag`
+  - `release`
+- 当前是否已接入：
+  - `doc-md/project-index.md`
+  - `README.md`（如果适合）
+
 ## 使用规则
 
 - 这份文档应在项目主线完成后补齐。

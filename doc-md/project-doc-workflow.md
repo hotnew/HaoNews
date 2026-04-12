@@ -66,6 +66,11 @@
 3. 产出或更新一份 `*-project-summary.md`
 4. 更新 `project-index.md`
 
+建议在项目开工时就先明确：
+
+- 这条主线最终对应哪一份 `*-project-summary.md`
+- 它应该挂到 `project-index.md` 的哪个分组
+
 ## 命名建议
 
 - 执行文档：
@@ -99,3 +104,4 @@
 - 不要把 summary 写成执行流水账
 - 不要把 validation 文档当作项目说明文档来替代
 - 不要新增了 summary 却忘了把它接进 `project-index.md`
+- 不要等项目全部做完了才临时决定 summary 放哪
