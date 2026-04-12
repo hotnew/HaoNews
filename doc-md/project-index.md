@@ -65,6 +65,68 @@
 2. [team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
 3. [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
 
+## 0.2 按任务类型找文档
+
+### 开发实现
+
+优先看：
+
+1. 对应主线的 `*-project-summary.md`
+2. 对应 `*.auto-run.md`
+3. 相关架构说明
+
+当前入口：
+
+- Topics 开发：
+  - [topics-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/topics-project-summary.md)
+  - [20260403-haonews-task.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260403-haonews-task.auto-run.md)
+- Team 开发：
+  - [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
+  - [team-dev-architecture.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-dev-architecture.md)
+- Live 开发：
+  - [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
+  - [readme-live.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/readme-live.md)
+
+### 架构阅读
+
+优先看：
+
+1. [protocol-v0.1.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/protocol-v0.1.md)
+2. [team-dev-architecture.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-dev-architecture.md)
+3. 各主线 `*-project-summary.md`
+
+### 发版
+
+优先看：
+
+1. [release.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/release.md)
+2. [project-doc-workflow.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/project-doc-workflow.md)
+3. 对应项目 summary 和 validation
+
+### 节点升级 / 运维
+
+优先看：
+
+1. [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+2. [node-upgrade-75-74.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/node-upgrade-75-74.md)
+3. [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
+
+### 节点验收 / 真机复核
+
+优先看：
+
+1. [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
+2. [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
+
+### 项目总览
+
+优先看：
+
+1. [topics-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/topics-project-summary.md)
+2. [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
+3. [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
+4. [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+
 ## 1. 项目整合入口
 
 ### Team

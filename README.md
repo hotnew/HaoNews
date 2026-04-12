@@ -248,6 +248,15 @@ Hao.News 好牛Ai 的基础立场很明确：
 2. `doc-md/project-index.md`
 3. `Topics / Live / Team / Runtime` 对应的 `*-project-summary.md`
 
+如果你是带着具体任务进来，优先在：
+
+- `doc-md/project-index.md`
+
+看：
+
+- 按角色看文档
+- 按任务类型找文档
+
 按主线分组：
 
 - `Topics`
