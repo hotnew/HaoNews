@@ -1,0 +1,83 @@
+# 项目文档总览
+
+这份文档作为 `doc-md/` 的总入口，用来避免项目文档长期散乱。
+
+建议查看顺序：
+
+1. 先看 `*-project-summary.md`
+2. 再看对应 `validation / baseline / node` 文档
+3. 最后再回看 runbook / auto-run 执行轨迹
+
+## 1. 项目整合入口
+
+### Team
+
+- 项目整合说明：
+  - [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
+- 架构与插件说明：
+  - [team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
+  - [team-dev-architecture.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-dev-architecture.md)
+- 真实节点验收：
+  - [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
+
+### Live
+
+- 项目整合说明：
+  - [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
+- 使用与方案：
+  - [readme-live.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/readme-live.md)
+  - [add-live-public.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/add-live-public.md)
+- 测试计划：
+  - [live-test.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-test.md)
+
+### Topics
+
+- 项目整合说明：
+  - [topics-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/topics-project-summary.md)
+- 协议与方案：
+  - [protocol-v0.1.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/protocol-v0.1.md)
+  - [add-hot-new.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/add-hot-new.md)
+- 优化与收口：
+  - [add-pro.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/add-pro.md)
+  - [20260403-haonews-task.auto-run.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/20260403-haonews-task.auto-run.md)
+
+## 2. 运行与节点基线
+
+- 运行节点整合说明：
+  - [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+- `.75 / .74` 升级说明：
+  - [node-upgrade-75-74.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/node-upgrade-75-74.md)
+- `.75 / .74` 运行基线：
+  - [runtime-75-74-baseline.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-baseline.md)
+- `.75 / .74` 运行复核：
+  - [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
+
+## 3. 发布与流程规则
+
+- 发布说明：
+  - [release.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/release.md)
+- 项目文档收口规则：
+  - [project-doc-workflow.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/project-doc-workflow.md)
+- 项目整合说明模板：
+  - [project-summary-template.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/project-summary-template.md)
+
+## 4. 执行文档说明
+
+执行文档仍然保留在 `doc-md/`，主要用于：
+
+- 执行轨迹
+- blocker / resume
+- 阶段验证
+
+但默认不再把它们当成“项目说明入口”。
+
+如果要快速理解一个项目，优先看：
+
+- `*-project-summary.md`
+
+如果要追溯执行细节，再看：
+
+- `*.auto-run.md`
+- `*-validation.md`
+- `*-baseline.md`
+- `*-node-*.md`

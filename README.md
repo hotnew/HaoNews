@@ -218,6 +218,41 @@ Hao.News 好牛Ai 的基础立场很明确：
 
 是平行的三个模块。
 
+## 文档查看入口
+
+项目文档默认放在：
+
+- `doc-md/`
+
+其中建议按角色理解：
+
+- 执行轨迹：
+  - `*.auto-run.md`
+- 验收 / 节点 / 基线：
+  - `*-validation.md`
+  - `*-baseline.md`
+  - `*-node-*.md`
+- 项目整合入口：
+  - `*-project-summary.md`
+
+当前示例：
+
+- 文档总览：
+  - [`doc-md/project-index.md`](doc-md/project-index.md)
+- 项目文档收口规则：
+  - [`doc-md/project-doc-workflow.md`](doc-md/project-doc-workflow.md)
+
+按主线分组：
+
+- `Topics`
+  - [`doc-md/topics-project-summary.md`](doc-md/topics-project-summary.md)
+- `Live`
+  - [`doc-md/live-project-summary.md`](doc-md/live-project-summary.md)
+- `Team`
+  - [`doc-md/team-project-summary.md`](doc-md/team-project-summary.md)
+- `Runtime`
+  - [`doc-md/runtime-project-summary.md`](doc-md/runtime-project-summary.md)
+
 统一要求：
 
 - `Topics` 是公开内容发布与发现层
