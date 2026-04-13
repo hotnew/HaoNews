@@ -343,8 +343,31 @@ func TestCreateTeamFromSpecPackageTemplateCtx(t *testing.T) {
 			t.Fatalf("missing milestone %q in progress %#v", want, progress)
 		}
 	}
-	if !ids["spec-package-ready"] {
-		t.Fatalf("unexpected milestone progress = %#v", progress)
+	tasks, err := store.ListTasksCtx(context.Background(), "spec-team", TaskFilter{})
+	if err != nil {
+		t.Fatalf("ListTasksCtx error = %v", err)
+	}
+	if len(tasks) != 6 {
+		t.Fatalf("expected 6 spec template tasks, got %#v", tasks)
+	}
+	taskIDs := map[string]Task{}
+	for _, item := range tasks {
+		taskIDs[item.TaskID] = item
+	}
+	for _, want := range []string{
+		"scope-goals-and-nongoals",
+		"review-scope-gaps-and-risks",
+		"freeze-workflow-decisions",
+		"write-data-model-spec",
+		"write-verification-spec",
+		"freeze-spec-package",
+	} {
+		if _, ok := taskIDs[want]; !ok {
+			t.Fatalf("missing seed task %q in %#v", want, tasks)
+		}
+	}
+	if got := taskIDs["freeze-spec-package"]; got.MilestoneID != "spec-package-ready" || len(got.DependsOn) != 1 || got.DependsOn[0] != "write-verification-spec" {
+		t.Fatalf("unexpected freeze-spec-package task = %#v", got)
 	}
 }
 

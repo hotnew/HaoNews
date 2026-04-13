@@ -13,6 +13,19 @@ type TemplateRoleBinding struct {
 	Status string `json:"status,omitempty"`
 }
 
+type TemplateSeedTask struct {
+	TaskID          string   `json:"task_id"`
+	Title           string   `json:"title"`
+	Description     string   `json:"description,omitempty"`
+	ChannelID       string   `json:"channel_id,omitempty"`
+	MilestoneID     string   `json:"milestone_id,omitempty"`
+	DependsOn       []string `json:"depends_on,omitempty"`
+	AssigneeAliases []string `json:"assignee_aliases,omitempty"`
+	Status          string   `json:"status,omitempty"`
+	Priority        string   `json:"priority,omitempty"`
+	Labels          []string `json:"labels,omitempty"`
+}
+
 type TeamTemplate struct {
 	TemplateID     string                `json:"template_id"`
 	Title          string                `json:"title"`
@@ -22,6 +35,7 @@ type TeamTemplate struct {
 	ChannelConfigs []ChannelConfig       `json:"channel_configs,omitempty"`
 	RoleBindings   []TemplateRoleBinding `json:"role_bindings,omitempty"`
 	SeedMilestones []Milestone           `json:"seed_milestones,omitempty"`
+	SeedTasks      []TemplateSeedTask    `json:"seed_tasks,omitempty"`
 }
 
 func BuiltinTeamTemplates() []TeamTemplate {
@@ -55,6 +69,79 @@ func BuiltinTeamTemplates() []TeamTemplate {
 				{MilestoneID: "data-model-ready", Title: "数据模型完成", Status: MilestoneStateOpen},
 				{MilestoneID: "verification-ready", Title: "验证标准完成", Status: MilestoneStateOpen},
 				{MilestoneID: "spec-package-ready", Title: "规格包冻结", Status: MilestoneStateOpen},
+			},
+			SeedTasks: []TemplateSeedTask{
+				{
+					TaskID:          "scope-goals-and-nongoals",
+					Title:           "冻结目标、非目标和范围",
+					Description:     "在 main 频道收敛目标、非目标、核心约束和成功标准，形成第一版 scope 说明。",
+					ChannelID:       "main",
+					MilestoneID:     "scope-frozen",
+					AssigneeAliases: []string{"proposer"},
+					Status:          TaskStateOpen,
+					Priority:        TaskPriorityHigh,
+					Labels:          []string{"spec-package", "scope"},
+				},
+				{
+					TaskID:          "review-scope-gaps-and-risks",
+					Title:           "评审范围缺口和主要风险",
+					Description:     "在 reviews 频道补齐 scope 缺口、歧义和高风险项，产出可进入 decision 的 review/risk 结论。",
+					ChannelID:       "reviews",
+					MilestoneID:     "scope-frozen",
+					DependsOn:       []string{"scope-goals-and-nongoals"},
+					AssigneeAliases: []string{"reviewer"},
+					Status:          TaskStateOpen,
+					Priority:        TaskPriorityHigh,
+					Labels:          []string{"spec-package", "review"},
+				},
+				{
+					TaskID:          "freeze-workflow-decisions",
+					Title:           "冻结流程和关键取舍",
+					Description:     "在 decisions 频道明确流程、边界和关键取舍，避免实现时重新讨论运行时行为。",
+					ChannelID:       "decisions",
+					MilestoneID:     "workflow-frozen",
+					DependsOn:       []string{"review-scope-gaps-and-risks"},
+					AssigneeAliases: []string{"owner", "editor"},
+					Status:          TaskStateOpen,
+					Priority:        TaskPriorityHigh,
+					Labels:          []string{"spec-package", "workflow"},
+				},
+				{
+					TaskID:          "write-data-model-spec",
+					Title:           "完成数据模型规格",
+					Description:     "在 artifacts 频道沉淀实体、状态、约束和字段说明，保证任何实现方都能按同一模型开发。",
+					ChannelID:       "artifacts",
+					MilestoneID:     "data-model-ready",
+					DependsOn:       []string{"freeze-workflow-decisions"},
+					AssigneeAliases: []string{"editor"},
+					Status:          TaskStateOpen,
+					Priority:        TaskPriorityMedium,
+					Labels:          []string{"spec-package", "data-model"},
+				},
+				{
+					TaskID:          "write-verification-spec",
+					Title:           "完成验证与验收规格",
+					Description:     "补齐最小验证集、验收动作和完成标准，让下游实现方能独立验证程序是否达标。",
+					ChannelID:       "artifacts",
+					MilestoneID:     "verification-ready",
+					DependsOn:       []string{"write-data-model-spec"},
+					AssigneeAliases: []string{"reviewer", "editor"},
+					Status:          TaskStateOpen,
+					Priority:        TaskPriorityMedium,
+					Labels:          []string{"spec-package", "verification"},
+				},
+				{
+					TaskID:          "freeze-spec-package",
+					Title:           "冻结并交付规格包",
+					Description:     "整理 README、product、workflow、data-model、api/runtime、verification 等 Markdown 规格，形成最终可交付包。",
+					ChannelID:       "artifacts",
+					MilestoneID:     "spec-package-ready",
+					DependsOn:       []string{"write-verification-spec"},
+					AssigneeAliases: []string{"owner", "editor"},
+					Status:          TaskStateOpen,
+					Priority:        TaskPriorityHigh,
+					Labels:          []string{"spec-package", "delivery"},
+				},
 			},
 		},
 		{
@@ -176,6 +263,7 @@ func (s *Store) CreateTeamFromTemplateCtx(ctx context.Context, info Info, templa
 		return Info{}, TeamTemplate{}, err
 	}
 	members := make([]Member, 0, len(template.RoleBindings))
+	resolvedAgents := map[string]string{}
 	for _, binding := range template.RoleBindings {
 		agentID := strings.TrimSpace(agentBindings[binding.Alias])
 		if binding.Alias == "owner" && agentID == "" {
@@ -184,6 +272,7 @@ func (s *Store) CreateTeamFromTemplateCtx(ctx context.Context, info Info, templa
 		if agentID == "" {
 			continue
 		}
+		resolvedAgents[binding.Alias] = agentID
 		members = append(members, Member{
 			AgentID:   agentID,
 			Role:      binding.Role,
@@ -203,6 +292,38 @@ func (s *Store) CreateTeamFromTemplateCtx(ctx context.Context, info Info, templa
 			milestone.MilestoneID = NormalizeTeamID(fmt.Sprintf("%s-%s", template.TemplateID, milestone.Title))
 		}
 		if err := s.SaveMilestoneCtx(ctx, info.TeamID, milestone); err != nil {
+			return Info{}, TeamTemplate{}, err
+		}
+	}
+	for _, seed := range template.SeedTasks {
+		taskID := strings.TrimSpace(seed.TaskID)
+		if taskID == "" {
+			taskID = NormalizeTeamID(fmt.Sprintf("%s-%s", template.TemplateID, seed.Title))
+		}
+		assignees := make([]string, 0, len(seed.AssigneeAliases))
+		for _, alias := range seed.AssigneeAliases {
+			agentID := strings.TrimSpace(resolvedAgents[alias])
+			if agentID == "" {
+				continue
+			}
+			assignees = append(assignees, agentID)
+		}
+		if err := s.AppendTaskCtx(ctx, info.TeamID, Task{
+			TaskID:      taskID,
+			TeamID:      info.TeamID,
+			ChannelID:   seed.ChannelID,
+			MilestoneID: seed.MilestoneID,
+			DependsOn:   append([]string(nil), seed.DependsOn...),
+			Title:       seed.Title,
+			Description: seed.Description,
+			CreatedBy:   strings.TrimSpace(info.OwnerAgentID),
+			Assignees:   assignees,
+			Status:      seed.Status,
+			Priority:    seed.Priority,
+			Labels:      append([]string(nil), seed.Labels...),
+			CreatedAt:   info.CreatedAt,
+			UpdatedAt:   info.CreatedAt,
+		}); err != nil {
 			return Info{}, TeamTemplate{}, err
 		}
 	}

@@ -42,6 +42,13 @@
   - `data-model-ready`
   - `verification-ready`
   - `spec-package-ready`
+- 6 条默认 seed tasks / checklist
+  - `冻结目标、非目标和范围`
+  - `评审范围缺口和主要风险`
+  - `冻结流程和关键取舍`
+  - `完成数据模型规格`
+  - `完成验证与验收规格`
+  - `冻结并交付规格包`
 
 ## 角色分工
 
@@ -282,6 +289,16 @@ Team 应该负责：
 
 `spec-package` 的 5 个里程碑就是为了避免这个问题。
 
+### 5. 只有里程碑，没有默认待办
+
+只有 milestone 但没有 checklist，开工时仍然容易回到：
+
+- 大家都知道方向
+- 但没人知道先做哪一步
+- 也没人知道哪些任务应该挂到哪个冻结节点
+
+现在 `spec-package` 模板已经自带 6 条 seed tasks，就是为了把这层骨架也提前补上。
+
 ## 当前真实样本
 
 推荐参考：
@@ -293,6 +310,9 @@ Team 应该负责：
 - `night-shift-spec3`
 - 运行态复核模板：
   - `night-shift-spec4`
+  - `night-shift-spec5`
+    - `task_count = 6`
+    - 新建即带默认 checklist
 
 ## 最终目标
 

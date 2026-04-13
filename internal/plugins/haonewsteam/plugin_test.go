@@ -717,8 +717,8 @@ func TestPluginBuildCreatesTeamFromTemplateAndServesMilestones(t *testing.T) {
 		t.Fatalf("detail status = %d, body = %s", detailRec.Code, detailRec.Body.String())
 	}
 	body := detailRec.Body.String()
-	if !strings.Contains(body, `"milestone_count":5`) && !strings.Contains(body, `"milestone_count": 5`) {
-		t.Fatalf("expected 5 milestones in detail body, got %s", body)
+	if !strings.Contains(body, `"milestone_count":1`) && !strings.Contains(body, `"milestone_count": 1`) {
+		t.Fatalf("expected 1 planning milestone in detail body, got %s", body)
 	}
 	if !strings.Contains(body, `"channel_config_count":3`) && !strings.Contains(body, `"channel_config_count": 3`) {
 		t.Fatalf("expected channel configs in detail body, got %s", body)
@@ -782,6 +782,29 @@ func TestPluginBuildCreatesSpecPackageTeamFromTemplate(t *testing.T) {
 		(!strings.Contains(milestoneRec.Body.String(), `"milestone_id":"spec-package-ready"`) && !strings.Contains(milestoneRec.Body.String(), `"milestone_id": "spec-package-ready"`)) ||
 		(!strings.Contains(milestoneRec.Body.String(), `"milestone_id":"scope-frozen"`) && !strings.Contains(milestoneRec.Body.String(), `"milestone_id": "scope-frozen"`)) {
 		t.Fatalf("milestones status = %d, body = %s", milestoneRec.Code, milestoneRec.Body.String())
+	}
+
+	tasksReq := httptest.NewRequest(http.MethodGet, "/api/teams/spec-package-team/tasks", nil)
+	tasksRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(tasksRec, tasksReq)
+	if tasksRec.Code != http.StatusOK {
+		t.Fatalf("tasks status = %d, body = %s", tasksRec.Code, tasksRec.Body.String())
+	}
+	tasksBody := tasksRec.Body.String()
+	for _, want := range []string{
+		"冻结目标、非目标和范围",
+		"评审范围缺口和主要风险",
+		"冻结流程和关键取舍",
+		"完成数据模型规格",
+		"完成验证与验收规格",
+		"冻结并交付规格包",
+	} {
+		if !strings.Contains(tasksBody, want) {
+			t.Fatalf("expected seed task %q in tasks body, got %s", want, tasksBody)
+		}
+	}
+	if !strings.Contains(tasksBody, `"milestone_id":"spec-package-ready"`) && !strings.Contains(tasksBody, `"milestone_id": "spec-package-ready"`) {
+		t.Fatalf("expected seeded milestone binding in tasks body, got %s", tasksBody)
 	}
 }
 
