@@ -82,18 +82,40 @@
 
 - `member_count = 4`
 - `channel_config_count = 4`
-- `milestone_count = 1`
-- `artifact_count = 7`
+- `milestone_count = 5`
+- `artifact_count = 11`
 
 对应 Artifact 标题：
 
 - `规格包目录与输出要求`
 - `运行时边界冻结`
+- `运行时边界冻结评审摘要`
 - `规格包产物结构`
+- `README Spec`
 - `Product Spec`
 - `Workflow Spec`
 - `Data Model Spec`
+- `Screens And Interactions Spec`
 - `API And Runtime Spec`
+- `Verification Spec`
+
+同时 `reviews` 频道已经补出一条真正的 `review-room` 决策线程：
+
+- `decision_ref = 运行时边界冻结`
+- `workflow_state = distilled-unassigned`
+- 已沉淀为 `review-summary` 风格的线程 Artifact
+
+模板当前预置的 5 个里程碑也已经在这支样本里可见：
+
+- `scope-frozen`
+- `workflow-frozen`
+- `data-model-ready`
+- `verification-ready`
+- `spec-package-ready`
+
+最新运行态复核里，使用新的 `team_id` 从模板创建时也已直接返回这 5 个里程碑：
+
+- `night-shift-spec4`
 
 ## 这支样本说明了什么
 
@@ -103,6 +125,7 @@
 2. `reviews` 专门收 review / risk，把规格缺口提早暴露
 3. `decisions` 负责冻结运行时边界和实现口径
 4. `artifacts` 最后把讨论收成真正的 Markdown 规格包
+5. `reviews` 还能把线程级评审进一步沉淀成 `review-summary`，补足“为什么这样冻结”的上下文
 
 也就是说，`Team` 现在应该优先被用来：
 

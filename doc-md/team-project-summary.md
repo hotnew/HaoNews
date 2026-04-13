@@ -160,6 +160,14 @@
   - `artifact-room`
   - 用来沉淀 `product / workflows / data-model / api / verification`
 
+同时会预置 5 个规格冻结里程碑：
+
+- `scope-frozen`
+- `workflow-frozen`
+- `data-model-ready`
+- `verification-ready`
+- `spec-package-ready`
+
 也就是说，`Team` 在这条用法里最重要的职责不是“承载目标程序”，而是：
 
 - 组织多 agent 协作

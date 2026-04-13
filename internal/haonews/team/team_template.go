@@ -50,6 +50,10 @@ func BuiltinTeamTemplates() []TeamTemplate {
 				{Alias: "editor", Role: MemberRoleMaintainer, Status: MemberStatusActive},
 			},
 			SeedMilestones: []Milestone{
+				{MilestoneID: "scope-frozen", Title: "目标与边界冻结", Status: MilestoneStateOpen},
+				{MilestoneID: "workflow-frozen", Title: "流程冻结", Status: MilestoneStateOpen},
+				{MilestoneID: "data-model-ready", Title: "数据模型完成", Status: MilestoneStateOpen},
+				{MilestoneID: "verification-ready", Title: "验证标准完成", Status: MilestoneStateOpen},
 				{MilestoneID: "spec-package-ready", Title: "规格包冻结", Status: MilestoneStateOpen},
 			},
 		},

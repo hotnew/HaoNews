@@ -717,8 +717,8 @@ func TestPluginBuildCreatesTeamFromTemplateAndServesMilestones(t *testing.T) {
 		t.Fatalf("detail status = %d, body = %s", detailRec.Code, detailRec.Body.String())
 	}
 	body := detailRec.Body.String()
-	if !strings.Contains(body, `"milestone_count":1`) && !strings.Contains(body, `"milestone_count": 1`) {
-		t.Fatalf("expected milestone_count in detail body, got %s", body)
+	if !strings.Contains(body, `"milestone_count":5`) && !strings.Contains(body, `"milestone_count": 5`) {
+		t.Fatalf("expected 5 milestones in detail body, got %s", body)
 	}
 	if !strings.Contains(body, `"channel_config_count":3`) && !strings.Contains(body, `"channel_config_count": 3`) {
 		t.Fatalf("expected channel configs in detail body, got %s", body)
@@ -765,8 +765,8 @@ func TestPluginBuildCreatesSpecPackageTeamFromTemplate(t *testing.T) {
 		t.Fatalf("detail status = %d, body = %s", detailRec.Code, detailRec.Body.String())
 	}
 	body := detailRec.Body.String()
-	if !strings.Contains(body, `"milestone_count":1`) && !strings.Contains(body, `"milestone_count": 1`) {
-		t.Fatalf("expected milestone_count in detail body, got %s", body)
+	if !strings.Contains(body, `"milestone_count":5`) && !strings.Contains(body, `"milestone_count": 5`) {
+		t.Fatalf("expected 5 milestones in detail body, got %s", body)
 	}
 	if !strings.Contains(body, `"channel_config_count":4`) && !strings.Contains(body, `"channel_config_count": 4`) {
 		t.Fatalf("expected 4 channel configs in detail body, got %s", body)
@@ -778,7 +778,9 @@ func TestPluginBuildCreatesSpecPackageTeamFromTemplate(t *testing.T) {
 	milestoneReq := httptest.NewRequest(http.MethodGet, "/api/teams/spec-package-team/milestones", nil)
 	milestoneRec := httptest.NewRecorder()
 	site.Handler.ServeHTTP(milestoneRec, milestoneReq)
-	if milestoneRec.Code != http.StatusOK || (!strings.Contains(milestoneRec.Body.String(), `"milestone_id":"spec-package-ready"`) && !strings.Contains(milestoneRec.Body.String(), `"milestone_id": "spec-package-ready"`)) {
+	if milestoneRec.Code != http.StatusOK ||
+		(!strings.Contains(milestoneRec.Body.String(), `"milestone_id":"spec-package-ready"`) && !strings.Contains(milestoneRec.Body.String(), `"milestone_id": "spec-package-ready"`)) ||
+		(!strings.Contains(milestoneRec.Body.String(), `"milestone_id":"scope-frozen"`) && !strings.Contains(milestoneRec.Body.String(), `"milestone_id": "scope-frozen"`)) {
 		t.Fatalf("milestones status = %d, body = %s", milestoneRec.Code, milestoneRec.Body.String())
 	}
 }

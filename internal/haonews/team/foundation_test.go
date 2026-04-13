@@ -331,7 +331,19 @@ func TestCreateTeamFromSpecPackageTemplateCtx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMilestoneProgressCtx error = %v", err)
 	}
-	if len(progress) != 1 || progress[0].Milestone.MilestoneID != "spec-package-ready" {
+	if len(progress) != 5 {
+		t.Fatalf("expected 5 spec template milestones, got %#v", progress)
+	}
+	ids := map[string]bool{}
+	for _, item := range progress {
+		ids[item.Milestone.MilestoneID] = true
+	}
+	for _, want := range []string{"scope-frozen", "workflow-frozen", "data-model-ready", "verification-ready", "spec-package-ready"} {
+		if !ids[want] {
+			t.Fatalf("missing milestone %q in progress %#v", want, progress)
+		}
+	}
+	if !ids["spec-package-ready"] {
 		t.Fatalf("unexpected milestone progress = %#v", progress)
 	}
 }
