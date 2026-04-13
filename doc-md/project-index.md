@@ -145,6 +145,7 @@
   - 用于多 agent 讨论、评审、冻结边界并产出规格 md
 - `spec-package` 真实样本：
   - [spec-package-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-team-demo.md)
+  - [market-alert-spec-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/market-alert-spec-demo.md)
 - `spec-package` 标准操作法：
   - [spec-package-sop.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-sop.md)
 - 真实节点验收：

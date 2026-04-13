@@ -317,6 +317,10 @@ Team 应该负责：
     - `done_task_count = 6`
     - `done milestone = 5`
     - 已完整走完一轮 `spec-package` 默认流程
+  - `market-alert-spec1`
+    - `done_task_count = 6`
+    - `done milestone = 5`
+    - 证明模板也适用于“行情异动告警台”这类不同题材
 
 ## 最终目标
 
