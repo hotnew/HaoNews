@@ -808,6 +808,121 @@ func TestPluginBuildCreatesSpecPackageTeamFromTemplate(t *testing.T) {
 	}
 }
 
+func TestPluginBuildExportsSpecPackageArtifacts(t *testing.T) {
+	t.Parallel()
+
+	site, root := buildTeamSite(t)
+	store, err := teamcore.OpenStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/teams?from_template=spec-package", strings.NewReader(`{
+  "team": {
+    "team_id": "spec-export-team",
+    "title": "Spec Export Team",
+    "owner_agent_id": "agent-owner"
+  }
+}`))
+	createReq.RemoteAddr = "127.0.0.1:12345"
+	createRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	now := time.Date(2026, 4, 13, 12, 0, 0, 0, time.UTC)
+	for idx, item := range []struct {
+		id      string
+		title   string
+		kind    string
+		channel string
+		content string
+	}{
+		{id: "readme", title: "README Spec", kind: "markdown", channel: "artifacts", content: "# README\n"},
+		{id: "product", title: "Product Spec", kind: "markdown", channel: "artifacts", content: "# Product\n"},
+		{id: "workflow", title: "Workflow Spec", kind: "markdown", channel: "artifacts", content: "# Workflows\n"},
+		{id: "data-model", title: "Data Model Spec", kind: "markdown", channel: "artifacts", content: "# Data Model\n"},
+		{id: "screens", title: "Screens And Interactions Spec", kind: "markdown", channel: "artifacts", content: "# Screens\n"},
+		{id: "api-runtime", title: "API And Runtime Spec", kind: "markdown", channel: "artifacts", content: "# API Runtime\n"},
+		{id: "verification", title: "Verification Spec", kind: "markdown", channel: "artifacts", content: "# Verification\n"},
+		{id: "decision-note", title: "运行时边界冻结", kind: "decision-note", channel: "decisions", content: "冻结运行时边界"},
+	} {
+		at := now.Add(time.Duration(idx) * time.Minute)
+		if err := store.AppendArtifact("spec-export-team", teamcore.Artifact{
+			ArtifactID: item.id,
+			ChannelID:  item.channel,
+			Title:      item.title,
+			Kind:       item.kind,
+			Content:    item.content,
+			CreatedAt:  at,
+			UpdatedAt:  at,
+		}); err != nil {
+			t.Fatalf("AppendArtifact(%s) error = %v", item.id, err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/teams/spec-export-team/artifacts/export?profile=spec-package", nil)
+	rec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("export status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		TeamID          string          `json:"team_id"`
+		Profile         string          `json:"profile"`
+		DocumentCount   int             `json:"document_count"`
+		SupportingCount int             `json:"supporting_count"`
+		Completeness    map[string]bool `json:"completeness"`
+		Documents       []struct {
+			Title   string `json:"title"`
+			Section string `json:"section"`
+		} `json:"documents"`
+		SupportingArtifacts []struct {
+			Title string `json:"title"`
+		} `json:"supporting_artifacts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal error = %v", err)
+	}
+	if payload.TeamID != "spec-export-team" || payload.Profile != "spec-package" {
+		t.Fatalf("unexpected export payload = %#v", payload)
+	}
+	if payload.DocumentCount != 7 || payload.SupportingCount != 1 {
+		t.Fatalf("unexpected export counts = %#v", payload)
+	}
+	if len(payload.Documents) != 7 || payload.Documents[0].Title != "README Spec" || payload.Documents[6].Title != "Verification Spec" {
+		t.Fatalf("unexpected document order = %#v", payload.Documents)
+	}
+	if !payload.Completeness["readme"] || !payload.Completeness["verification"] {
+		t.Fatalf("expected completeness map to include readme and verification, got %#v", payload.Completeness)
+	}
+	if len(payload.SupportingArtifacts) != 1 || payload.SupportingArtifacts[0].Title != "运行时边界冻结" {
+		t.Fatalf("unexpected supporting artifacts = %#v", payload.SupportingArtifacts)
+	}
+
+	mdReq := httptest.NewRequest(http.MethodGet, "/api/teams/spec-export-team/artifacts/export?profile=spec-package&format=markdown", nil)
+	mdRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(mdRec, mdReq)
+	if mdRec.Code != http.StatusOK {
+		t.Fatalf("markdown export status = %d, body = %s", mdRec.Code, mdRec.Body.String())
+	}
+	if got := mdRec.Header().Get("Content-Type"); !strings.Contains(got, "text/markdown") {
+		t.Fatalf("markdown content-type = %q", got)
+	}
+	for _, want := range []string{
+		"# Spec Export Team 规格包导出",
+		"### README Spec",
+		"### Verification Spec",
+		"## 支撑产物",
+		"### 运行时边界冻结",
+	} {
+		if !strings.Contains(mdRec.Body.String(), want) {
+			t.Fatalf("markdown export missing %q: %s", want, mdRec.Body.String())
+		}
+	}
+}
+
 func TestPluginBuildStreamsTeamEvents(t *testing.T) {
 	t.Parallel()
 

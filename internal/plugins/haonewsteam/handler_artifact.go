@@ -5,12 +5,55 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	teamcore "hao.news/internal/haonews/team"
 	newsplugin "hao.news/internal/plugins/haonews"
 )
+
+var specPackageArtifactSections = []struct {
+	Title   string
+	Section string
+}{
+	{Title: "README Spec", Section: "readme"},
+	{Title: "Product Spec", Section: "product"},
+	{Title: "Workflow Spec", Section: "workflows"},
+	{Title: "Data Model Spec", Section: "data-model"},
+	{Title: "Screens And Interactions Spec", Section: "screens-and-interactions"},
+	{Title: "API And Runtime Spec", Section: "api-and-runtime"},
+	{Title: "Verification Spec", Section: "verification"},
+}
+
+type teamArtifactExportDocument struct {
+	Section    string            `json:"section"`
+	ArtifactID string            `json:"artifact_id"`
+	Title      string            `json:"title"`
+	Kind       string            `json:"kind,omitempty"`
+	ChannelID  string            `json:"channel_id,omitempty"`
+	TaskID     string            `json:"task_id,omitempty"`
+	Summary    string            `json:"summary,omitempty"`
+	Content    string            `json:"content,omitempty"`
+	Labels     []string          `json:"labels,omitempty"`
+	CreatedAt  time.Time         `json:"created_at,omitempty"`
+	UpdatedAt  time.Time         `json:"updated_at,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+type teamArtifactExportBundle struct {
+	Scope               string                       `json:"scope"`
+	TeamID              string                       `json:"team_id"`
+	TeamTitle           string                       `json:"team_title"`
+	Profile             string                       `json:"profile"`
+	GeneratedAt         time.Time                    `json:"generated_at"`
+	DocumentCount       int                          `json:"document_count"`
+	SupportingCount     int                          `json:"supporting_count"`
+	Completeness        map[string]bool              `json:"completeness"`
+	Documents           []teamArtifactExportDocument `json:"documents"`
+	SupportingArtifacts []teamArtifactExportDocument `json:"supporting_artifacts"`
+}
 
 func handleTeamArtifacts(app *newsplugin.App, store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
 	info, err := store.LoadTeamCtx(r.Context(), teamID)
@@ -305,6 +348,34 @@ func handleAPITeamArtifacts(store *teamcore.Store, teamID string, w http.Respons
 	})
 }
 
+func handleAPITeamArtifactExport(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {
+	info, err := store.LoadTeamCtx(r.Context(), teamID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if profile == "" {
+		profile = "spec-package"
+	}
+	if profile != "spec-package" {
+		http.Error(w, "unsupported artifact export profile", http.StatusBadRequest)
+		return
+	}
+	artifacts, err := store.LoadArtifactsCtx(r.Context(), teamID, 500)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	bundle := buildSpecPackageArtifactExport(info, artifacts)
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "markdown") {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		_, _ = w.Write([]byte(renderSpecPackageArtifactExportMarkdown(bundle)))
+		return
+	}
+	newsplugin.WriteJSON(w, http.StatusOK, bundle)
+}
+
 func handleAPITeamArtifact(store *teamcore.Store, teamID, artifactID string, w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {
 		handleAPITeamArtifactUpdate(store, teamID, artifactID, w, r)
@@ -324,6 +395,164 @@ func handleAPITeamArtifact(store *teamcore.Store, teamID, artifactID string, w h
 		"team_id":  teamID,
 		"artifact": artifact,
 	})
+}
+
+func buildSpecPackageArtifactExport(info teamcore.Info, artifacts []teamcore.Artifact) teamArtifactExportBundle {
+	sectionOrder := make(map[string]int, len(specPackageArtifactSections))
+	titleToSection := make(map[string]string, len(specPackageArtifactSections))
+	completeness := make(map[string]bool, len(specPackageArtifactSections))
+	for idx, item := range specPackageArtifactSections {
+		sectionOrder[item.Title] = idx
+		titleToSection[item.Title] = item.Section
+		completeness[item.Section] = false
+	}
+	var documents []teamArtifactExportDocument
+	var supporting []teamArtifactExportDocument
+	for _, artifact := range artifacts {
+		if !specPackageArtifactExportable(artifact) {
+			continue
+		}
+		doc := teamArtifactExportDocument{
+			Section:    titleToSection[artifact.Title],
+			ArtifactID: artifact.ArtifactID,
+			Title:      artifact.Title,
+			Kind:       artifact.Kind,
+			ChannelID:  artifact.ChannelID,
+			TaskID:     artifact.TaskID,
+			Summary:    artifact.Summary,
+			Content:    strings.TrimSpace(artifact.Content),
+			Labels:     append([]string(nil), artifact.Labels...),
+			CreatedAt:  artifact.CreatedAt,
+			UpdatedAt:  artifact.UpdatedAt,
+			Metadata: map[string]string{
+				"profile": "spec-package",
+			},
+		}
+		if section, ok := titleToSection[artifact.Title]; ok {
+			doc.Section = section
+			completeness[section] = true
+			documents = append(documents, doc)
+			continue
+		}
+		if doc.Section == "" {
+			doc.Section = "supporting"
+		}
+		supporting = append(supporting, doc)
+	}
+	sort.SliceStable(documents, func(i, j int) bool {
+		left := sectionOrder[documents[i].Title]
+		right := sectionOrder[documents[j].Title]
+		if left != right {
+			return left < right
+		}
+		if !documents[i].UpdatedAt.Equal(documents[j].UpdatedAt) {
+			return documents[i].UpdatedAt.Before(documents[j].UpdatedAt)
+		}
+		return documents[i].ArtifactID < documents[j].ArtifactID
+	})
+	sort.SliceStable(supporting, func(i, j int) bool {
+		if !supporting[i].UpdatedAt.Equal(supporting[j].UpdatedAt) {
+			return supporting[i].UpdatedAt.Before(supporting[j].UpdatedAt)
+		}
+		if supporting[i].ChannelID != supporting[j].ChannelID {
+			return supporting[i].ChannelID < supporting[j].ChannelID
+		}
+		return supporting[i].ArtifactID < supporting[j].ArtifactID
+	})
+	return teamArtifactExportBundle{
+		Scope:               "team-artifact-export",
+		TeamID:              info.TeamID,
+		TeamTitle:           info.Title,
+		Profile:             "spec-package",
+		GeneratedAt:         time.Now().UTC(),
+		DocumentCount:       len(documents),
+		SupportingCount:     len(supporting),
+		Completeness:        completeness,
+		Documents:           documents,
+		SupportingArtifacts: supporting,
+	}
+}
+
+func specPackageArtifactExportable(artifact teamcore.Artifact) bool {
+	if strings.TrimSpace(artifact.Content) != "" {
+		return true
+	}
+	kind := strings.TrimSpace(strings.ToLower(artifact.Kind))
+	return kind != "" && kind != "link"
+}
+
+func renderSpecPackageArtifactExportMarkdown(bundle teamArtifactExportBundle) string {
+	var b strings.Builder
+	b.WriteString("# ")
+	b.WriteString(bundle.TeamTitle)
+	b.WriteString(" 规格包导出\n\n")
+	b.WriteString("- team_id: `")
+	b.WriteString(bundle.TeamID)
+	b.WriteString("`\n")
+	b.WriteString("- profile: `")
+	b.WriteString(bundle.Profile)
+	b.WriteString("`\n")
+	b.WriteString("- generated_at: `")
+	b.WriteString(bundle.GeneratedAt.Format(time.RFC3339))
+	b.WriteString("`\n")
+	b.WriteString("- document_count: `")
+	b.WriteString(strconv.Itoa(bundle.DocumentCount))
+	b.WriteString("`\n")
+	b.WriteString("- supporting_count: `")
+	b.WriteString(strconv.Itoa(bundle.SupportingCount))
+	b.WriteString("`\n\n")
+	b.WriteString("## 正文规格\n\n")
+	for _, doc := range bundle.Documents {
+		appendArtifactExportMarkdownSection(&b, doc)
+	}
+	if len(bundle.SupportingArtifacts) > 0 {
+		b.WriteString("## 支撑产物\n\n")
+		for _, doc := range bundle.SupportingArtifacts {
+			appendArtifactExportMarkdownSection(&b, doc)
+		}
+	}
+	return b.String()
+}
+
+func appendArtifactExportMarkdownSection(b *strings.Builder, doc teamArtifactExportDocument) {
+	b.WriteString("### ")
+	b.WriteString(doc.Title)
+	b.WriteString("\n\n")
+	b.WriteString("- artifact_id: `")
+	b.WriteString(doc.ArtifactID)
+	b.WriteString("`\n")
+	if doc.Section != "" {
+		b.WriteString("- section: `")
+		b.WriteString(doc.Section)
+		b.WriteString("`\n")
+	}
+	if doc.ChannelID != "" {
+		b.WriteString("- channel_id: `")
+		b.WriteString(doc.ChannelID)
+		b.WriteString("`\n")
+	}
+	if doc.Kind != "" {
+		b.WriteString("- kind: `")
+		b.WriteString(doc.Kind)
+		b.WriteString("`\n")
+	}
+	if doc.TaskID != "" {
+		b.WriteString("- task_id: `")
+		b.WriteString(doc.TaskID)
+		b.WriteString("`\n")
+	}
+	b.WriteString("\n")
+	if strings.TrimSpace(doc.Summary) != "" {
+		b.WriteString(doc.Summary)
+		b.WriteString("\n\n")
+	}
+	content := strings.TrimSpace(doc.Content)
+	if content == "" {
+		b.WriteString("_无正文内容_\n\n")
+		return
+	}
+	b.WriteString(content)
+	b.WriteString("\n\n")
 }
 
 func handleAPITeamArtifactCreate(store *teamcore.Store, teamID string, w http.ResponseWriter, r *http.Request) {

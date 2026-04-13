@@ -592,6 +592,10 @@ func newHandler(app *newsplugin.App, store *teamcore.Store, staticFS fs.FS, room
 			handleAPITeamArtifacts(store, teamID, w, r)
 			return
 		}
+		if len(parts) == 3 && parts[1] == "artifacts" && parts[2] == "export" {
+			handleAPITeamArtifactExport(store, teamID, w, r)
+			return
+		}
 		if len(parts) == 3 && parts[1] == "artifacts" {
 			handleAPITeamArtifact(store, teamID, parts[2], w, r)
 			return

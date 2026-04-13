@@ -193,6 +193,12 @@
 - 组织多 agent 协作
 - 产出稳定规格包
 - 把讨论收成可下游实现的 md
+- 再通过导出接口把规格包稳定交给下游实现
+
+当前 `spec-package` 已支持直接导出：
+
+- `GET /api/teams/{teamID}/artifacts/export?profile=spec-package`
+- `GET /api/teams/{teamID}/artifacts/export?profile=spec-package&format=markdown`
 
 ### 4.2 文档沉淀
 

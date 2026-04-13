@@ -333,3 +333,26 @@ Team 应该负责：
 5. 再让下游独立实现
 
 只有这样，Team 才真正回到了你最初设计的主思想上。
+
+## 导出给下游实现
+
+当 `spec-package` 已经完成正文规格和冻结决策后，不需要再手工从 Team 页面复制内容。
+
+现在可以直接使用：
+
+- `GET /api/teams/{teamID}/artifacts/export?profile=spec-package`
+  - 返回稳定 JSON
+  - 包含：
+    - `documents`
+    - `supporting_artifacts`
+    - `completeness`
+- `GET /api/teams/{teamID}/artifacts/export?profile=spec-package&format=markdown`
+  - 返回拼接好的 Markdown 规格包
+
+推荐把这一步作为 `spec-package-ready` 之前的最后收口动作：
+
+1. Team 内完成讨论、review、decision、artifact 沉淀
+2. 用 export API 导出规格包
+3. 复核导出结果是否完整
+4. 冻结 Team 上游结果
+5. 再把导出的 JSON/Markdown 交给下游独立实现
