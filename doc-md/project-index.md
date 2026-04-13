@@ -143,6 +143,8 @@
 - 推荐起手模板：
   - `spec-package`
   - 用于多 agent 讨论、评审、冻结边界并产出规格 md
+- `spec-package` 真实样本：
+  - [spec-package-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-team-demo.md)
 - 真实节点验收：
   - [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
 - 真实协作样本：

@@ -266,6 +266,8 @@ Team 不是只适合本机使用。
 
 - 先在 Team 里用多 agent 把夜间值班系统的流程、角色、风险、交接、产物说清
 - 再把这些讨论结果收成一组**与 Team 解耦**的独立程序规格文档
+- 同时也已经有一支更贴近正确用法的 `spec-package` 样本：
+  - [spec-package-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-team-demo.md)
 
 对应规格包：
 
@@ -288,6 +290,11 @@ Team 不是只适合本机使用。
 2. 用多个 agent 在 `main / reviews / decisions / artifacts` 里迭代
 3. 冻结规格包
 4. 再让下游本地 agent 独立实现程序
+
+当前最贴近这条推荐路径的真实样本是：
+
+- `night-shift-spec3`
+  - [spec-package-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-team-demo.md)
 
 对应的独立程序整合入口：
 
