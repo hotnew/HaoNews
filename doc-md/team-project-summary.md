@@ -177,6 +177,14 @@
 - `完成验证与验收规格`
 - `冻结并交付规格包`
 
+而且这套默认待办已经在真实样本里跑通过一整轮：
+
+- `night-shift-spec8`
+  - `task_count = 6`
+  - `done_task_count = 6`
+  - `milestone_count = 5`
+  - `done milestone = 5`
+
 也就是说，`Team` 在这条用法里最重要的职责不是“承载目标程序”，而是：
 
 - 组织多 agent 协作

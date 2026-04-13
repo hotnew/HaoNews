@@ -133,6 +133,42 @@
 - `scope-frozen` 下有 `2` 条任务
 - 其余 4 个冻结里程碑各有 `1` 条任务
 
+在这之后，我又用一支全新样本把默认 checklist 真正完整走完了一次：
+
+- `night-shift-spec8`
+- `task_count = 6`
+- `done_task_count = 6`
+- `milestone_count = 5`
+- `done milestone = 5`
+- `artifact_count = 11`
+
+这支完整样本里真实发生过：
+
+- `main`
+  - 1 条 `plan`
+  - 1 条 `skill`
+  - 1 个 `skill-doc`
+- `reviews`
+  - 1 条 `review`
+  - 1 条 `risk`
+  - 1 条 `decision`
+  - 1 个 `review-summary`
+- `decisions`
+  - 1 条 `proposal`
+  - 1 条 `decision`
+  - 1 个 `decision-note`
+- `artifacts`
+  - 1 条 `proposal`
+  - 1 条 `publish`
+  - 1 个 `artifact-brief`
+  - 7 份 Markdown 正文规格
+
+也就是说，`spec-package` 现在不只是“能创建出一个有骨架的 Team”，而是已经有一支样本证明：
+
+- 默认 6 条任务可以全部走完
+- 默认 5 个冻结里程碑可以全部收成 `done`
+- 最终真的能落下一套完整可交付的规格包
+
 ## 这支样本说明了什么
 
 这支样本证明 `Team` 现在已经能稳定承载下面这条上游流程：

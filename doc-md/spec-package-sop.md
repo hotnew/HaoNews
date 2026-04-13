@@ -313,6 +313,10 @@ Team 应该负责：
   - `night-shift-spec5`
     - `task_count = 6`
     - 新建即带默认 checklist
+  - `night-shift-spec8`
+    - `done_task_count = 6`
+    - `done milestone = 5`
+    - 已完整走完一轮 `spec-package` 默认流程
 
 ## 最终目标
 
