@@ -59,6 +59,17 @@ Team 主干会先做 Team 级路由分发，再把剩余路径交给对应 Room 
 
 Room Plugin 与 Room Theme 通过 `ChannelConfig` 绑定到频道。
 
+如果当前目标是“多 agent 先讨论并收成规格 md，再交给下游独立实现”，推荐优先采用下面这组频道组合，而不是直接把 Team 当最终程序运行时：
+
+- `main -> plan-exchange`
+- `reviews -> review-room`
+- `decisions -> decision-room`
+- `artifacts -> artifact-room`
+
+当前代码主线里，内置 Team 模板已经有这条默认组合：
+
+- `spec-package`
+
 canonical 存储位置：
 
 - `store/team/{teamID}/channels/{channelID}/channel_config.json`

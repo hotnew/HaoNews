@@ -64,6 +64,8 @@
 1. [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
 2. [team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
 3. [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
+4. [night-shift-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-team-demo.md)
+5. [night-shift-system-manual.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system-manual.md)
 
 ## 0.2 按任务类型找文档
 
@@ -83,6 +85,7 @@
 - Team 开发：
   - [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
   - [team-dev-architecture.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-dev-architecture.md)
+  - [night-shift-system2/README.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/README.md)
 - Live 开发：
   - [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
   - [readme-live.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/readme-live.md)
@@ -117,6 +120,7 @@
 
 1. [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
 2. [runtime-75-74-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-75-74-validation.md)
+3. [night-shift-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-team-demo.md)
 
 ### 项目总览
 
@@ -136,8 +140,21 @@
 - 架构与插件说明：
   - [team-room-plugin.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-room-plugin.md)
   - [team-dev-architecture.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-dev-architecture.md)
+- 推荐起手模板：
+  - `spec-package`
+  - 用于多 agent 讨论、评审、冻结边界并产出规格 md
 - 真实节点验收：
   - [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
+- 真实协作样本：
+  - [night-shift-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-team-demo.md)
+  - [night-shift-system-manual.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system-manual.md)
+- Team 产出的独立程序规格包：
+  - [night-shift-system2/README.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/README.md)
+  - [night-shift-system2/01-product.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/01-product.md)
+  - [night-shift-system2/02-workflows.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/02-workflows.md)
+  - [night-shift-system2/03-data-model.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/03-data-model.md)
+  - [night-shift-system2/04-screens-and-interactions.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/04-screens-and-interactions.md)
+  - [night-shift-system2/05-api-and-runtime.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/05-api-and-runtime.md)
 
 ### Live
 

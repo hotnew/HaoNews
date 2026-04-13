@@ -27,6 +27,33 @@ type TeamTemplate struct {
 func BuiltinTeamTemplates() []TeamTemplate {
 	return []TeamTemplate{
 		{
+			TemplateID:  "spec-package",
+			Title:       "Spec Package",
+			Description: "多 agent 规格共创模板，专门用于把讨论、评审、决策和 Markdown 产物收成可直接交付的规格包。",
+			Channels: []Channel{
+				{ChannelID: "main", Title: "Scope"},
+				{ChannelID: "reviews", Title: "Reviews"},
+				{ChannelID: "decisions", Title: "Decisions"},
+				{ChannelID: "artifacts", Title: "Artifacts"},
+			},
+			Policy: DefaultPolicy(),
+			ChannelConfigs: []ChannelConfig{
+				{ChannelID: "main", Plugin: "plan-exchange@1.0", Theme: "minimal", AgentOnboarding: "提出目标、非目标、方案、约束和可拼装 md 片段。"},
+				{ChannelID: "reviews", Plugin: "review-room@1.0", Theme: "focus", AgentOnboarding: "针对规格缺口、风险、歧义和边界做 review / risk / decision。"},
+				{ChannelID: "decisions", Plugin: "decision-room@1.0", Theme: "board", AgentOnboarding: "冻结规格边界、取舍和最终结论，避免实现时重新讨论。"},
+				{ChannelID: "artifacts", Plugin: "artifact-room@1.0", Theme: "board", AgentOnboarding: "沉淀 product / workflows / data-model / api / verification 等规格文档。"},
+			},
+			RoleBindings: []TemplateRoleBinding{
+				{Alias: "owner", Role: MemberRoleOwner, Status: MemberStatusActive},
+				{Alias: "proposer", Role: MemberRoleMaintainer, Status: MemberStatusActive},
+				{Alias: "reviewer", Role: MemberRoleMaintainer, Status: MemberStatusActive},
+				{Alias: "editor", Role: MemberRoleMaintainer, Status: MemberStatusActive},
+			},
+			SeedMilestones: []Milestone{
+				{MilestoneID: "spec-package-ready", Title: "规格包冻结", Status: MilestoneStateOpen},
+			},
+		},
+		{
 			TemplateID:  "incident-response",
 			Title:       "Incident Response",
 			Description: "故障响应模板，包含分诊、时间线和恢复频道。",

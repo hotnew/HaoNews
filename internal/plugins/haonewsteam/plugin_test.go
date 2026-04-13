@@ -732,6 +732,57 @@ func TestPluginBuildCreatesTeamFromTemplateAndServesMilestones(t *testing.T) {
 	}
 }
 
+func TestPluginBuildCreatesSpecPackageTeamFromTemplate(t *testing.T) {
+	t.Parallel()
+
+	site, _ := buildTeamSite(t)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/teams?from_template=spec-package", strings.NewReader(`{
+  "team": {
+    "team_id": "spec-package-team",
+    "title": "Spec Package Team",
+    "owner_agent_id": "agent-owner"
+  },
+  "agent_bindings": {
+    "proposer": "agent-proposer",
+    "reviewer": "agent-reviewer",
+    "editor": "agent-editor"
+  }
+}`))
+	createReq.RemoteAddr = "127.0.0.1:12345"
+	createRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+	if !strings.Contains(createRec.Body.String(), `"template_id":"spec-package"`) && !strings.Contains(createRec.Body.String(), `"template_id": "spec-package"`) {
+		t.Fatalf("expected spec-package template in body, got %s", createRec.Body.String())
+	}
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/teams/spec-package-team", nil)
+	detailRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, body = %s", detailRec.Code, detailRec.Body.String())
+	}
+	body := detailRec.Body.String()
+	if !strings.Contains(body, `"milestone_count":1`) && !strings.Contains(body, `"milestone_count": 1`) {
+		t.Fatalf("expected milestone_count in detail body, got %s", body)
+	}
+	if !strings.Contains(body, `"channel_config_count":4`) && !strings.Contains(body, `"channel_config_count": 4`) {
+		t.Fatalf("expected 4 channel configs in detail body, got %s", body)
+	}
+	if !strings.Contains(body, `"member_count":4`) && !strings.Contains(body, `"member_count": 4`) {
+		t.Fatalf("expected 4 members in detail body, got %s", body)
+	}
+
+	milestoneReq := httptest.NewRequest(http.MethodGet, "/api/teams/spec-package-team/milestones", nil)
+	milestoneRec := httptest.NewRecorder()
+	site.Handler.ServeHTTP(milestoneRec, milestoneReq)
+	if milestoneRec.Code != http.StatusOK || (!strings.Contains(milestoneRec.Body.String(), `"milestone_id":"spec-package-ready"`) && !strings.Contains(milestoneRec.Body.String(), `"milestone_id": "spec-package-ready"`)) {
+		t.Fatalf("milestones status = %d, body = %s", milestoneRec.Code, milestoneRec.Body.String())
+	}
+}
+
 func TestPluginBuildStreamsTeamEvents(t *testing.T) {
 	t.Parallel()
 

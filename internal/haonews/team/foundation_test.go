@@ -291,6 +291,51 @@ func TestCreateTeamFromTemplateCtx(t *testing.T) {
 	}
 }
 
+func TestCreateTeamFromSpecPackageTemplateCtx(t *testing.T) {
+	t.Parallel()
+
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenStore error = %v", err)
+	}
+	info, template, err := store.CreateTeamFromTemplateCtx(context.Background(), Info{
+		TeamID:       "spec-team",
+		Title:        "Spec Team",
+		OwnerAgentID: "agent-owner",
+	}, "spec-package", map[string]string{
+		"proposer": "agent-proposer",
+		"reviewer": "agent-reviewer",
+		"editor":   "agent-editor",
+	})
+	if err != nil {
+		t.Fatalf("CreateTeamFromTemplateCtx(spec-package) error = %v", err)
+	}
+	if template.TemplateID != "spec-package" || info.TeamID != "spec-team" {
+		t.Fatalf("unexpected spec template/info = %#v %#v", template, info)
+	}
+	configs, err := store.ListChannelConfigsCtx(context.Background(), "spec-team")
+	if err != nil {
+		t.Fatalf("ListChannelConfigsCtx error = %v", err)
+	}
+	if len(configs) != 4 {
+		t.Fatalf("expected 4 spec template channel configs, got %#v", configs)
+	}
+	members, err := store.LoadMembersCtx(context.Background(), "spec-team")
+	if err != nil {
+		t.Fatalf("LoadMembersCtx error = %v", err)
+	}
+	if len(members) != 4 {
+		t.Fatalf("expected spec template role bindings, got %#v", members)
+	}
+	progress, err := store.ListMilestoneProgressCtx(context.Background(), "spec-team")
+	if err != nil {
+		t.Fatalf("ListMilestoneProgressCtx error = %v", err)
+	}
+	if len(progress) != 1 || progress[0].Milestone.MilestoneID != "spec-package-ready" {
+		t.Fatalf("unexpected milestone progress = %#v", progress)
+	}
+}
+
 func TestDetectReplicatedTaskStatusConflictAutoResolvable(t *testing.T) {
 	t.Parallel()
 

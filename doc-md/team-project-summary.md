@@ -137,6 +137,35 @@
 - 规划、决策、评审、故障、交接、产物各自有独立语义
 - 最后又都能回到 Team 的任务、产物、历史主链
 
+### 4.1.1 规格共创
+
+如果目标不是“直接在 Team 里承载最终程序”，而是让多个 agent 先把规格 md 讨论清楚，再交给下游实现，那么现在推荐直接从内置模板：
+
+- `spec-package`
+
+起步。
+
+这套模板默认会拉起 4 个频道：
+
+- `main`
+  - `plan-exchange`
+  - 用来放目标、非目标、约束、候选方案和 md 片段
+- `reviews`
+  - `review-room`
+  - 用来收 review / risk / decision，专门打掉规格缺口
+- `decisions`
+  - `decision-room`
+  - 用来冻结边界、取舍和最终实现口径
+- `artifacts`
+  - `artifact-room`
+  - 用来沉淀 `product / workflows / data-model / api / verification`
+
+也就是说，`Team` 在这条用法里最重要的职责不是“承载目标程序”，而是：
+
+- 组织多 agent 协作
+- 产出稳定规格包
+- 把讨论收成可下游实现的 md
+
 ### 4.2 文档沉淀
 
 Team 现在很适合做“讨论 -> 结论 -> Markdown 产物”的长期沉淀。
@@ -198,6 +227,7 @@ Team 不是只适合本机使用。
 当前最适合反复复用的真实样本是：
 
 - `feiji-app`
+- `night-shift-desk`
 
 节点：
 
@@ -225,6 +255,69 @@ Team 不是只适合本机使用。
 详细验收文档见：
 
 - [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
+- [night-shift-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-team-demo.md)
+- [night-shift-system-manual.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system-manual.md)
+
+### 6.0 Team 作为上游共创工具
+
+`Team` 不只可以直接做协作空间，也可以作为“上游多 agent 讨论与产出规格”的工具。
+
+当前已经补了一条明确样本：
+
+- 先在 Team 里用多 agent 把夜间值班系统的流程、角色、风险、交接、产物说清
+- 再把这些讨论结果收成一组**与 Team 解耦**的独立程序规格文档
+
+对应规格包：
+
+- [night-shift-system2/README.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/README.md)
+- [night-shift-system2/01-product.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/01-product.md)
+- [night-shift-system2/02-workflows.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/02-workflows.md)
+- [night-shift-system2/03-data-model.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/03-data-model.md)
+- [night-shift-system2/04-screens-and-interactions.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/04-screens-and-interactions.md)
+- [night-shift-system2/05-api-and-runtime.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/05-api-and-runtime.md)
+
+这条样本的重点是：
+
+- Team 负责前期协作和共创
+- 独立程序规格负责后续实现
+- 最终程序不依赖 Team API、Team 页面或 Team 数据格式
+
+这条主线从现在开始的推荐落法也已经固定：
+
+1. 用 `spec-package` 模板建 Team
+2. 用多个 agent 在 `main / reviews / decisions / artifacts` 里迭代
+3. 冻结规格包
+4. 再让下游本地 agent 独立实现程序
+
+对应的独立程序整合入口：
+
+- [night-shift-system2-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2-project-summary.md)
+
+### 6.1 `night-shift-desk`
+
+这是一个专门用来说明 “Team + 子进程 + Room Plugin” 怎么协同工作的本地样本。
+
+它真实覆盖了：
+
+- `plan-exchange`
+- `decision-room`
+- `artifact-room`
+- `review-room`
+- `incident-room`
+- `handoff-room`
+
+而且不是静态文档，而是真实跑通了：
+
+- 子进程成员参与 review / decision
+- 房间消息沉淀为 artifact
+- 房间批处理自动生成 task
+- Team history 回显整条夜班流程
+
+适合拿来解释：
+
+- Team 能用来做什么
+- 为什么它不是聊天壳
+- Room Plugin 怎么接回 Team 主链
 
 ## 7. 这条线最近解决过的关键问题
 
