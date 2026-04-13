@@ -76,6 +76,8 @@ go run ./cmd/haonews meetingnotes \
 - 新增行动项
 - 更新行动项状态
 - 按负责人筛选任务
+- 按关键词、状态、会议过滤任务
+- 查看负责人汇总视图
 
 当前状态支持：
 
@@ -124,6 +126,17 @@ API：
 - `/api/meetings/{meetingID}`
 - `/api/tasks`
 - `/api/archive`
+
+其中筛选已经可用：
+
+- `/api/meetings?q=关键词`
+- `/api/tasks?q=关键词&owner=张三&status=confirmed`
+
+`/api/tasks` 还会返回：
+
+- `owners`
+
+用于展示负责人任务汇总。
 
 动作入口：
 

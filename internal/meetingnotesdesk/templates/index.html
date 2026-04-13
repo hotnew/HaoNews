@@ -84,6 +84,12 @@
 
         <div class="card">
           <h2>会议列表</h2>
+          <form method="get" action="/meetings" style="margin-bottom:12px">
+            <label>搜索会议
+              <input name="q" value="{{.MeetingQuery}}" placeholder="按标题、参与人、摘要、决议搜索">
+            </label>
+            <button class="secondary" type="submit">筛选</button>
+          </form>
           <div class="list">
             {{range .Meetings}}
             <a class="item" href="/meetings?meeting_id={{.ID}}" style="text-decoration:none">
@@ -237,6 +243,45 @@
         {{if eq .ActiveSection "tasks"}}
         <div class="card">
           <h2>行动项总览</h2>
+          <form method="get" action="/tasks" style="margin-bottom:12px">
+            <div class="split">
+              <label>关键词
+                <input name="task_q" value="{{.TaskQuery}}" placeholder="按会议、内容、负责人搜索">
+              </label>
+              <label>负责人
+                <input name="owner" value="{{.TaskOwner}}" placeholder="例如：张三">
+              </label>
+            </div>
+            <div class="split">
+              <label>状态
+                <select name="status">
+                  <option value="" {{if eq .TaskStatus ""}}selected{{end}}>全部</option>
+                  <option value="open" {{if eq .TaskStatus "open"}}selected{{end}}>open</option>
+                  <option value="confirmed" {{if eq .TaskStatus "confirmed"}}selected{{end}}>confirmed</option>
+                  <option value="done" {{if eq .TaskStatus "done"}}selected{{end}}>done</option>
+                  <option value="dropped" {{if eq .TaskStatus "dropped"}}selected{{end}}>dropped</option>
+                </select>
+              </label>
+              <label>会议 ID
+                <input name="meeting" value="{{.TaskMeetingID}}" placeholder="可选，按会议过滤">
+              </label>
+            </div>
+            <button class="secondary" type="submit">筛选行动项</button>
+          </form>
+          <div class="list" style="margin-bottom:16px">
+            {{range .Owners}}
+            <div class="item">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+                <strong>{{.Owner}}</strong>
+                <span class="badge {{if gt .Open 0}}warn{{else}}ok{{end}}">{{.Total}} 条</span>
+              </div>
+              <div class="muted">open {{.Open}} · confirmed {{.Confirmed}} · done {{.Done}} · dropped {{.Dropped}}</div>
+              <div class="muted">高优先级 {{.HighPrio}} · 最近更新 {{fmtTime .LatestAt}}</div>
+            </div>
+            {{else}}
+            <div class="item muted">当前筛选下还没有负责人视图。</div>
+            {{end}}
+          </div>
           <div class="list">
             {{range .Tasks}}
             <div class="item">

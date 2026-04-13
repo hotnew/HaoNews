@@ -101,13 +101,30 @@ type viewData struct {
 	Selected      *Meeting
 	Meetings      []Meeting
 	Tasks         []actionTaskView
+	Owners        []ownerTaskSummary
 	Archive       []ArchiveItem
+	MeetingQuery  string
+	TaskQuery     string
+	TaskOwner     string
+	TaskStatus    string
+	TaskMeetingID string
 }
 
 type actionTaskView struct {
 	MeetingID    string
 	MeetingTitle string
 	ActionItem
+}
+
+type ownerTaskSummary struct {
+	Owner     string
+	Total     int
+	Open      int
+	Confirmed int
+	Done      int
+	Dropped   int
+	HighPrio  int
+	LatestAt  time.Time
 }
 
 var (
@@ -325,14 +342,30 @@ func normalizePriority(priority string) string {
 func (s *Server) handlePage(section string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		state := s.snapshot()
-		selected := pickMeeting(state.Meetings, strings.TrimSpace(r.URL.Query().Get("meeting_id")))
+		meetingQuery := strings.TrimSpace(r.URL.Query().Get("q"))
+		taskQuery := strings.TrimSpace(r.URL.Query().Get("task_q"))
+		taskOwner := strings.TrimSpace(r.URL.Query().Get("owner"))
+		taskStatus := strings.TrimSpace(r.URL.Query().Get("status"))
+		taskMeetingID := strings.TrimSpace(r.URL.Query().Get("meeting"))
+		filteredMeetings := filterMeetings(state.Meetings, meetingQuery)
+		filteredTasks := filterActionTaskViews(buildActionTaskViews(state.Meetings), taskQuery, taskOwner, taskStatus, taskMeetingID)
+		selected := pickMeeting(filteredMeetings, strings.TrimSpace(r.URL.Query().Get("meeting_id")))
+		if selected == nil {
+			selected = pickMeeting(state.Meetings, strings.TrimSpace(r.URL.Query().Get("meeting_id")))
+		}
 		data := viewData{
 			State:         state,
 			ActiveSection: section,
 			Selected:      selected,
-			Meetings:      state.Meetings,
-			Tasks:         buildActionTaskViews(state.Meetings),
+			Meetings:      filteredMeetings,
+			Tasks:         filteredTasks,
+			Owners:        summarizeOwners(filteredTasks),
 			Archive:       state.Archive,
+			MeetingQuery:  meetingQuery,
+			TaskQuery:     taskQuery,
+			TaskOwner:     taskOwner,
+			TaskStatus:    taskStatus,
+			TaskMeetingID: taskMeetingID,
 		}
 		if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -359,14 +392,8 @@ func (s *Server) handleMeetingsAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := s.snapshot()
-	q := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("q")))
-	meetings := make([]Meeting, 0, len(state.Meetings))
-	for _, meeting := range state.Meetings {
-		if q != "" && !strings.Contains(strings.ToLower(meeting.Title), q) && !strings.Contains(strings.ToLower(strings.Join(meeting.Participants, " ")), q) {
-			continue
-		}
-		meetings = append(meetings, meeting)
-	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	meetings := filterMeetings(state.Meetings, q)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"count":    len(meetings),
 		"meetings": meetings,
@@ -397,26 +424,16 @@ func (s *Server) handleMeetingAPI(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTasksAPI(w http.ResponseWriter, r *http.Request) {
 	state := s.snapshot()
-	owner := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("owner")))
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	owner := strings.TrimSpace(r.URL.Query().Get("owner"))
 	meetingID := strings.TrimSpace(r.URL.Query().Get("meeting"))
-	status := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("status")))
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	views := buildActionTaskViews(state.Meetings)
-	filtered := make([]actionTaskView, 0, len(views))
-	for _, item := range views {
-		if owner != "" && !strings.Contains(strings.ToLower(item.Owner), owner) {
-			continue
-		}
-		if meetingID != "" && item.MeetingID != meetingID {
-			continue
-		}
-		if status != "" && strings.ToLower(item.Status) != status {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
+	filtered := filterActionTaskViews(views, q, owner, status, meetingID)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"count": len(filtered),
-		"tasks": filtered,
+		"count":  len(filtered),
+		"tasks":  filtered,
+		"owners": summarizeOwners(filtered),
 	})
 }
 
@@ -1126,6 +1143,121 @@ func buildActionTaskViews(meetings []Meeting) []actionTaskView {
 		return views[i].UpdatedAt.After(views[j].UpdatedAt)
 	})
 	return views
+}
+
+func filterMeetings(meetings []Meeting, query string) []Meeting {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return append([]Meeting(nil), meetings...)
+	}
+	filtered := make([]Meeting, 0, len(meetings))
+	for _, meeting := range meetings {
+		haystack := []string{
+			strings.ToLower(meeting.Title),
+			strings.ToLower(strings.Join(meeting.Participants, " ")),
+			strings.ToLower(meeting.Summary),
+			strings.ToLower(meeting.SourceText),
+		}
+		matched := false
+		for _, topic := range meeting.Topics {
+			haystack = append(haystack, strings.ToLower(topic.Title), strings.ToLower(topic.Summary))
+		}
+		for _, decision := range meeting.Decisions {
+			haystack = append(haystack, strings.ToLower(decision.Content))
+		}
+		for _, value := range haystack {
+			if strings.Contains(value, query) {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			filtered = append(filtered, meeting)
+		}
+	}
+	return filtered
+}
+
+func filterActionTaskViews(views []actionTaskView, query string, owner string, status string, meetingID string) []actionTaskView {
+	query = strings.TrimSpace(strings.ToLower(query))
+	owner = strings.TrimSpace(strings.ToLower(owner))
+	status = strings.TrimSpace(strings.ToLower(status))
+	meetingID = strings.TrimSpace(meetingID)
+	filtered := make([]actionTaskView, 0, len(views))
+	for _, item := range views {
+		if owner != "" && !strings.Contains(strings.ToLower(item.Owner), owner) {
+			continue
+		}
+		if meetingID != "" && item.MeetingID != meetingID {
+			continue
+		}
+		if status != "" && strings.ToLower(item.Status) != status {
+			continue
+		}
+		if query != "" {
+			text := strings.ToLower(strings.Join([]string{
+				item.Content,
+				item.Owner,
+				item.DueDate,
+				item.MeetingTitle,
+				item.SourceSnippet,
+			}, " "))
+			if !strings.Contains(text, query) {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func summarizeOwners(views []actionTaskView) []ownerTaskSummary {
+	if len(views) == 0 {
+		return nil
+	}
+	byOwner := map[string]*ownerTaskSummary{}
+	for _, item := range views {
+		owner := coalesce(strings.TrimSpace(item.Owner), "未分配")
+		summary := byOwner[owner]
+		if summary == nil {
+			summary = &ownerTaskSummary{Owner: owner}
+			byOwner[owner] = summary
+		}
+		summary.Total++
+		if item.Priority == "high" {
+			summary.HighPrio++
+		}
+		switch item.Status {
+		case "open":
+			summary.Open++
+		case "confirmed":
+			summary.Confirmed++
+		case "done":
+			summary.Done++
+		case "dropped":
+			summary.Dropped++
+		}
+		if item.UpdatedAt.After(summary.LatestAt) {
+			summary.LatestAt = item.UpdatedAt
+		}
+	}
+	out := make([]ownerTaskSummary, 0, len(byOwner))
+	for _, summary := range byOwner {
+		out = append(out, *summary)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Open != out[j].Open {
+			return out[i].Open > out[j].Open
+		}
+		if out[i].Confirmed != out[j].Confirmed {
+			return out[i].Confirmed > out[j].Confirmed
+		}
+		if out[i].Total != out[j].Total {
+			return out[i].Total > out[j].Total
+		}
+		return out[i].Owner < out[j].Owner
+	})
+	return out
 }
 
 func pickMeeting(meetings []Meeting, meetingID string) *Meeting {

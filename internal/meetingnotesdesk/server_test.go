@@ -158,6 +158,19 @@ func TestTasksAndMeetingsAPIFilters(t *testing.T) {
 		t.Fatalf("meeting count = %d", meetingsResp.Count)
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "/api/meetings?q=%E9%AA%8C%E6%94%B6", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("meetings query status = %d", rec.Code)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &meetingsResp); err != nil {
+		t.Fatalf("Unmarshal meetings query response: %v", err)
+	}
+	if meetingsResp.Count != 1 {
+		t.Fatalf("expected summary/source query to match, got %d", meetingsResp.Count)
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/api/tasks?owner=张三", nil)
 	rec = httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
@@ -180,5 +193,18 @@ func TestTasksAndMeetingsAPIFilters(t *testing.T) {
 		if task.Owner != "张三" {
 			t.Fatalf("unexpected task owner = %q", task.Owner)
 		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/tasks?q=原型&status=open", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tasks query status = %d", rec.Code)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &tasksResp); err != nil {
+		t.Fatalf("Unmarshal tasks query response: %v", err)
+	}
+	if tasksResp.Count != 1 {
+		t.Fatalf("expected q+status filtered task, got %d", tasksResp.Count)
 	}
 }
