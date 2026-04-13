@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"hao.news/internal/haonews"
 	"hao.news/internal/haonews/live"
 	"hao.news/internal/host"
+	"hao.news/internal/meetingnotesdesk"
 	"hao.news/internal/scaffold"
 	"hao.news/internal/themes/directorytheme"
 	"hao.news/internal/workspace"
@@ -116,6 +118,8 @@ func run(args []string) error {
 		return runApps(args[1:])
 	case "create":
 		return runCreate(args[1:])
+	case "meetingnotes":
+		return runMeetingNotes(args[1:])
 	default:
 		return usageError()
 	}
@@ -1586,6 +1590,44 @@ func runCreate(args []string) error {
 		"output": resolvedOut,
 		"files":  filePaths(files),
 	})
+}
+
+func runMeetingNotes(args []string) error {
+	fs := flag.NewFlagSet("meetingnotes", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	listenAddr := fs.String("listen", "127.0.0.1:51923", "http listen address")
+	statePath := fs.String("state", meetingnotesdesk.DefaultStatePath(), "state file path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	server, err := meetingnotesdesk.New(*statePath)
+	if err != nil {
+		return err
+	}
+	handler := server.Handler()
+	httpServer := &http.Server{
+		Addr:              *listenAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	fmt.Fprintf(os.Stdout, "meeting notes system listening on http://%s\nstate file: %s\n", *listenAddr, *statePath)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- httpServer.ListenAndServe()
+	}()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return httpServer.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
 }
 
 func resolveCreateTarget(target, explicitOut string) (string, string, error) {

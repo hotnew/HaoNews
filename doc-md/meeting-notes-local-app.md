@@ -1,0 +1,175 @@
+# 会议纪要整理与行动项生成台 本地程序
+
+## 这是什么
+
+这是一套**与 Team 运行时解耦**的本地程序。
+
+它不是 Team 里的一个房间或插件，而是根据：
+
+- [/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-spec-package.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-spec-package.md)
+
+独立实现出来的本地 Web 应用。
+
+## 怎么启动
+
+在仓库根目录运行：
+
+```bash
+cd /Users/haoniu/sh18/hao.news2/haonews
+go run ./cmd/haonews meetingnotes --listen 127.0.0.1:51923
+```
+
+启动后打开：
+
+- [http://127.0.0.1:51923/](http://127.0.0.1:51923/)
+
+## 数据放哪里
+
+默认状态文件：
+
+- `/Users/haoniu/.hao-news/meeting-notes-system/state.json`
+
+本次实测使用的是：
+
+- `/Users/haoniu/.hao-news/meeting-notes-system/e2e-state.json`
+
+也可以自定义：
+
+```bash
+go run ./cmd/haonews meetingnotes \
+  --listen 127.0.0.1:51923 \
+  --state /tmp/meeting-notes-state.json
+```
+
+## 当前能力
+
+### 1. 会议导入
+
+可以直接导入会议原文：
+
+- 标题
+- 参会人
+- 原始会议文本
+
+导入后会自动抽取：
+
+- 摘要
+- 议题
+- 决议
+- 行动项
+
+### 2. 人工校对
+
+可以继续人工编辑：
+
+- 摘要
+- 议题
+- 决议
+- 原始文本
+
+每次更新都会留下 revision 记录。
+
+### 3. 行动项管理
+
+现在可以直接：
+
+- 新增行动项
+- 更新行动项状态
+- 按负责人筛选任务
+
+当前状态支持：
+
+- `open`
+- `confirmed`
+- `done`
+- `dropped`
+
+### 4. 发布与归档
+
+会议纪要可以从 `draft` 发布为 `published`。
+
+发布后会自动生成归档项：
+
+- `meeting-summary`
+
+并可在：
+
+- `/archive`
+- `/api/archive`
+
+查看。
+
+### 5. 导出
+
+支持导出最新会议：
+
+- Markdown：
+  - `/exports/meeting/latest.md`
+- JSON：
+  - `/exports/meeting/latest.json`
+
+### 6. 独立页面与 API
+
+页面：
+
+- `/`
+- `/meetings`
+- `/tasks`
+- `/archive`
+
+API：
+
+- `/api/state`
+- `/api/meetings`
+- `/api/meetings/{meetingID}`
+- `/api/tasks`
+- `/api/archive`
+
+动作入口：
+
+- `/actions/meeting/import`
+- `/actions/meeting/regenerate`
+- `/actions/meeting/update`
+- `/actions/action-item`
+- `/actions/action-item-status`
+- `/actions/meeting/publish`
+
+## 已完成的真实验证
+
+本地已实测跑通一条完整链：
+
+1. 导入会议 `项目晨会 04-13`
+2. 自动生成 3 条行动项
+3. 人工校对摘要、议题、决议
+4. 将行动项 `action-1` 更新为 `confirmed`
+5. 发布纪要并生成归档
+6. 导出 Markdown 和 JSON
+7. 重启进程后重新读取同一状态文件
+
+重启后仍可看到：
+
+- `meeting_count = 1`
+- `task_count = 3`
+- `archive_count = 1`
+
+## 与 Team 的关系
+
+`Team` 只用于前期多 agent 协作、评审和产出规格 md。
+
+这个程序本身：
+
+- 不依赖 Team 页面
+- 不依赖 Team API
+- 不依赖 Team 数据结构
+- 只把规格包当设计输入
+
+## 当前代码位置
+
+- CLI 入口：
+  - [/Users/haoniu/sh18/hao.news2/haonews/cmd/haonews/main.go](/Users/haoniu/sh18/hao.news2/haonews/cmd/haonews/main.go)
+- 程序实现：
+  - [/Users/haoniu/sh18/hao.news2/haonews/internal/meetingnotesdesk/server.go](/Users/haoniu/sh18/hao.news2/haonews/internal/meetingnotesdesk/server.go)
+- 页面模板：
+  - [/Users/haoniu/sh18/hao.news2/haonews/internal/meetingnotesdesk/templates/index.html](/Users/haoniu/sh18/hao.news2/haonews/internal/meetingnotesdesk/templates/index.html)
+- 测试：
+  - [/Users/haoniu/sh18/hao.news2/haonews/internal/meetingnotesdesk/server_test.go](/Users/haoniu/sh18/hao.news2/haonews/internal/meetingnotesdesk/server_test.go)

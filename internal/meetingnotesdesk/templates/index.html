@@ -1,0 +1,274 @@
+{{define "index.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.State.Title}}</title>
+  <style>
+    :root {
+      --bg: #f4f0e8;
+      --paper: #fffdf8;
+      --ink: #20242b;
+      --muted: #6f6f73;
+      --line: #d8ccb9;
+      --accent: #b4572d;
+      --accent-soft: #f0d8c9;
+      --ok: #2f7d4c;
+      --warn: #946200;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: linear-gradient(180deg, #efe5d5 0%, var(--bg) 100%); color: var(--ink); font: 15px/1.5 "PingFang SC","Hiragino Sans GB","Noto Sans CJK SC",sans-serif; }
+    a { color: inherit; }
+    .shell { max-width: 1440px; margin: 0 auto; padding: 24px; }
+    .hero { display: grid; gap: 8px; padding: 28px; background: var(--paper); border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 12px 30px rgba(61,41,24,.08); }
+    .hero h1 { margin: 0; font-size: 32px; }
+    .muted { color: var(--muted); }
+    .nav { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0 22px; }
+    .nav a { text-decoration: none; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,255,.5); }
+    .nav a.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 20px; align-items: start; }
+    .card { background: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 18px; box-shadow: 0 12px 24px rgba(61,41,24,.06); }
+    .card h2, .card h3 { margin: 0 0 10px; }
+    .list { display: grid; gap: 10px; }
+    .item { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: rgba(255,255,255,.55); }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; }
+    .badge.ok { background: #dceedd; color: var(--ok); }
+    .badge.warn { background: #f3e7bf; color: var(--warn); }
+    form { display: grid; gap: 10px; }
+    label { display: grid; gap: 6px; font-weight: 600; }
+    input, textarea, select, button { font: inherit; }
+    input, textarea, select { width: 100%; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: #fff; }
+    textarea { min-height: 100px; resize: vertical; }
+    button { border: 0; background: var(--ink); color: #fff; padding: 11px 14px; border-radius: 14px; cursor: pointer; }
+    button.secondary { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .section { display: grid; gap: 16px; }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    @media (max-width: 1080px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="badge">独立本地程序</div>
+      <h1>{{.State.Title}}</h1>
+      <div class="muted">单机 / 文件持久化 / 本地 Web / JSON API / Markdown + JSON 导出</div>
+      <div class="muted">会议 {{len .State.Meetings}} · 行动项 {{len .Tasks}} · 归档 {{len .Archive}}</div>
+    </section>
+
+    <nav class="nav">
+      <a href="/" {{if eq .ActiveSection "overview"}}class="active"{{end}}>总览</a>
+      <a href="/meetings" {{if eq .ActiveSection "meetings"}}class="active"{{end}}>会议详情</a>
+      <a href="/tasks" {{if eq .ActiveSection "tasks"}}class="active"{{end}}>行动项</a>
+      <a href="/archive" {{if eq .ActiveSection "archive"}}class="active"{{end}}>归档</a>
+    </nav>
+
+    <div class="grid">
+      <aside class="section">
+        <div class="card">
+          <h2>导入会议</h2>
+          <form method="post" action="/actions/meeting/import">
+            <label>会议标题
+              <input name="title" placeholder="例如：产品周会 04-13">
+            </label>
+            <label>参与人
+              <input name="participants" placeholder="张三, 李四, 王五">
+            </label>
+            <label>会议文本 / 转写稿
+              <textarea name="source_text" placeholder="粘贴会议纪要、转写稿，或带“行动: 内容 | 负责人 | 截止 | 优先级”的文本。"></textarea>
+            </label>
+            <button type="submit">导入并生成初稿</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>会议列表</h2>
+          <div class="list">
+            {{range .Meetings}}
+            <a class="item" href="/meetings?meeting_id={{.ID}}" style="text-decoration:none">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+                <strong>{{.Title}}</strong>
+                <span class="badge {{if eq .Status "published"}}ok{{else}}warn{{end}}">{{.Status}}</span>
+              </div>
+              <div class="muted">{{fmtTime .UpdatedAt}}</div>
+              <div>{{.Summary}}</div>
+            </a>
+            {{else}}
+            <div class="item muted">还没有会议，先导入第一份会议文本。</div>
+            {{end}}
+          </div>
+        </div>
+      </aside>
+
+      <main class="section">
+        {{if .Selected}}
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:start">
+            <div>
+              <h2>{{.Selected.Title}}</h2>
+              <div class="muted">参与人：{{join .Selected.Participants ", "}}</div>
+              <div class="muted">状态：{{.Selected.Status}} · 更新时间：{{fmtTime .Selected.UpdatedAt}}</div>
+            </div>
+            <div style="display:grid;gap:8px">
+              <a href="/exports/meeting/latest.md?meeting_id={{.Selected.ID}}">导出 Markdown</a>
+              <a href="/exports/meeting/latest.json?meeting_id={{.Selected.ID}}">导出 JSON</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>校对纪要</h3>
+          <form method="post" action="/actions/meeting/update">
+            <input type="hidden" name="meeting_id" value="{{.Selected.ID}}">
+            <label>标题
+              <input name="title" value="{{.Selected.Title}}">
+            </label>
+            <label>参与人
+              <input name="participants" value="{{join .Selected.Participants ", "}}">
+            </label>
+            <label>摘要
+              <textarea name="summary">{{.Selected.Summary}}</textarea>
+            </label>
+            <div class="split">
+              <label>议题（每行一个）
+                <textarea name="topics_text">{{range .Selected.Topics}}{{.Summary}}
+{{end}}</textarea>
+              </label>
+              <label>决议（每行一个）
+                <textarea name="decisions_text">{{range .Selected.Decisions}}{{.Content}}
+{{end}}</textarea>
+              </label>
+            </div>
+            <label>原始文本
+              <textarea name="source_text">{{.Selected.SourceText}}</textarea>
+            </label>
+            <input type="hidden" name="editor" value="haoniu">
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button type="submit">保存校对</button>
+            </div>
+          </form>
+          <form method="post" action="/actions/meeting/regenerate" style="margin-top:12px">
+            <input type="hidden" name="meeting_id" value="{{.Selected.ID}}">
+            <button class="secondary" type="submit">重新抽取草稿</button>
+          </form>
+          <form method="post" action="/actions/meeting/publish" style="margin-top:12px">
+            <input type="hidden" name="meeting_id" value="{{.Selected.ID}}">
+            <input type="hidden" name="editor" value="haoniu">
+            <button type="submit">发布最终纪要</button>
+          </form>
+        </div>
+
+        <div class="split">
+          <div class="card">
+            <h3>行动项</h3>
+            <div class="list">
+              {{range .Selected.ActionItems}}
+              <div class="item">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+                  <strong>{{.Content}}</strong>
+                  <span class="badge {{if eq .Status "done"}}ok{{else if eq .Status "confirmed"}}warn{{end}}">{{.Status}}</span>
+                </div>
+                <div class="muted">负责人：{{.Owner}} · 截止：{{.DueDate}} · 优先级：{{.Priority}}</div>
+                <form method="post" action="/actions/action-item-status" style="margin-top:8px">
+                  <input type="hidden" name="meeting_id" value="{{$.Selected.ID}}">
+                  <input type="hidden" name="item_id" value="{{.ID}}">
+                  <input type="hidden" name="editor" value="haoniu">
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <select name="status">
+                      <option value="open" {{if eq .Status "open"}}selected{{end}}>open</option>
+                      <option value="confirmed" {{if eq .Status "confirmed"}}selected{{end}}>confirmed</option>
+                      <option value="done" {{if eq .Status "done"}}selected{{end}}>done</option>
+                      <option value="dropped" {{if eq .Status "dropped"}}selected{{end}}>dropped</option>
+                    </select>
+                    <button type="submit">更新状态</button>
+                  </div>
+                </form>
+              </div>
+              {{end}}
+            </div>
+            <form method="post" action="/actions/action-item" style="margin-top:12px">
+              <input type="hidden" name="meeting_id" value="{{.Selected.ID}}">
+              <input type="hidden" name="editor" value="haoniu">
+              <label>新增行动项
+                <input name="content" placeholder="例如：补完整理后的发布说明">
+              </label>
+              <div class="split">
+                <label>负责人
+                  <input name="owner" placeholder="例如：张三">
+                </label>
+                <label>截止
+                  <input name="due_date" placeholder="例如：2026-04-20">
+                </label>
+              </div>
+              <label>优先级
+                <select name="priority">
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="low">low</option>
+                </select>
+              </label>
+              <button type="submit">添加行动项</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <h3>修订记录</h3>
+            <div class="list">
+              {{range .Selected.Revisions}}
+              <div class="item">
+                <strong>{{.Note}}</strong>
+                <div class="muted">{{.Editor}} · {{fmtTime .CreatedAt}}</div>
+                <div>{{.SnapshotSummary}}</div>
+              </div>
+              {{else}}
+              <div class="item muted">暂无修订记录。</div>
+              {{end}}
+            </div>
+          </div>
+        </div>
+        {{else}}
+        <div class="card">
+          <h2>还没有会议</h2>
+          <div class="muted">左侧导入第一份会议文本后，这里会出现可编辑纪要、决议和行动项。</div>
+        </div>
+        {{end}}
+
+        {{if eq .ActiveSection "tasks"}}
+        <div class="card">
+          <h2>行动项总览</h2>
+          <div class="list">
+            {{range .Tasks}}
+            <div class="item">
+              <strong>{{.Content}}</strong>
+              <div class="muted">{{.MeetingTitle}} · {{.Owner}} · {{.DueDate}} · {{.Status}}</div>
+            </div>
+            {{else}}
+            <div class="item muted">暂无行动项。</div>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+
+        {{if eq .ActiveSection "archive"}}
+        <div class="card">
+          <h2>归档</h2>
+          <div class="list">
+            {{range .Archive}}
+            <div class="item">
+              <strong>{{.Title}}</strong>
+              <div class="muted">{{fmtTime .CreatedAt}} · meeting_id={{.MeetingID}}</div>
+              <pre>{{.Markdown}}</pre>
+            </div>
+            {{else}}
+            <div class="item muted">还没有归档，发布一次最终纪要后会自动生成。</div>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+      </main>
+    </div>
+  </div>
+</body>
+</html>
+{{end}}
