@@ -304,6 +304,10 @@ Team 不是只适合本机使用。
 - `night-shift-spec3`
   - [spec-package-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-team-demo.md)
 
+这条主线现在还有一份可直接复用的固定 SOP：
+
+- [spec-package-sop.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-sop.md)
+
 对应的独立程序整合入口：
 
 - [night-shift-system2-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2-project-summary.md)
