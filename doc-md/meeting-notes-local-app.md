@@ -117,6 +117,7 @@ go run ./cmd/haonews meetingnotes \
 - `/`
 - `/meetings`
 - `/tasks`
+- `/owners`
 - `/archive`
 
 API：
@@ -125,6 +126,7 @@ API：
 - `/api/meetings`
 - `/api/meetings/{meetingID}`
 - `/api/tasks`
+- `/api/owners`
 - `/api/archive`
 
 其中筛选已经可用：
@@ -135,8 +137,21 @@ API：
 `/api/tasks` 还会返回：
 
 - `owners`
+- `board`
 
 用于展示负责人任务汇总。
+
+`/owners` 和 `/api/owners` 用于：
+
+- 按负责人查看行动项
+- 按负责人再叠加状态、会议、关键词过滤
+
+`/tasks` 页面现在也有按状态分列的看板：
+
+- `Open`
+- `Confirmed`
+- `Done`
+- `Dropped`
 
 动作入口：
 

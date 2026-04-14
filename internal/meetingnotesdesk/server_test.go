@@ -207,4 +207,23 @@ func TestTasksAndMeetingsAPIFilters(t *testing.T) {
 	if tasksResp.Count != 1 {
 		t.Fatalf("expected q+status filtered task, got %d", tasksResp.Count)
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/owners?owner=张三", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("owners api status = %d", rec.Code)
+	}
+	var ownersResp struct {
+		Count  int `json:"count"`
+		Owners []struct {
+			Owner string `json:"Owner"`
+		} `json:"owners"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &ownersResp); err != nil {
+		t.Fatalf("Unmarshal owners response: %v", err)
+	}
+	if ownersResp.Count == 0 || len(ownersResp.Owners) == 0 || ownersResp.Owners[0].Owner != "张三" {
+		t.Fatalf("unexpected owners response: %s", rec.Body.String())
+	}
 }

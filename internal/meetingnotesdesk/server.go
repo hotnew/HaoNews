@@ -102,12 +102,14 @@ type viewData struct {
 	Meetings      []Meeting
 	Tasks         []actionTaskView
 	Owners        []ownerTaskSummary
+	TaskBoard     taskBoard
 	Archive       []ArchiveItem
 	MeetingQuery  string
 	TaskQuery     string
 	TaskOwner     string
 	TaskStatus    string
 	TaskMeetingID string
+	SelectedOwner string
 }
 
 type actionTaskView struct {
@@ -125,6 +127,13 @@ type ownerTaskSummary struct {
 	Dropped   int
 	HighPrio  int
 	LatestAt  time.Time
+}
+
+type taskBoard struct {
+	Open      []actionTaskView
+	Confirmed []actionTaskView
+	Done      []actionTaskView
+	Dropped   []actionTaskView
 }
 
 var (
@@ -181,11 +190,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handlePage("overview"))
 	mux.HandleFunc("/meetings", s.handlePage("meetings"))
 	mux.HandleFunc("/tasks", s.handlePage("tasks"))
+	mux.HandleFunc("/owners", s.handlePage("owners"))
 	mux.HandleFunc("/archive", s.handlePage("archive"))
 	mux.HandleFunc("/api/state", s.handleStateAPI)
 	mux.HandleFunc("/api/meetings", s.handleMeetingsAPI)
 	mux.HandleFunc("/api/meetings/", s.handleMeetingAPI)
 	mux.HandleFunc("/api/tasks", s.handleTasksAPI)
+	mux.HandleFunc("/api/owners", s.handleOwnersAPI)
 	mux.HandleFunc("/api/archive", s.handleArchiveAPI)
 	mux.HandleFunc("/actions/meeting/import", s.handleMeetingImport)
 	mux.HandleFunc("/actions/meeting/regenerate", s.handleMeetingRegenerate)
@@ -360,12 +371,14 @@ func (s *Server) handlePage(section string) http.HandlerFunc {
 			Meetings:      filteredMeetings,
 			Tasks:         filteredTasks,
 			Owners:        summarizeOwners(filteredTasks),
+			TaskBoard:     buildTaskBoard(filteredTasks),
 			Archive:       state.Archive,
 			MeetingQuery:  meetingQuery,
 			TaskQuery:     taskQuery,
 			TaskOwner:     taskOwner,
 			TaskStatus:    taskStatus,
 			TaskMeetingID: taskMeetingID,
+			SelectedOwner: taskOwner,
 		}
 		if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -434,6 +447,20 @@ func (s *Server) handleTasksAPI(w http.ResponseWriter, r *http.Request) {
 		"count":  len(filtered),
 		"tasks":  filtered,
 		"owners": summarizeOwners(filtered),
+		"board":  buildTaskBoard(filtered),
+	})
+}
+
+func (s *Server) handleOwnersAPI(w http.ResponseWriter, r *http.Request) {
+	state := s.snapshot()
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	owner := strings.TrimSpace(r.URL.Query().Get("owner"))
+	views := filterActionTaskViews(buildActionTaskViews(state.Meetings), q, owner, status, strings.TrimSpace(r.URL.Query().Get("meeting")))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":  len(views),
+		"owners": summarizeOwners(views),
+		"tasks":  views,
 	})
 }
 
@@ -1258,6 +1285,23 @@ func summarizeOwners(views []actionTaskView) []ownerTaskSummary {
 		return out[i].Owner < out[j].Owner
 	})
 	return out
+}
+
+func buildTaskBoard(views []actionTaskView) taskBoard {
+	var board taskBoard
+	for _, item := range views {
+		switch item.Status {
+		case "confirmed":
+			board.Confirmed = append(board.Confirmed, item)
+		case "done":
+			board.Done = append(board.Done, item)
+		case "dropped":
+			board.Dropped = append(board.Dropped, item)
+		default:
+			board.Open = append(board.Open, item)
+		}
+	}
+	return board
 }
 
 func pickMeeting(meetings []Meeting, meetingID string) *Meeting {
