@@ -118,6 +118,7 @@ go run ./cmd/haonews meetingnotes \
 - `/meetings`
 - `/tasks`
 - `/owners`
+- `/reminders`
 - `/archive`
 
 API：
@@ -127,6 +128,7 @@ API：
 - `/api/meetings/{meetingID}`
 - `/api/tasks`
 - `/api/owners`
+- `/api/reminders`
 - `/api/archive`
 
 其中筛选已经可用：
@@ -152,6 +154,12 @@ API：
 - `Confirmed`
 - `Done`
 - `Dropped`
+
+`/reminders` 和 `/api/reminders` 用于：
+
+- 查看已逾期任务
+- 查看今日到期和近期到期任务
+- 查看高优先级提醒
 
 动作入口：
 

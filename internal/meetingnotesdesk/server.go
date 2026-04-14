@@ -103,6 +103,8 @@ type viewData struct {
 	Tasks         []actionTaskView
 	Owners        []ownerTaskSummary
 	TaskBoard     taskBoard
+	Reminders     []taskReminder
+	ReminderStats reminderSummary
 	Archive       []ArchiveItem
 	MeetingQuery  string
 	TaskQuery     string
@@ -134,6 +136,31 @@ type taskBoard struct {
 	Confirmed []actionTaskView
 	Done      []actionTaskView
 	Dropped   []actionTaskView
+}
+
+type taskReminder struct {
+	MeetingID     string    `json:"meeting_id"`
+	MeetingTitle  string    `json:"meeting_title"`
+	ActionID      string    `json:"action_id"`
+	Content       string    `json:"content"`
+	Owner         string    `json:"owner"`
+	DueDate       string    `json:"due_date"`
+	Priority      string    `json:"priority"`
+	Status        string    `json:"status"`
+	Urgency       string    `json:"urgency"`
+	UrgencyLabel  string    `json:"urgency_label"`
+	DaysRemaining int       `json:"days_remaining"`
+	DueTime       time.Time `json:"due_time"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type reminderSummary struct {
+	Total        int `json:"total"`
+	Overdue      int `json:"overdue"`
+	DueToday     int `json:"due_today"`
+	Upcoming     int `json:"upcoming"`
+	HighPriority int `json:"high_priority"`
+	NoDueDate    int `json:"no_due_date"`
 }
 
 var (
@@ -191,12 +218,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/meetings", s.handlePage("meetings"))
 	mux.HandleFunc("/tasks", s.handlePage("tasks"))
 	mux.HandleFunc("/owners", s.handlePage("owners"))
+	mux.HandleFunc("/reminders", s.handlePage("reminders"))
 	mux.HandleFunc("/archive", s.handlePage("archive"))
 	mux.HandleFunc("/api/state", s.handleStateAPI)
 	mux.HandleFunc("/api/meetings", s.handleMeetingsAPI)
 	mux.HandleFunc("/api/meetings/", s.handleMeetingAPI)
 	mux.HandleFunc("/api/tasks", s.handleTasksAPI)
 	mux.HandleFunc("/api/owners", s.handleOwnersAPI)
+	mux.HandleFunc("/api/reminders", s.handleRemindersAPI)
 	mux.HandleFunc("/api/archive", s.handleArchiveAPI)
 	mux.HandleFunc("/actions/meeting/import", s.handleMeetingImport)
 	mux.HandleFunc("/actions/meeting/regenerate", s.handleMeetingRegenerate)
@@ -372,6 +401,8 @@ func (s *Server) handlePage(section string) http.HandlerFunc {
 			Tasks:         filteredTasks,
 			Owners:        summarizeOwners(filteredTasks),
 			TaskBoard:     buildTaskBoard(filteredTasks),
+			Reminders:     buildTaskReminders(filteredTasks, time.Now()),
+			ReminderStats: summarizeReminders(buildTaskReminders(filteredTasks, time.Now())),
 			Archive:       state.Archive,
 			MeetingQuery:  meetingQuery,
 			TaskQuery:     taskQuery,
@@ -461,6 +492,21 @@ func (s *Server) handleOwnersAPI(w http.ResponseWriter, r *http.Request) {
 		"count":  len(views),
 		"owners": summarizeOwners(views),
 		"tasks":  views,
+	})
+}
+
+func (s *Server) handleRemindersAPI(w http.ResponseWriter, r *http.Request) {
+	state := s.snapshot()
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	owner := strings.TrimSpace(r.URL.Query().Get("owner"))
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	meetingID := strings.TrimSpace(r.URL.Query().Get("meeting"))
+	views := filterActionTaskViews(buildActionTaskViews(state.Meetings), q, owner, status, meetingID)
+	reminders := buildTaskReminders(views, time.Now())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":   len(reminders),
+		"summary": summarizeReminders(reminders),
+		"items":   reminders,
 	})
 }
 
@@ -1302,6 +1348,131 @@ func buildTaskBoard(views []actionTaskView) taskBoard {
 		}
 	}
 	return board
+}
+
+func buildTaskReminders(views []actionTaskView, now time.Time) []taskReminder {
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	out := make([]taskReminder, 0, len(views))
+	for _, item := range views {
+		if item.Status == "done" || item.Status == "dropped" {
+			continue
+		}
+		dueTime, hasDue := parseDueDate(item.DueDate, now.Location())
+		urgency := ""
+		label := ""
+		daysRemaining := 9999
+		switch {
+		case hasDue:
+			daysRemaining = int(dueTime.Sub(dayStart).Hours() / 24)
+			switch {
+			case daysRemaining < 0:
+				urgency = "overdue"
+				label = "已逾期"
+			case daysRemaining == 0:
+				urgency = "today"
+				label = "今日到期"
+			case daysRemaining <= 3:
+				urgency = "upcoming"
+				label = "近期到期"
+			case item.Priority == "high":
+				urgency = "high"
+				label = "高优先级"
+			default:
+				continue
+			}
+		case item.Priority == "high":
+			urgency = "high"
+			label = "高优先级"
+			daysRemaining = 9999
+		default:
+			continue
+		}
+		out = append(out, taskReminder{
+			MeetingID:     item.MeetingID,
+			MeetingTitle:  item.MeetingTitle,
+			ActionID:      item.ID,
+			Content:       item.Content,
+			Owner:         item.Owner,
+			DueDate:       item.DueDate,
+			Priority:      item.Priority,
+			Status:        item.Status,
+			Urgency:       urgency,
+			UrgencyLabel:  label,
+			DaysRemaining: daysRemaining,
+			DueTime:       dueTime,
+			UpdatedAt:     item.UpdatedAt,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Urgency != out[j].Urgency {
+			return reminderRank(out[i].Urgency) < reminderRank(out[j].Urgency)
+		}
+		if !out[i].DueTime.Equal(out[j].DueTime) {
+			if out[i].DueTime.IsZero() {
+				return false
+			}
+			if out[j].DueTime.IsZero() {
+				return true
+			}
+			return out[i].DueTime.Before(out[j].DueTime)
+		}
+		if out[i].Priority != out[j].Priority {
+			return out[i].Priority == "high"
+		}
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+	return out
+}
+
+func summarizeReminders(items []taskReminder) reminderSummary {
+	var summary reminderSummary
+	summary.Total = len(items)
+	for _, item := range items {
+		switch item.Urgency {
+		case "overdue":
+			summary.Overdue++
+		case "today":
+			summary.DueToday++
+		case "upcoming":
+			summary.Upcoming++
+		case "high":
+			summary.HighPriority++
+			if strings.TrimSpace(item.DueDate) == "" {
+				summary.NoDueDate++
+			}
+		}
+	}
+	return summary
+}
+
+func parseDueDate(raw string, loc *time.Location) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	ts, err := time.ParseInLocation("2006-01-02", raw, loc)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
+}
+
+func reminderRank(urgency string) int {
+	switch urgency {
+	case "overdue":
+		return 0
+	case "today":
+		return 1
+	case "upcoming":
+		return 2
+	case "high":
+		return 3
+	default:
+		return 9
+	}
 }
 
 func pickMeeting(meetings []Meeting, meetingID string) *Meeting {

@@ -227,3 +227,49 @@ func TestTasksAndMeetingsAPIFilters(t *testing.T) {
 		t.Fatalf("unexpected owners response: %s", rec.Body.String())
 	}
 }
+
+func TestRemindersAPIClassifiesUrgency(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "state.json")
+	server, err := New(path)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = server.importMeeting("提醒测试会", []string{"张三", "李四"}, `决定: 跑提醒
+行动: 已逾期任务 | 张三 | 2026-04-10 | high
+行动: 今日任务 | 李四 | 2026-04-14 | medium
+行动: 高优先级无截止 | 张三 |  | high`)
+	if err != nil {
+		t.Fatalf("importMeeting error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/reminders", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reminders api status = %d", rec.Code)
+	}
+	var resp struct {
+		Count   int `json:"count"`
+		Summary struct {
+			Overdue      int `json:"overdue"`
+			DueToday     int `json:"due_today"`
+			HighPriority int `json:"high_priority"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal reminders response: %v", err)
+	}
+	if resp.Count < 3 {
+		t.Fatalf("expected at least 3 reminders, got %d", resp.Count)
+	}
+	if resp.Summary.Overdue == 0 {
+		t.Fatalf("expected overdue reminder, got %#v", resp.Summary)
+	}
+	if resp.Summary.DueToday == 0 {
+		t.Fatalf("expected due-today reminder, got %#v", resp.Summary)
+	}
+	if resp.Summary.HighPriority == 0 {
+		t.Fatalf("expected high-priority reminder, got %#v", resp.Summary)
+	}
+}

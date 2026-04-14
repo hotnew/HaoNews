@@ -62,6 +62,7 @@
       <a href="/meetings" {{if eq .ActiveSection "meetings"}}class="active"{{end}}>会议详情</a>
       <a href="/tasks" {{if eq .ActiveSection "tasks"}}class="active"{{end}}>行动项</a>
       <a href="/owners" {{if eq .ActiveSection "owners"}}class="active"{{end}}>负责人</a>
+      <a href="/reminders" {{if eq .ActiveSection "reminders"}}class="active"{{end}}>提醒</a>
       <a href="/archive" {{if eq .ActiveSection "archive"}}class="active"{{end}}>归档</a>
     </nav>
 
@@ -401,6 +402,76 @@
             </div>
             {{else}}
             <div class="item muted">当前负责人筛选下没有任务。</div>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+
+        {{if eq .ActiveSection "reminders"}}
+        <div class="card">
+          <h2>提醒视图</h2>
+          <div class="split" style="margin-bottom:16px">
+            <div class="item">
+              <strong>总提醒</strong>
+              <div class="muted">{{.ReminderStats.Total}}</div>
+            </div>
+            <div class="item">
+              <strong>已逾期</strong>
+              <div class="muted">{{.ReminderStats.Overdue}}</div>
+            </div>
+            <div class="item">
+              <strong>今日到期</strong>
+              <div class="muted">{{.ReminderStats.DueToday}}</div>
+            </div>
+            <div class="item">
+              <strong>近期到期</strong>
+              <div class="muted">{{.ReminderStats.Upcoming}}</div>
+            </div>
+            <div class="item">
+              <strong>高优先级</strong>
+              <div class="muted">{{.ReminderStats.HighPriority}}</div>
+            </div>
+            <div class="item">
+              <strong>无截止日</strong>
+              <div class="muted">{{.ReminderStats.NoDueDate}}</div>
+            </div>
+          </div>
+          <form method="get" action="/reminders" style="margin-bottom:12px">
+            <div class="split">
+              <label>关键词
+                <input name="task_q" value="{{.TaskQuery}}" placeholder="按任务内容或会议搜索">
+              </label>
+              <label>负责人
+                <input name="owner" value="{{.TaskOwner}}" placeholder="例如：张三">
+              </label>
+            </div>
+            <div class="split">
+              <label>状态
+                <select name="status">
+                  <option value="" {{if eq .TaskStatus ""}}selected{{end}}>全部</option>
+                  <option value="open" {{if eq .TaskStatus "open"}}selected{{end}}>open</option>
+                  <option value="confirmed" {{if eq .TaskStatus "confirmed"}}selected{{end}}>confirmed</option>
+                  <option value="done" {{if eq .TaskStatus "done"}}selected{{end}}>done</option>
+                  <option value="dropped" {{if eq .TaskStatus "dropped"}}selected{{end}}>dropped</option>
+                </select>
+              </label>
+              <label>会议 ID
+                <input name="meeting" value="{{.TaskMeetingID}}" placeholder="可选，按会议过滤">
+              </label>
+            </div>
+            <button class="secondary" type="submit">筛选提醒</button>
+          </form>
+          <div class="list">
+            {{range .Reminders}}
+            <div class="item">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+                <strong>{{.Content}}</strong>
+                <span class="badge {{if eq .Urgency "overdue"}}warn{{else if eq .Urgency "today"}}warn{{else if eq .Urgency "high"}}warn{{else}}ok{{end}}">{{.UrgencyLabel}}</span>
+              </div>
+              <div class="muted">{{.Owner}} · {{.MeetingTitle}} · 截止 {{if .DueDate}}{{.DueDate}}{{else}}未填写{{end}} · {{.Status}}</div>
+            </div>
+            {{else}}
+            <div class="item muted">当前筛选下没有提醒。</div>
             {{end}}
           </div>
         </div>
