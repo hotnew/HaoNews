@@ -108,6 +108,7 @@ type viewData struct {
 	TaskBoard       taskBoard
 	Reminders       []taskReminder
 	ReminderStats   reminderSummary
+	ReminderOwners  []reminderOwnerSummary
 	Overview        overviewSummary
 	RecentMeetings  []Meeting
 	Archive         []ArchiveItem
@@ -117,12 +118,16 @@ type viewData struct {
 	MeetingPageSize int
 	MeetingHasPrev  bool
 	MeetingHasNext  bool
+	MeetingPrevPage int
+	MeetingNextPage int
 	TaskQuery       string
 	TaskOwner       string
 	TaskStatus      string
 	TaskMeetingID   string
 	TaskSort        string
 	SelectedOwner   string
+	BatchImported   int
+	BatchSkipped    int
 }
 
 type actionTaskView struct {
@@ -167,11 +172,24 @@ type taskReminder struct {
 
 type reminderSummary struct {
 	Total        int `json:"total"`
+	Critical     int `json:"critical"`
 	Overdue      int `json:"overdue"`
 	DueToday     int `json:"due_today"`
 	Upcoming     int `json:"upcoming"`
 	HighPriority int `json:"high_priority"`
 	NoDueDate    int `json:"no_due_date"`
+}
+
+type reminderOwnerSummary struct {
+	Owner            string `json:"owner"`
+	Total            int    `json:"total"`
+	Critical         int    `json:"critical"`
+	Overdue          int    `json:"overdue"`
+	DueToday         int    `json:"due_today"`
+	Upcoming         int    `json:"upcoming"`
+	HighPriority     int    `json:"high_priority"`
+	NextUrgency      string `json:"next_urgency"`
+	NextUrgencyLabel string `json:"next_urgency_label"`
 }
 
 type overviewSummary struct {
@@ -185,6 +203,13 @@ type overviewSummary struct {
 	DroppedTasks      int `json:"dropped_tasks"`
 	OwnerCount        int `json:"owner_count"`
 	ArchiveCount      int `json:"archive_count"`
+}
+
+type batchImportResult struct {
+	Meetings []Meeting `json:"meetings"`
+	Imported int       `json:"imported"`
+	Skipped  int       `json:"skipped"`
+	Errors   []string  `json:"errors,omitempty"`
 }
 
 var (
@@ -426,6 +451,8 @@ func (s *Server) handlePage(section string) http.HandlerFunc {
 			selected = pickMeeting(state.Meetings, strings.TrimSpace(r.URL.Query().Get("meeting_id")))
 		}
 		reminders := buildTaskReminders(filteredTasks, time.Now())
+		batchImported := parsePositiveInt(r.URL.Query().Get("batch_imported"), 0)
+		batchSkipped := parsePositiveInt(r.URL.Query().Get("batch_skipped"), 0)
 		data := viewData{
 			State:           state,
 			ActiveSection:   section,
@@ -438,6 +465,7 @@ func (s *Server) handlePage(section string) http.HandlerFunc {
 			TaskBoard:       buildTaskBoard(filteredTasks),
 			Reminders:       reminders,
 			ReminderStats:   summarizeReminders(reminders),
+			ReminderOwners:  summarizeReminderOwners(reminders),
 			Overview:        summarizeOverview(state.Meetings, buildActionTaskViews(state.Meetings), state.Archive),
 			RecentMeetings:  recentMeetings(state.Meetings, 5),
 			Archive:         state.Archive,
@@ -447,12 +475,16 @@ func (s *Server) handlePage(section string) http.HandlerFunc {
 			MeetingPageSize: meetingPageSize,
 			MeetingHasPrev:  meetingHasPrev,
 			MeetingHasNext:  meetingHasNext,
+			MeetingPrevPage: max(1, meetingPage-1),
+			MeetingNextPage: meetingPage + 1,
 			TaskQuery:       taskQuery,
 			TaskOwner:       taskOwner,
 			TaskStatus:      taskStatus,
 			TaskMeetingID:   taskMeetingID,
 			TaskSort:        taskSort,
 			SelectedOwner:   taskOwner,
+			BatchImported:   batchImported,
+			BatchSkipped:    batchSkipped,
 		}
 		if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -484,6 +516,7 @@ func (s *Server) handleOverviewAPI(w http.ResponseWriter, r *http.Request) {
 		"owners":           summarizeOwners(tasks),
 		"reminders":        reminders,
 		"reminder_summary": summarizeReminders(reminders),
+		"reminder_owners":  summarizeReminderOwners(reminders),
 		"recent_meetings":  recentMeetings(state.Meetings, 5),
 	})
 }
@@ -626,14 +659,15 @@ func (s *Server) handleMeetingImportBatch(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	meetings, err := s.importBatchMeetings(parseBatchMeetingDrafts(strings.TrimSpace(r.FormValue("batch_text"))))
+	drafts, skipped, errs := parseBatchMeetingDrafts(strings.TrimSpace(r.FormValue("batch_text")))
+	meetings, err := s.importBatchMeetings(drafts, skipped, errs)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	redirect := "/meetings"
-	if len(meetings) > 0 {
-		redirect += "?meeting_id=" + meetings[0].ID
+	if len(meetings.Meetings) > 0 {
+		redirect += fmt.Sprintf("?meeting_id=%s&batch_imported=%d&batch_skipped=%d", meetings.Meetings[0].ID, meetings.Imported, meetings.Skipped)
 	}
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
@@ -668,15 +702,13 @@ func (s *Server) handleMeetingImportBatchAPI(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	meetings, err := s.importBatchMeetings(parseBatchMeetingDrafts(payload.BatchText))
+	drafts, skipped, errs := parseBatchMeetingDrafts(payload.BatchText)
+	result, err := s.importBatchMeetings(drafts, skipped, errs)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"count":    len(meetings),
-		"meetings": meetings,
-	})
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (s *Server) handleMeetingRegenerate(w http.ResponseWriter, r *http.Request) {
@@ -960,9 +992,9 @@ func (s *Server) importMeeting(title string, participants []string, sourceText s
 	return meeting, nil
 }
 
-func (s *Server) importBatchMeetings(drafts []meetingImportDraft) ([]Meeting, error) {
+func (s *Server) importBatchMeetings(drafts []meetingImportDraft, skipped int, errs []string) (batchImportResult, error) {
 	if len(drafts) == 0 {
-		return nil, errors.New("batch_text is required")
+		return batchImportResult{}, errors.New("batch_text is required")
 	}
 	now := time.Now().UTC()
 	meetings := make([]Meeting, 0, len(drafts))
@@ -986,16 +1018,21 @@ func (s *Server) importBatchMeetings(drafts []meetingImportDraft) ([]Meeting, er
 		meetings = append(meetings, meeting)
 	}
 	if len(meetings) == 0 {
-		return nil, errors.New("no valid meeting drafts found")
+		return batchImportResult{}, errors.New("no valid meeting drafts found")
 	}
 	if err := s.mutate(func(state *State) error {
 		state.Meetings = append(meetings, state.Meetings...)
 		state.UpdatedAt = now
 		return nil
 	}); err != nil {
-		return nil, err
+		return batchImportResult{}, err
 	}
-	return meetings, nil
+	return batchImportResult{
+		Meetings: meetings,
+		Imported: len(meetings),
+		Skipped:  skipped,
+		Errors:   errs,
+	}, nil
 }
 
 func (s *Server) updateMeeting(meetingID string, payload meetingUpdatePayload) error {
@@ -1660,11 +1697,14 @@ func buildTaskReminders(views []actionTaskView, now time.Time) []taskReminder {
 			daysRemaining = int(dueTime.Sub(dayStart).Hours() / 24)
 			switch {
 			case daysRemaining < 0:
-				urgency = "overdue"
-				label = "已逾期"
+				urgency = "critical"
+				label = "立即处理"
 			case daysRemaining == 0:
-				urgency = "today"
-				label = "今日到期"
+				urgency = "critical"
+				label = "今日必须处理"
+			case item.Priority == "high" && daysRemaining <= 1:
+				urgency = "critical"
+				label = "高优先级临近到期"
 			case daysRemaining <= 3:
 				urgency = "upcoming"
 				label = "近期到期"
@@ -1723,6 +1763,13 @@ func summarizeReminders(items []taskReminder) reminderSummary {
 	summary.Total = len(items)
 	for _, item := range items {
 		switch item.Urgency {
+		case "critical":
+			summary.Critical++
+			if item.DaysRemaining < 0 {
+				summary.Overdue++
+			} else {
+				summary.DueToday++
+			}
 		case "overdue":
 			summary.Overdue++
 		case "today":
@@ -1737,6 +1784,56 @@ func summarizeReminders(items []taskReminder) reminderSummary {
 		}
 	}
 	return summary
+}
+
+func summarizeReminderOwners(items []taskReminder) []reminderOwnerSummary {
+	if len(items) == 0 {
+		return nil
+	}
+	byOwner := map[string]*reminderOwnerSummary{}
+	for _, item := range items {
+		owner := coalesce(strings.TrimSpace(item.Owner), "未分配")
+		summary := byOwner[owner]
+		if summary == nil {
+			summary = &reminderOwnerSummary{Owner: owner}
+			byOwner[owner] = summary
+		}
+		summary.Total++
+		switch item.Urgency {
+		case "critical":
+			summary.Critical++
+			if item.DaysRemaining < 0 {
+				summary.Overdue++
+			} else {
+				summary.DueToday++
+			}
+		case "upcoming":
+			summary.Upcoming++
+		case "high":
+			summary.HighPriority++
+		}
+		if summary.NextUrgency == "" || reminderRank(item.Urgency) < reminderRank(summary.NextUrgency) {
+			summary.NextUrgency = item.Urgency
+			summary.NextUrgencyLabel = item.UrgencyLabel
+		}
+	}
+	out := make([]reminderOwnerSummary, 0, len(byOwner))
+	for _, item := range byOwner {
+		out = append(out, *item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Critical != out[j].Critical {
+			return out[i].Critical > out[j].Critical
+		}
+		if out[i].Upcoming != out[j].Upcoming {
+			return out[i].Upcoming > out[j].Upcoming
+		}
+		if out[i].Total != out[j].Total {
+			return out[i].Total > out[j].Total
+		}
+		return out[i].Owner < out[j].Owner
+	})
+	return out
 }
 
 func parseDueDate(raw string, loc *time.Location) (time.Time, bool) {
@@ -1756,14 +1853,16 @@ func parseDueDate(raw string, loc *time.Location) (time.Time, bool) {
 
 func reminderRank(urgency string) int {
 	switch urgency {
-	case "overdue":
+	case "critical":
 		return 0
-	case "today":
+	case "overdue":
 		return 1
-	case "upcoming":
+	case "today":
 		return 2
-	case "high":
+	case "upcoming":
 		return 3
+	case "high":
+		return 4
 	default:
 		return 9
 	}
@@ -1876,17 +1975,20 @@ func parseCSV(raw string) []string {
 	return compactStrings(strings.Split(raw, ","))
 }
 
-func parseBatchMeetingDrafts(raw string) []meetingImportDraft {
+func parseBatchMeetingDrafts(raw string) ([]meetingImportDraft, int, []string) {
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil
+		return nil, 0, nil
 	}
 	parts := strings.Split(raw, "\n---\n")
 	out := make([]meetingImportDraft, 0, len(parts))
+	skipped := 0
+	errs := make([]string, 0)
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
+			skipped++
 			continue
 		}
 		lines := strings.Split(part, "\n")
@@ -1913,9 +2015,12 @@ func parseBatchMeetingDrafts(raw string) []meetingImportDraft {
 		draft.SourceText = strings.TrimSpace(strings.Join(bodyLines, "\n"))
 		if draft.Title != "" && draft.SourceText != "" {
 			out = append(out, draft)
+		} else {
+			skipped++
+			errs = append(errs, fmt.Sprintf("跳过一段缺少标题或正文的会议稿：%q", truncate(part, 40)))
 		}
 	}
-	return out
+	return out, skipped, errs
 }
 
 func compactStrings(items []string) []string {

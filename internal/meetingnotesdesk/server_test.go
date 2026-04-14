@@ -337,6 +337,17 @@ func TestMeetingBatchImportAndPagination(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("batch import status = %d body=%s", rec.Code, rec.Body.String())
 	}
+	var batchResp struct {
+		Imported int       `json:"imported"`
+		Skipped  int       `json:"skipped"`
+		Meetings []Meeting `json:"meetings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &batchResp); err != nil {
+		t.Fatalf("Unmarshal batch import response: %v", err)
+	}
+	if batchResp.Imported != 2 || batchResp.Skipped != 0 || len(batchResp.Meetings) != 2 {
+		t.Fatalf("unexpected batch import response: %s", rec.Body.String())
+	}
 	if len(server.state.Meetings) != 2 {
 		t.Fatalf("meeting count = %d", len(server.state.Meetings))
 	}
@@ -404,5 +415,58 @@ func TestTasksAPISortsByDueDate(t *testing.T) {
 	}
 	if got := resp.Tasks[2].Content; got != "无截止任务" {
 		t.Fatalf("expected no-due task last, got %q", got)
+	}
+}
+
+func TestOverviewAndRemindersExposeOwnerAggregation(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "state.json")
+	server, err := New(path)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = server.importMeeting("提醒聚合会", []string{"张三", "王五"}, `行动: 今日发布检查 | 张三 | 2026-04-14 | high
+行动: 两天后补回归 | 王五 | 2026-04-16 | medium`)
+	if err != nil {
+		t.Fatalf("importMeeting error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("overview api status = %d", rec.Code)
+	}
+	var overviewResp struct {
+		ReminderOwners []struct {
+			Owner            string `json:"owner"`
+			Critical         int    `json:"critical"`
+			NextUrgencyLabel string `json:"next_urgency_label"`
+		} `json:"reminder_owners"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &overviewResp); err != nil {
+		t.Fatalf("Unmarshal overview response: %v", err)
+	}
+	if len(overviewResp.ReminderOwners) == 0 || overviewResp.ReminderOwners[0].Owner != "张三" || overviewResp.ReminderOwners[0].Critical != 1 {
+		t.Fatalf("unexpected reminder owner aggregation: %s", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/reminders", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reminders api status = %d", rec.Code)
+	}
+	var remindersResp struct {
+		Count   int `json:"count"`
+		Summary struct {
+			Critical int `json:"critical"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &remindersResp); err != nil {
+		t.Fatalf("Unmarshal reminders response: %v", err)
+	}
+	if remindersResp.Count != 2 || remindersResp.Summary.Critical != 1 {
+		t.Fatalf("unexpected reminders response: %s", rec.Body.String())
 	}
 }

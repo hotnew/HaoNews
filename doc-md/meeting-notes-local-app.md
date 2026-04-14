@@ -207,6 +207,12 @@ API：
 - 查看已逾期任务
 - 查看今日到期和近期到期任务
 - 查看高优先级提醒
+- 查看“立即处理”任务
+- 查看负责人提醒聚合
+
+`/api/overview` 现在还会返回：
+
+- `reminder_owners`
 
 动作入口：
 
@@ -229,6 +235,10 @@ API：
 5. 发布纪要并生成归档
 6. 导出 Markdown 和 JSON
 7. 重启进程后重新读取同一状态文件
+8. 批量导入两场会议稿并跳过 1 段无效内容
+9. `/api/meetings?sort=title_asc&page=1&page_size=1`
+10. `/api/tasks?sort=due_asc`
+11. `/api/reminders`
 
 重启后仍可看到：
 

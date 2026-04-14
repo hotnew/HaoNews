@@ -19,6 +19,7 @@
 3. [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
 4. [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
 5. [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+6. [meeting-notes-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-project-summary.md)
 
 ### 只想快速理解当前系统
 
@@ -37,6 +38,8 @@
   - [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
 - Runtime：
   - [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+- Meeting Notes：
+  - [meeting-notes-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-project-summary.md)
 
 ## 0.1 按角色看文档
 
@@ -89,6 +92,9 @@
 - Live 开发：
   - [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
   - [readme-live.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/readme-live.md)
+- 独立本地工具开发：
+  - [meeting-notes-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-project-summary.md)
+  - [meeting-notes-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-local-app.md)
 
 ### 架构阅读
 
@@ -130,6 +136,7 @@
 2. [live-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-project-summary.md)
 3. [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
 4. [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
+5. [meeting-notes-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-project-summary.md)
 
 ## 1. 项目整合入口
 
@@ -173,6 +180,15 @@
   - [add-live-public.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/add-live-public.md)
 - 测试计划：
   - [live-test.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/live-test.md)
+
+### Meeting Notes
+
+- 项目整合说明：
+  - [meeting-notes-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-project-summary.md)
+- 规格来源：
+  - [meeting-notes-spec-package.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-spec-package.md)
+- 本地程序手册：
+  - [meeting-notes-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-local-app.md)
 
 ### Topics
 

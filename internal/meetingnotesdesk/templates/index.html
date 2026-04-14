@@ -88,6 +88,12 @@
             </label>
             <button class="secondary" type="submit">批量导入多场会议</button>
           </form>
+          {{if gt .BatchImported 0}}
+          <div class="item" style="margin-top:12px">
+            <strong>批量导入完成</strong>
+            <div class="muted">成功导入 {{.BatchImported}} 场{{if gt .BatchSkipped 0}}，跳过 {{.BatchSkipped}} 段无效内容{{end}}</div>
+          </div>
+          {{end}}
         </div>
 
         <div class="card">
@@ -117,6 +123,14 @@
             <button class="secondary" type="submit">筛选</button>
           </form>
           <div class="muted" style="margin-bottom:12px">当前共 {{.MeetingsTotal}} 场会议，第 {{.MeetingPage}} 页，每页 {{.MeetingPageSize}} 条。</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            {{if .MeetingHasPrev}}
+            <a class="badge" style="text-decoration:none" href="/meetings?q={{.MeetingQuery}}&sort={{.MeetingSort}}&page={{.MeetingPrevPage}}&page_size={{.MeetingPageSize}}">上一页</a>
+            {{end}}
+            {{if .MeetingHasNext}}
+            <a class="badge" style="text-decoration:none" href="/meetings?q={{.MeetingQuery}}&sort={{.MeetingSort}}&page={{.MeetingNextPage}}&page_size={{.MeetingPageSize}}">下一页</a>
+            {{end}}
+          </div>
           <div class="list">
             {{range .Meetings}}
             <a class="item" href="/meetings?meeting_id={{.ID}}" style="text-decoration:none">
@@ -284,6 +298,7 @@
             <div class="item"><strong>Done</strong><div class="muted">{{.Overview.DoneTasks}}</div></div>
             <div class="item"><strong>Dropped</strong><div class="muted">{{.Overview.DroppedTasks}}</div></div>
             <div class="item"><strong>提醒总数</strong><div class="muted">{{.ReminderStats.Total}}</div></div>
+            <div class="item"><strong>立即处理</strong><div class="muted">{{.ReminderStats.Critical}}</div></div>
             <div class="item"><strong>高优先级提醒</strong><div class="muted">{{.ReminderStats.HighPriority}}</div></div>
           </div>
         </div>
@@ -534,6 +549,10 @@
               <div class="muted">{{.ReminderStats.Total}}</div>
             </div>
             <div class="item">
+              <strong>立即处理</strong>
+              <div class="muted">{{.ReminderStats.Critical}}</div>
+            </div>
+            <div class="item">
               <strong>已逾期</strong>
               <div class="muted">{{.ReminderStats.Overdue}}</div>
             </div>
@@ -587,6 +606,20 @@
             </label>
             <button class="secondary" type="submit">筛选提醒</button>
           </form>
+          <div class="list" style="margin-bottom:16px">
+            {{range .ReminderOwners}}
+            <a class="item" href="/reminders?owner={{.Owner}}" style="text-decoration:none">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+                <strong>{{.Owner}}</strong>
+                <span class="badge {{if gt .Critical 0}}warn{{else}}ok{{end}}">{{.Total}} 条</span>
+              </div>
+              <div class="muted">立即处理 {{.Critical}} · 近期 {{.Upcoming}} · 高优先级 {{.HighPriority}}</div>
+              <div class="muted">下一类提醒：{{.NextUrgencyLabel}}</div>
+            </a>
+            {{else}}
+            <div class="item muted">当前没有负责人提醒聚合。</div>
+            {{end}}
+          </div>
           <div class="list">
             {{range .Reminders}}
             <div class="item">
