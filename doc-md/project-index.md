@@ -153,11 +153,15 @@
 - `spec-package` 真实样本：
   - [spec-package-team-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-team-demo.md)
   - [market-alert-spec-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/market-alert-spec-demo.md)
+  - [support-triage-spec-demo.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-spec-demo.md)
 - `spec-package` 标准操作法：
   - [spec-package-sop.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/spec-package-sop.md)
 - `spec-package` 导出接口：
   - `GET /api/teams/{teamID}/artifacts/export?profile=spec-package`
   - `GET /api/teams/{teamID}/artifacts/export?profile=spec-package&format=markdown`
+- 导出后的单文件规格包样本：
+  - [meeting-notes-spec-package.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-spec-package.md)
+  - [support-triage-spec-package.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-spec-package.md)
 - 真实节点验收：
   - [team-node-192.168.102.8-feiji-app-validation.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-node-192.168.102.8-feiji-app-validation.md)
 - 真实协作样本：

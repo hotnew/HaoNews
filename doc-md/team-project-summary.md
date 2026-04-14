@@ -187,6 +187,10 @@
 - 同时也已经在另一类题材上跑通：
   - `market-alert-spec1`
   - 说明这套模板不只适用于“夜间快讯值班系统”，也适用于“行情异动告警台”这类独立本地程序规格共创
+- 最新又补了一类题材：
+  - `support-triage-spec1`
+  - 对应“客服工单分诊台”规格共创样本
+  - 说明这套模板同样适用于客服/工单/升级类本地工具的上游规格冻结
 
 也就是说，`Team` 在这条用法里最重要的职责不是“承载目标程序”，而是：
 
@@ -199,6 +203,11 @@
 
 - `GET /api/teams/{teamID}/artifacts/export?profile=spec-package`
 - `GET /api/teams/{teamID}/artifacts/export?profile=spec-package&format=markdown`
+
+真实导出样本现在至少包括：
+
+- [meeting-notes-spec-package.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-spec-package.md)
+- [support-triage-spec-package.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-spec-package.md)
 
 ### 4.2 文档沉淀
 
