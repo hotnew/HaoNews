@@ -242,6 +242,82 @@
         </div>
         {{end}}
 
+        {{if eq .ActiveSection "overview"}}
+        <div class="card">
+          <h2>多会议汇总</h2>
+          <div class="split" style="margin-bottom:16px">
+            <div class="item"><strong>会议总数</strong><div class="muted">{{.Overview.MeetingCount}}</div></div>
+            <div class="item"><strong>草稿会议</strong><div class="muted">{{.Overview.DraftMeetings}}</div></div>
+            <div class="item"><strong>已发布会议</strong><div class="muted">{{.Overview.PublishedMeetings}}</div></div>
+            <div class="item"><strong>行动项总数</strong><div class="muted">{{.Overview.TaskCount}}</div></div>
+            <div class="item"><strong>负责人数量</strong><div class="muted">{{.Overview.OwnerCount}}</div></div>
+            <div class="item"><strong>归档总数</strong><div class="muted">{{.Overview.ArchiveCount}}</div></div>
+          </div>
+          <div class="split" style="margin-bottom:16px">
+            <div class="item"><strong>Open</strong><div class="muted">{{.Overview.OpenTasks}}</div></div>
+            <div class="item"><strong>Confirmed</strong><div class="muted">{{.Overview.ConfirmedTasks}}</div></div>
+            <div class="item"><strong>Done</strong><div class="muted">{{.Overview.DoneTasks}}</div></div>
+            <div class="item"><strong>Dropped</strong><div class="muted">{{.Overview.DroppedTasks}}</div></div>
+            <div class="item"><strong>提醒总数</strong><div class="muted">{{.ReminderStats.Total}}</div></div>
+            <div class="item"><strong>高优先级提醒</strong><div class="muted">{{.ReminderStats.HighPriority}}</div></div>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="card">
+            <h3>最近会议</h3>
+            <div class="list">
+              {{range .RecentMeetings}}
+              <a class="item" href="/meetings?meeting_id={{.ID}}" style="text-decoration:none">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+                  <strong>{{.Title}}</strong>
+                  <span class="badge {{if eq .Status "published"}}ok{{else}}warn{{end}}">{{.Status}}</span>
+                </div>
+                <div class="muted">{{fmtTime .UpdatedAt}} · 参与人 {{join .Participants ", "}}</div>
+                <div>{{.Summary}}</div>
+              </a>
+              {{else}}
+              <div class="item muted">暂无会议。</div>
+              {{end}}
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>负责人摘要</h3>
+            <div class="list">
+              {{range .Owners}}
+              <a class="item" href="/owners?owner={{.Owner}}" style="text-decoration:none">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+                  <strong>{{.Owner}}</strong>
+                  <span class="badge {{if gt .Open 0}}warn{{else}}ok{{end}}">{{.Total}} 条</span>
+                </div>
+                <div class="muted">open {{.Open}} · confirmed {{.Confirmed}} · done {{.Done}}</div>
+              </a>
+              {{else}}
+              <div class="item muted">暂无负责人摘要。</div>
+              {{end}}
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>当前提醒</h3>
+          <div class="list">
+            {{range .Reminders}}
+            <a class="item" href="/reminders?owner={{.Owner}}" style="text-decoration:none">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+                <strong>{{.Content}}</strong>
+                <span class="badge {{if eq .Urgency "overdue"}}warn{{else if eq .Urgency "today"}}warn{{else if eq .Urgency "high"}}warn{{else}}ok{{end}}">{{.UrgencyLabel}}</span>
+              </div>
+              <div class="muted">{{.Owner}} · {{.MeetingTitle}} · {{if .DueDate}}{{.DueDate}}{{else}}未填写截止日{{end}}</div>
+            </a>
+            {{else}}
+            <div class="item muted">当前没有提醒。</div>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+
         {{if eq .ActiveSection "tasks"}}
         <div class="card">
           <h2>行动项总览</h2>

@@ -121,9 +121,18 @@ go run ./cmd/haonews meetingnotes \
 - `/reminders`
 - `/archive`
 
+首页现在已经是多会议汇总台，会直接展示：
+
+- 会议总数 / 草稿 / 已发布
+- 行动项状态分布
+- 最近会议
+- 负责人摘要
+- 当前提醒
+
 API：
 
 - `/api/state`
+- `/api/overview`
 - `/api/meetings`
 - `/api/meetings/{meetingID}`
 - `/api/tasks`

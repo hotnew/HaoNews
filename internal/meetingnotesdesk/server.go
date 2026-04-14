@@ -96,22 +96,24 @@ type Server struct {
 }
 
 type viewData struct {
-	State         State
-	ActiveSection string
-	Selected      *Meeting
-	Meetings      []Meeting
-	Tasks         []actionTaskView
-	Owners        []ownerTaskSummary
-	TaskBoard     taskBoard
-	Reminders     []taskReminder
-	ReminderStats reminderSummary
-	Archive       []ArchiveItem
-	MeetingQuery  string
-	TaskQuery     string
-	TaskOwner     string
-	TaskStatus    string
-	TaskMeetingID string
-	SelectedOwner string
+	State          State
+	ActiveSection  string
+	Selected       *Meeting
+	Meetings       []Meeting
+	Tasks          []actionTaskView
+	Owners         []ownerTaskSummary
+	TaskBoard      taskBoard
+	Reminders      []taskReminder
+	ReminderStats  reminderSummary
+	Overview       overviewSummary
+	RecentMeetings []Meeting
+	Archive        []ArchiveItem
+	MeetingQuery   string
+	TaskQuery      string
+	TaskOwner      string
+	TaskStatus     string
+	TaskMeetingID  string
+	SelectedOwner  string
 }
 
 type actionTaskView struct {
@@ -161,6 +163,19 @@ type reminderSummary struct {
 	Upcoming     int `json:"upcoming"`
 	HighPriority int `json:"high_priority"`
 	NoDueDate    int `json:"no_due_date"`
+}
+
+type overviewSummary struct {
+	MeetingCount      int `json:"meeting_count"`
+	DraftMeetings     int `json:"draft_meetings"`
+	PublishedMeetings int `json:"published_meetings"`
+	TaskCount         int `json:"task_count"`
+	OpenTasks         int `json:"open_tasks"`
+	ConfirmedTasks    int `json:"confirmed_tasks"`
+	DoneTasks         int `json:"done_tasks"`
+	DroppedTasks      int `json:"dropped_tasks"`
+	OwnerCount        int `json:"owner_count"`
+	ArchiveCount      int `json:"archive_count"`
 }
 
 var (
@@ -221,6 +236,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/reminders", s.handlePage("reminders"))
 	mux.HandleFunc("/archive", s.handlePage("archive"))
 	mux.HandleFunc("/api/state", s.handleStateAPI)
+	mux.HandleFunc("/api/overview", s.handleOverviewAPI)
 	mux.HandleFunc("/api/meetings", s.handleMeetingsAPI)
 	mux.HandleFunc("/api/meetings/", s.handleMeetingAPI)
 	mux.HandleFunc("/api/tasks", s.handleTasksAPI)
@@ -394,22 +410,24 @@ func (s *Server) handlePage(section string) http.HandlerFunc {
 			selected = pickMeeting(state.Meetings, strings.TrimSpace(r.URL.Query().Get("meeting_id")))
 		}
 		data := viewData{
-			State:         state,
-			ActiveSection: section,
-			Selected:      selected,
-			Meetings:      filteredMeetings,
-			Tasks:         filteredTasks,
-			Owners:        summarizeOwners(filteredTasks),
-			TaskBoard:     buildTaskBoard(filteredTasks),
-			Reminders:     buildTaskReminders(filteredTasks, time.Now()),
-			ReminderStats: summarizeReminders(buildTaskReminders(filteredTasks, time.Now())),
-			Archive:       state.Archive,
-			MeetingQuery:  meetingQuery,
-			TaskQuery:     taskQuery,
-			TaskOwner:     taskOwner,
-			TaskStatus:    taskStatus,
-			TaskMeetingID: taskMeetingID,
-			SelectedOwner: taskOwner,
+			State:          state,
+			ActiveSection:  section,
+			Selected:       selected,
+			Meetings:       filteredMeetings,
+			Tasks:          filteredTasks,
+			Owners:         summarizeOwners(filteredTasks),
+			TaskBoard:      buildTaskBoard(filteredTasks),
+			Reminders:      buildTaskReminders(filteredTasks, time.Now()),
+			ReminderStats:  summarizeReminders(buildTaskReminders(filteredTasks, time.Now())),
+			Overview:       summarizeOverview(state.Meetings, buildActionTaskViews(state.Meetings), state.Archive),
+			RecentMeetings: recentMeetings(state.Meetings, 5),
+			Archive:        state.Archive,
+			MeetingQuery:   meetingQuery,
+			TaskQuery:      taskQuery,
+			TaskOwner:      taskOwner,
+			TaskStatus:     taskStatus,
+			TaskMeetingID:  taskMeetingID,
+			SelectedOwner:  taskOwner,
 		}
 		if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -419,14 +437,29 @@ func (s *Server) handlePage(section string) http.HandlerFunc {
 
 func (s *Server) handleStateAPI(w http.ResponseWriter, r *http.Request) {
 	state := s.snapshot()
+	tasks := buildActionTaskViews(state.Meetings)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"system_id":     state.SystemID,
 		"title":         state.Title,
 		"meeting_count": len(state.Meetings),
-		"task_count":    len(buildActionTaskViews(state.Meetings)),
+		"task_count":    len(tasks),
 		"archive_count": len(state.Archive),
 		"meetings":      state.Meetings,
+		"overview":      summarizeOverview(state.Meetings, tasks, state.Archive),
 		"updated_at":    state.UpdatedAt,
+	})
+}
+
+func (s *Server) handleOverviewAPI(w http.ResponseWriter, r *http.Request) {
+	state := s.snapshot()
+	tasks := buildActionTaskViews(state.Meetings)
+	reminders := buildTaskReminders(tasks, time.Now())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"overview":         summarizeOverview(state.Meetings, tasks, state.Archive),
+		"owners":           summarizeOwners(tasks),
+		"reminders":        reminders,
+		"reminder_summary": summarizeReminders(reminders),
+		"recent_meetings":  recentMeetings(state.Meetings, 5),
 	})
 }
 
@@ -1348,6 +1381,49 @@ func buildTaskBoard(views []actionTaskView) taskBoard {
 		}
 	}
 	return board
+}
+
+func summarizeOverview(meetings []Meeting, tasks []actionTaskView, archive []ArchiveItem) overviewSummary {
+	var summary overviewSummary
+	summary.MeetingCount = len(meetings)
+	summary.TaskCount = len(tasks)
+	summary.ArchiveCount = len(archive)
+	ownerSet := map[string]struct{}{}
+	for _, meeting := range meetings {
+		switch meeting.Status {
+		case "published":
+			summary.PublishedMeetings++
+		default:
+			summary.DraftMeetings++
+		}
+	}
+	for _, task := range tasks {
+		if owner := strings.TrimSpace(task.Owner); owner != "" {
+			ownerSet[owner] = struct{}{}
+		}
+		switch task.Status {
+		case "confirmed":
+			summary.ConfirmedTasks++
+		case "done":
+			summary.DoneTasks++
+		case "dropped":
+			summary.DroppedTasks++
+		default:
+			summary.OpenTasks++
+		}
+	}
+	summary.OwnerCount = len(ownerSet)
+	return summary
+}
+
+func recentMeetings(meetings []Meeting, limit int) []Meeting {
+	if limit <= 0 || len(meetings) == 0 {
+		return nil
+	}
+	if len(meetings) <= limit {
+		return append([]Meeting(nil), meetings...)
+	}
+	return append([]Meeting(nil), meetings[:limit]...)
 }
 
 func buildTaskReminders(views []actionTaskView, now time.Time) []taskReminder {

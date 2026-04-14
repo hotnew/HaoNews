@@ -273,3 +273,45 @@ func TestRemindersAPIClassifiesUrgency(t *testing.T) {
 		t.Fatalf("expected high-priority reminder, got %#v", resp.Summary)
 	}
 }
+
+func TestOverviewAPIIncludesAggregateSummary(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "state.json")
+	server, err := New(path)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = server.importMeeting("例会 A", []string{"张三"}, `决定: 先做A
+行动: 完成 A | 张三 | 2026-04-20 | high`)
+	if err != nil {
+		t.Fatalf("importMeeting A error = %v", err)
+	}
+	_, err = server.importMeeting("例会 B", []string{"李四"}, `决定: 先做B
+行动: 完成 B | 李四 | 2026-04-21 | medium`)
+	if err != nil {
+		t.Fatalf("importMeeting B error = %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("overview api status = %d", rec.Code)
+	}
+	var resp struct {
+		Overview struct {
+			MeetingCount int `json:"meeting_count"`
+			TaskCount    int `json:"task_count"`
+			OwnerCount   int `json:"owner_count"`
+		} `json:"overview"`
+		RecentMeetings []Meeting `json:"recent_meetings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal overview response: %v", err)
+	}
+	if resp.Overview.MeetingCount != 2 || resp.Overview.TaskCount < 2 || resp.Overview.OwnerCount != 2 {
+		t.Fatalf("unexpected overview response: %s", rec.Body.String())
+	}
+	if len(resp.RecentMeetings) != 2 {
+		t.Fatalf("expected 2 recent meetings, got %d", len(resp.RecentMeetings))
+	}
+}
