@@ -82,16 +82,41 @@
             </label>
             <button type="submit">导入并生成初稿</button>
           </form>
+          <form method="post" action="/actions/meeting/import-batch" style="margin-top:16px">
+            <label>批量导入
+              <textarea name="batch_text" placeholder="用 --- 分隔多场会议；每段可写&#10;标题: 例会 A&#10;参与人: 张三, 李四&#10;议题: ...&#10;行动: ..."></textarea>
+            </label>
+            <button class="secondary" type="submit">批量导入多场会议</button>
+          </form>
         </div>
 
         <div class="card">
           <h2>会议列表</h2>
           <form method="get" action="/meetings" style="margin-bottom:12px">
-            <label>搜索会议
-              <input name="q" value="{{.MeetingQuery}}" placeholder="按标题、参与人、摘要、决议搜索">
-            </label>
+            <div class="split">
+              <label>搜索会议
+                <input name="q" value="{{.MeetingQuery}}" placeholder="按标题、参与人、摘要、决议搜索">
+              </label>
+              <label>排序
+                <select name="sort">
+                  <option value="updated_desc" {{if eq .MeetingSort "updated_desc"}}selected{{end}}>最近更新</option>
+                  <option value="created_desc" {{if eq .MeetingSort "created_desc"}}selected{{end}}>最近创建</option>
+                  <option value="title_asc" {{if eq .MeetingSort "title_asc"}}selected{{end}}>标题 A-Z</option>
+                  <option value="status" {{if eq .MeetingSort "status"}}selected{{end}}>状态优先</option>
+                </select>
+              </label>
+            </div>
+            <div class="split">
+              <label>页码
+                <input name="page" value="{{.MeetingPage}}" placeholder="1">
+              </label>
+              <label>每页数量
+                <input name="page_size" value="{{.MeetingPageSize}}" placeholder="12">
+              </label>
+            </div>
             <button class="secondary" type="submit">筛选</button>
           </form>
+          <div class="muted" style="margin-bottom:12px">当前共 {{.MeetingsTotal}} 场会议，第 {{.MeetingPage}} 页，每页 {{.MeetingPageSize}} 条。</div>
           <div class="list">
             {{range .Meetings}}
             <a class="item" href="/meetings?meeting_id={{.ID}}" style="text-decoration:none">
@@ -344,8 +369,17 @@
                 <input name="meeting" value="{{.TaskMeetingID}}" placeholder="可选，按会议过滤">
               </label>
             </div>
+            <label>排序
+              <select name="task_sort">
+                <option value="status" {{if eq .TaskSort "status"}}selected{{end}}>状态优先</option>
+                <option value="due_asc" {{if eq .TaskSort "due_asc"}}selected{{end}}>截止时间优先</option>
+                <option value="priority" {{if eq .TaskSort "priority"}}selected{{end}}>优先级优先</option>
+                <option value="updated_desc" {{if eq .TaskSort "updated_desc"}}selected{{end}}>最近更新</option>
+              </select>
+            </label>
             <button class="secondary" type="submit">筛选行动项</button>
           </form>
+          <div class="muted" style="margin-bottom:12px">当前筛选命中 {{.TaskTotal}} 条行动项。</div>
           <div class="list" style="margin-bottom:16px">
             {{range .Owners}}
             <div class="item">
@@ -454,6 +488,14 @@
                 <input name="meeting" value="{{.TaskMeetingID}}" placeholder="可选，按会议过滤">
               </label>
             </div>
+            <label>排序
+              <select name="task_sort">
+                <option value="status" {{if eq .TaskSort "status"}}selected{{end}}>状态优先</option>
+                <option value="due_asc" {{if eq .TaskSort "due_asc"}}selected{{end}}>截止时间优先</option>
+                <option value="priority" {{if eq .TaskSort "priority"}}selected{{end}}>优先级优先</option>
+                <option value="updated_desc" {{if eq .TaskSort "updated_desc"}}selected{{end}}>最近更新</option>
+              </select>
+            </label>
             <button class="secondary" type="submit">筛选负责人任务</button>
           </form>
           <div class="list" style="margin-bottom:16px">
@@ -535,6 +577,14 @@
                 <input name="meeting" value="{{.TaskMeetingID}}" placeholder="可选，按会议过滤">
               </label>
             </div>
+            <label>排序
+              <select name="task_sort">
+                <option value="status" {{if eq .TaskSort "status"}}selected{{end}}>状态优先</option>
+                <option value="due_asc" {{if eq .TaskSort "due_asc"}}selected{{end}}>截止时间优先</option>
+                <option value="priority" {{if eq .TaskSort "priority"}}selected{{end}}>优先级优先</option>
+                <option value="updated_desc" {{if eq .TaskSort "updated_desc"}}selected{{end}}>最近更新</option>
+              </select>
+            </label>
             <button class="secondary" type="submit">筛选提醒</button>
           </form>
           <div class="list">

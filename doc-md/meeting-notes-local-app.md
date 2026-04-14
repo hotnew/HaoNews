@@ -58,6 +58,25 @@ go run ./cmd/haonews meetingnotes \
 - 决议
 - 行动项
 
+也支持批量导入多场会议：
+
+- 页面：`批量导入多场会议`
+- API：`POST /api/meetings/batch`
+
+批量导入使用 `---` 分隔多场会议，每段可写：
+
+```text
+标题: 早会
+参与人: 张三, 李四
+议题: 发布检查
+行动: 核对发布单 | 张三 | 2026-04-20 | high
+---
+标题: 午会
+参与人: 王五
+议题: 缺陷复盘
+行动: 补回归用例 | 王五 | 2026-04-21 | medium
+```
+
 ### 2. 人工校对
 
 可以继续人工编辑：
@@ -145,6 +164,25 @@ API：
 - `/api/meetings?q=关键词`
 - `/api/tasks?q=关键词&owner=张三&status=confirmed`
 
+排序和分页也已经可用：
+
+- `/api/meetings?sort=title_asc&page=1&page_size=10`
+- `/api/tasks?sort=due_asc`
+
+会议排序支持：
+
+- `updated_desc`
+- `created_desc`
+- `title_asc`
+- `status`
+
+任务排序支持：
+
+- `status`
+- `due_asc`
+- `priority`
+- `updated_desc`
+
 `/api/tasks` 还会返回：
 
 - `owners`
@@ -173,6 +211,7 @@ API：
 动作入口：
 
 - `/actions/meeting/import`
+- `/actions/meeting/import-batch`
 - `/actions/meeting/regenerate`
 - `/actions/meeting/update`
 - `/actions/action-item`

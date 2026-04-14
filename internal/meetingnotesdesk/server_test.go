@@ -315,3 +315,94 @@ func TestOverviewAPIIncludesAggregateSummary(t *testing.T) {
 		t.Fatalf("expected 2 recent meetings, got %d", len(resp.RecentMeetings))
 	}
 }
+
+func TestMeetingBatchImportAndPagination(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "state.json")
+	server, err := New(path)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	body, err := json.Marshal(map[string]string{
+		"batch_text": "标题: 早会\n参与人: 张三, 李四\n议题: 发布检查\n行动: 核对发布单 | 张三 | 2026-04-20 | high\n---\n标题: 午会\n参与人: 王五\n议题: 缺陷复盘\n行动: 补回归用例 | 王五 | 2026-04-21 | medium",
+	})
+	if err != nil {
+		t.Fatalf("Marshal batch payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/meetings/batch", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("batch import status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(server.state.Meetings) != 2 {
+		t.Fatalf("meeting count = %d", len(server.state.Meetings))
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/meetings?sort=title_asc&page=1&page_size=1", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("meetings api status = %d", rec.Code)
+	}
+	var resp struct {
+		Count    int       `json:"count"`
+		Total    int       `json:"total"`
+		Page     int       `json:"page"`
+		PageSize int       `json:"page_size"`
+		HasNext  bool      `json:"has_next"`
+		Meetings []Meeting `json:"meetings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal meetings batch response: %v", err)
+	}
+	if resp.Total != 2 || resp.Count != 1 || resp.Page != 1 || resp.PageSize != 1 || !resp.HasNext {
+		t.Fatalf("unexpected pagination response: %s", rec.Body.String())
+	}
+	if len(resp.Meetings) != 1 || resp.Meetings[0].Title != "午会" {
+		t.Fatalf("unexpected paged meetings: %s", rec.Body.String())
+	}
+}
+
+func TestTasksAPISortsByDueDate(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "state.json")
+	server, err := New(path)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	_, err = server.importMeeting("排序测试会", []string{"张三"}, `行动: 无截止任务 | 张三 |  | high
+行动: 明天完成 | 张三 | 2026-04-21 | medium
+行动: 今天完成 | 张三 | 2026-04-20 | low`)
+	if err != nil {
+		t.Fatalf("importMeeting error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tasks?sort=due_asc", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tasks api status = %d", rec.Code)
+	}
+	var resp struct {
+		Count int `json:"count"`
+		Tasks []struct {
+			Content string `json:"content"`
+			DueDate string `json:"due_date"`
+		} `json:"tasks"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal tasks sort response: %v", err)
+	}
+	if resp.Count != 3 {
+		t.Fatalf("task count = %d", resp.Count)
+	}
+	if got := resp.Tasks[0].Content; got != "今天完成" {
+		t.Fatalf("expected earliest due first, got %q", got)
+	}
+	if got := resp.Tasks[2].Content; got != "无截止任务" {
+		t.Fatalf("expected no-due task last, got %q", got)
+	}
+}

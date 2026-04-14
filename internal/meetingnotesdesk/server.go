@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -96,24 +97,32 @@ type Server struct {
 }
 
 type viewData struct {
-	State          State
-	ActiveSection  string
-	Selected       *Meeting
-	Meetings       []Meeting
-	Tasks          []actionTaskView
-	Owners         []ownerTaskSummary
-	TaskBoard      taskBoard
-	Reminders      []taskReminder
-	ReminderStats  reminderSummary
-	Overview       overviewSummary
-	RecentMeetings []Meeting
-	Archive        []ArchiveItem
-	MeetingQuery   string
-	TaskQuery      string
-	TaskOwner      string
-	TaskStatus     string
-	TaskMeetingID  string
-	SelectedOwner  string
+	State           State
+	ActiveSection   string
+	Selected        *Meeting
+	Meetings        []Meeting
+	MeetingsTotal   int
+	Tasks           []actionTaskView
+	TaskTotal       int
+	Owners          []ownerTaskSummary
+	TaskBoard       taskBoard
+	Reminders       []taskReminder
+	ReminderStats   reminderSummary
+	Overview        overviewSummary
+	RecentMeetings  []Meeting
+	Archive         []ArchiveItem
+	MeetingQuery    string
+	MeetingSort     string
+	MeetingPage     int
+	MeetingPageSize int
+	MeetingHasPrev  bool
+	MeetingHasNext  bool
+	TaskQuery       string
+	TaskOwner       string
+	TaskStatus      string
+	TaskMeetingID   string
+	TaskSort        string
+	SelectedOwner   string
 }
 
 type actionTaskView struct {
@@ -238,12 +247,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/state", s.handleStateAPI)
 	mux.HandleFunc("/api/overview", s.handleOverviewAPI)
 	mux.HandleFunc("/api/meetings", s.handleMeetingsAPI)
+	mux.HandleFunc("/api/meetings/batch", s.handleMeetingImportBatchAPI)
 	mux.HandleFunc("/api/meetings/", s.handleMeetingAPI)
 	mux.HandleFunc("/api/tasks", s.handleTasksAPI)
 	mux.HandleFunc("/api/owners", s.handleOwnersAPI)
 	mux.HandleFunc("/api/reminders", s.handleRemindersAPI)
 	mux.HandleFunc("/api/archive", s.handleArchiveAPI)
 	mux.HandleFunc("/actions/meeting/import", s.handleMeetingImport)
+	mux.HandleFunc("/actions/meeting/import-batch", s.handleMeetingImportBatch)
 	mux.HandleFunc("/actions/meeting/regenerate", s.handleMeetingRegenerate)
 	mux.HandleFunc("/actions/meeting/update", s.handleMeetingUpdate)
 	mux.HandleFunc("/actions/action-item", s.handleActionItemCreate)
@@ -399,35 +410,49 @@ func (s *Server) handlePage(section string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		state := s.snapshot()
 		meetingQuery := strings.TrimSpace(r.URL.Query().Get("q"))
+		meetingSort := normalizeMeetingSort(r.URL.Query().Get("sort"))
+		meetingPage := parsePositiveInt(r.URL.Query().Get("page"), 1)
+		meetingPageSize := clampInt(parsePositiveInt(r.URL.Query().Get("page_size"), 12), 1, 100)
 		taskQuery := strings.TrimSpace(r.URL.Query().Get("task_q"))
 		taskOwner := strings.TrimSpace(r.URL.Query().Get("owner"))
 		taskStatus := strings.TrimSpace(r.URL.Query().Get("status"))
 		taskMeetingID := strings.TrimSpace(r.URL.Query().Get("meeting"))
-		filteredMeetings := filterMeetings(state.Meetings, meetingQuery)
-		filteredTasks := filterActionTaskViews(buildActionTaskViews(state.Meetings), taskQuery, taskOwner, taskStatus, taskMeetingID)
+		taskSort := normalizeTaskSort(r.URL.Query().Get("task_sort"))
+		filteredMeetings := sortMeetings(filterMeetings(state.Meetings, meetingQuery), meetingSort)
+		pagedMeetings, meetingsTotal, meetingPage, meetingPageSize, meetingHasPrev, meetingHasNext := paginateMeetings(filteredMeetings, meetingPage, meetingPageSize)
+		filteredTasks := sortActionTaskViews(filterActionTaskViews(buildActionTaskViews(state.Meetings), taskQuery, taskOwner, taskStatus, taskMeetingID), taskSort)
 		selected := pickMeeting(filteredMeetings, strings.TrimSpace(r.URL.Query().Get("meeting_id")))
 		if selected == nil {
 			selected = pickMeeting(state.Meetings, strings.TrimSpace(r.URL.Query().Get("meeting_id")))
 		}
+		reminders := buildTaskReminders(filteredTasks, time.Now())
 		data := viewData{
-			State:          state,
-			ActiveSection:  section,
-			Selected:       selected,
-			Meetings:       filteredMeetings,
-			Tasks:          filteredTasks,
-			Owners:         summarizeOwners(filteredTasks),
-			TaskBoard:      buildTaskBoard(filteredTasks),
-			Reminders:      buildTaskReminders(filteredTasks, time.Now()),
-			ReminderStats:  summarizeReminders(buildTaskReminders(filteredTasks, time.Now())),
-			Overview:       summarizeOverview(state.Meetings, buildActionTaskViews(state.Meetings), state.Archive),
-			RecentMeetings: recentMeetings(state.Meetings, 5),
-			Archive:        state.Archive,
-			MeetingQuery:   meetingQuery,
-			TaskQuery:      taskQuery,
-			TaskOwner:      taskOwner,
-			TaskStatus:     taskStatus,
-			TaskMeetingID:  taskMeetingID,
-			SelectedOwner:  taskOwner,
+			State:           state,
+			ActiveSection:   section,
+			Selected:        selected,
+			Meetings:        pagedMeetings,
+			MeetingsTotal:   meetingsTotal,
+			Tasks:           filteredTasks,
+			TaskTotal:       len(filteredTasks),
+			Owners:          summarizeOwners(filteredTasks),
+			TaskBoard:       buildTaskBoard(filteredTasks),
+			Reminders:       reminders,
+			ReminderStats:   summarizeReminders(reminders),
+			Overview:        summarizeOverview(state.Meetings, buildActionTaskViews(state.Meetings), state.Archive),
+			RecentMeetings:  recentMeetings(state.Meetings, 5),
+			Archive:         state.Archive,
+			MeetingQuery:    meetingQuery,
+			MeetingSort:     meetingSort,
+			MeetingPage:     meetingPage,
+			MeetingPageSize: meetingPageSize,
+			MeetingHasPrev:  meetingHasPrev,
+			MeetingHasNext:  meetingHasNext,
+			TaskQuery:       taskQuery,
+			TaskOwner:       taskOwner,
+			TaskStatus:      taskStatus,
+			TaskMeetingID:   taskMeetingID,
+			TaskSort:        taskSort,
+			SelectedOwner:   taskOwner,
 		}
 		if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -470,10 +495,20 @@ func (s *Server) handleMeetingsAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	state := s.snapshot()
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	meetings := filterMeetings(state.Meetings, q)
+	sortKey := normalizeMeetingSort(r.URL.Query().Get("sort"))
+	page := parsePositiveInt(r.URL.Query().Get("page"), 1)
+	pageSize := clampInt(parsePositiveInt(r.URL.Query().Get("page_size"), 20), 1, 100)
+	meetings := sortMeetings(filterMeetings(state.Meetings, q), sortKey)
+	paged, total, page, pageSize, hasPrev, hasNext := paginateMeetings(meetings, page, pageSize)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"count":    len(meetings),
-		"meetings": meetings,
+		"count":     len(paged),
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"has_prev":  hasPrev,
+		"has_next":  hasNext,
+		"sort":      sortKey,
+		"meetings":  paged,
 	})
 }
 
@@ -505,10 +540,12 @@ func (s *Server) handleTasksAPI(w http.ResponseWriter, r *http.Request) {
 	owner := strings.TrimSpace(r.URL.Query().Get("owner"))
 	meetingID := strings.TrimSpace(r.URL.Query().Get("meeting"))
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	sortKey := normalizeTaskSort(r.URL.Query().Get("sort"))
 	views := buildActionTaskViews(state.Meetings)
-	filtered := filterActionTaskViews(views, q, owner, status, meetingID)
+	filtered := sortActionTaskViews(filterActionTaskViews(views, q, owner, status, meetingID), sortKey)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"count":  len(filtered),
+		"sort":   sortKey,
 		"tasks":  filtered,
 		"owners": summarizeOwners(filtered),
 		"board":  buildTaskBoard(filtered),
@@ -580,6 +617,27 @@ func (s *Server) handleMeetingImport(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/meetings?meeting_id="+meeting.ID, http.StatusSeeOther)
 }
 
+func (s *Server) handleMeetingImportBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	meetings, err := s.importBatchMeetings(parseBatchMeetingDrafts(strings.TrimSpace(r.FormValue("batch_text"))))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	redirect := "/meetings"
+	if len(meetings) > 0 {
+		redirect += "?meeting_id=" + meetings[0].ID
+	}
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
 func (s *Server) handleMeetingImportAPI(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Title        string   `json:"title"`
@@ -596,6 +654,29 @@ func (s *Server) handleMeetingImportAPI(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"meeting": meeting})
+}
+
+func (s *Server) handleMeetingImportBatchAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		BatchText string `json:"batch_text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	meetings, err := s.importBatchMeetings(parseBatchMeetingDrafts(payload.BatchText))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"count":    len(meetings),
+		"meetings": meetings,
+	})
 }
 
 func (s *Server) handleMeetingRegenerate(w http.ResponseWriter, r *http.Request) {
@@ -845,6 +926,12 @@ type meetingUpdatePayload struct {
 	Note          string
 }
 
+type meetingImportDraft struct {
+	Title        string
+	Participants []string
+	SourceText   string
+}
+
 func (s *Server) importMeeting(title string, participants []string, sourceText string) (Meeting, error) {
 	title = strings.TrimSpace(title)
 	sourceText = strings.TrimSpace(sourceText)
@@ -871,6 +958,44 @@ func (s *Server) importMeeting(title string, participants []string, sourceText s
 		return Meeting{}, err
 	}
 	return meeting, nil
+}
+
+func (s *Server) importBatchMeetings(drafts []meetingImportDraft) ([]Meeting, error) {
+	if len(drafts) == 0 {
+		return nil, errors.New("batch_text is required")
+	}
+	now := time.Now().UTC()
+	meetings := make([]Meeting, 0, len(drafts))
+	for _, draft := range drafts {
+		title := strings.TrimSpace(draft.Title)
+		sourceText := strings.TrimSpace(draft.SourceText)
+		if title == "" || sourceText == "" {
+			continue
+		}
+		meeting := Meeting{
+			ID:           nextID("meeting", now.Add(time.Duration(len(meetings))*time.Microsecond)),
+			Title:        title,
+			Participants: compactStrings(draft.Participants),
+			SourceText:   sourceText,
+			Status:       "draft",
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		}
+		applyGeneratedDraft(&meeting, sourceText)
+		addRevision(&meeting, "批量导入会议文本并生成纪要初稿", "system")
+		meetings = append(meetings, meeting)
+	}
+	if len(meetings) == 0 {
+		return nil, errors.New("no valid meeting drafts found")
+	}
+	if err := s.mutate(func(state *State) error {
+		state.Meetings = append(meetings, state.Meetings...)
+		state.UpdatedAt = now
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return meetings, nil
 }
 
 func (s *Server) updateMeeting(meetingID string, payload meetingUpdatePayload) error {
@@ -1242,13 +1367,7 @@ func buildActionTaskViews(meetings []Meeting) []actionTaskView {
 			})
 		}
 	}
-	sort.SliceStable(views, func(i, j int) bool {
-		if views[i].Status != views[j].Status {
-			return views[i].Status < views[j].Status
-		}
-		return views[i].UpdatedAt.After(views[j].UpdatedAt)
-	})
-	return views
+	return sortActionTaskViews(views, "status")
 }
 
 func filterMeetings(meetings []Meeting, query string) []Meeting {
@@ -1284,6 +1403,35 @@ func filterMeetings(meetings []Meeting, query string) []Meeting {
 	return filtered
 }
 
+func sortMeetings(meetings []Meeting, sortKey string) []Meeting {
+	out := append([]Meeting(nil), meetings...)
+	sortKey = normalizeMeetingSort(sortKey)
+	sort.SliceStable(out, func(i, j int) bool {
+		switch sortKey {
+		case "created_desc":
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		case "title_asc":
+			if out[i].Title != out[j].Title {
+				return out[i].Title < out[j].Title
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		case "status":
+			if out[i].Status != out[j].Status {
+				if out[i].Status == "draft" {
+					return true
+				}
+				if out[j].Status == "draft" {
+					return false
+				}
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		default:
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		}
+	})
+	return out
+}
+
 func filterActionTaskViews(views []actionTaskView, query string, owner string, status string, meetingID string) []actionTaskView {
 	query = strings.TrimSpace(strings.ToLower(query))
 	owner = strings.TrimSpace(strings.ToLower(owner))
@@ -1315,6 +1463,76 @@ func filterActionTaskViews(views []actionTaskView, query string, owner string, s
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+func sortActionTaskViews(views []actionTaskView, sortKey string) []actionTaskView {
+	out := append([]actionTaskView(nil), views...)
+	sortKey = normalizeTaskSort(sortKey)
+	now := time.Now()
+	sort.SliceStable(out, func(i, j int) bool {
+		switch sortKey {
+		case "due_asc":
+			iDue, iHas := parseDueDate(out[i].DueDate, now.Location())
+			jDue, jHas := parseDueDate(out[j].DueDate, now.Location())
+			if iHas != jHas {
+				return iHas
+			}
+			if iHas && !iDue.Equal(jDue) {
+				return iDue.Before(jDue)
+			}
+			if out[i].Priority != out[j].Priority {
+				return priorityRank(out[i].Priority) < priorityRank(out[j].Priority)
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		case "priority":
+			if out[i].Priority != out[j].Priority {
+				return priorityRank(out[i].Priority) < priorityRank(out[j].Priority)
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		case "updated_desc":
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		default:
+			iRank := actionStatusRank(out[i].Status)
+			jRank := actionStatusRank(out[j].Status)
+			if iRank != jRank {
+				return iRank < jRank
+			}
+			iDue, iHas := parseDueDate(out[i].DueDate, now.Location())
+			jDue, jHas := parseDueDate(out[j].DueDate, now.Location())
+			if iHas != jHas {
+				return iHas
+			}
+			if iHas && !iDue.Equal(jDue) {
+				return iDue.Before(jDue)
+			}
+			if out[i].Priority != out[j].Priority {
+				return priorityRank(out[i].Priority) < priorityRank(out[j].Priority)
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		}
+	})
+	return out
+}
+
+func paginateMeetings(meetings []Meeting, page int, pageSize int) ([]Meeting, int, int, int, bool, bool) {
+	total := len(meetings)
+	if pageSize <= 0 {
+		pageSize = 12
+	}
+	maxPage := max(1, (total+pageSize-1)/pageSize)
+	if page < 1 {
+		page = 1
+	}
+	if page > maxPage {
+		page = maxPage
+	}
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := min(start+pageSize, total)
+	out := append([]Meeting(nil), meetings[start:end]...)
+	return out, total, page, pageSize, page > 1, page < maxPage
 }
 
 func summarizeOwners(views []actionTaskView) []ownerTaskSummary {
@@ -1551,6 +1769,34 @@ func reminderRank(urgency string) int {
 	}
 }
 
+func priorityRank(priority string) int {
+	switch normalizePriority(priority) {
+	case "high":
+		return 0
+	case "medium":
+		return 1
+	case "low":
+		return 2
+	default:
+		return 9
+	}
+}
+
+func actionStatusRank(status string) int {
+	switch normalizeActionStatus(status) {
+	case "open":
+		return 0
+	case "confirmed":
+		return 1
+	case "done":
+		return 2
+	case "dropped":
+		return 3
+	default:
+		return 9
+	}
+}
+
 func pickMeeting(meetings []Meeting, meetingID string) *Meeting {
 	if len(meetings) == 0 {
 		return nil
@@ -1630,6 +1876,48 @@ func parseCSV(raw string) []string {
 	return compactStrings(strings.Split(raw, ","))
 }
 
+func parseBatchMeetingDrafts(raw string) []meetingImportDraft {
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, "\n---\n")
+	out := make([]meetingImportDraft, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		lines := strings.Split(part, "\n")
+		draft := meetingImportDraft{}
+		bodyLines := make([]string, 0, len(lines))
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			switch {
+			case strings.HasPrefix(line, "标题:"):
+				draft.Title = strings.TrimSpace(strings.TrimPrefix(line, "标题:"))
+			case strings.HasPrefix(line, "Title:"):
+				draft.Title = strings.TrimSpace(strings.TrimPrefix(line, "Title:"))
+			case strings.HasPrefix(line, "参与人:"):
+				draft.Participants = parseCSV(strings.TrimSpace(strings.TrimPrefix(line, "参与人:")))
+			case strings.HasPrefix(line, "Participants:"):
+				draft.Participants = parseCSV(strings.TrimSpace(strings.TrimPrefix(line, "Participants:")))
+			default:
+				bodyLines = append(bodyLines, line)
+			}
+		}
+		if draft.Title == "" {
+			draft.Title = firstLine(strings.Join(bodyLines, "\n"))
+		}
+		draft.SourceText = strings.TrimSpace(strings.Join(bodyLines, "\n"))
+		if draft.Title != "" && draft.SourceText != "" {
+			out = append(out, draft)
+		}
+	}
+	return out
+}
+
 func compactStrings(items []string) []string {
 	out := make([]string, 0, len(items))
 	for _, item := range items {
@@ -1680,6 +1968,61 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func normalizeMeetingSort(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "created_desc":
+		return "created_desc"
+	case "title_asc":
+		return "title_asc"
+	case "status":
+		return "status"
+	default:
+		return "updated_desc"
+	}
+}
+
+func normalizeTaskSort(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "due_asc":
+		return "due_asc"
+	case "priority":
+		return "priority"
+	case "updated_desc":
+		return "updated_desc"
+	default:
+		return "status"
+	}
+}
+
+func parsePositiveInt(raw string, fallback int) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
+}
+
+func clampInt(v int, low int, high int) int {
+	if v < low {
+		return low
+	}
+	if v > high {
+		return high
+	}
+	return v
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
