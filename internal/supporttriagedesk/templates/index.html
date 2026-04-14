@@ -1,0 +1,242 @@
+{{define "index.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.State.Title}}</title>
+  <style>
+    :root { color-scheme: light; --bg:#f4f1ea; --ink:#1f2a37; --muted:#5b6675; --panel:#fffdf8; --line:#d8cfbf; --accent:#b24c2d; --accent-soft:#f7d8cf; --good:#1b7f4f; --warn:#b7791f; --bad:#b42318; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family: "PingFang SC","Noto Sans CJK SC","Source Han Sans SC",sans-serif; background:linear-gradient(180deg,#f8f4ec, #efe6d7 35%, #f6f2ea); color:var(--ink);}
+    a { color:inherit; text-decoration:none; }
+    .shell { max-width: 1380px; margin: 0 auto; padding: 24px; }
+    .hero { background:radial-gradient(circle at top left,#fff4ea,transparent 40%), var(--panel); border:1px solid var(--line); border-radius:24px; padding:28px; display:grid; grid-template-columns:2fr 1fr; gap:20px; box-shadow:0 18px 48px rgba(58,39,20,.08);}
+    .nav { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+    .nav a { padding:9px 14px; border-radius:999px; border:1px solid var(--line); background:#fff8ef; }
+    .stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:16px; }
+    .num { font-size:28px; font-weight:700; }
+    .muted { color:var(--muted); font-size:13px; }
+    .grid { display:grid; grid-template-columns:1.2fr .8fr; gap:18px; margin-top:20px; }
+    .section-title { font-size:18px; font-weight:700; margin:0 0 12px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { text-align:left; padding:10px 8px; border-top:1px solid #eee2d0; vertical-align:top; }
+    th { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+    .pill-critical,.pill-escalated { background:#fde8e8; color:var(--bad); }
+    .pill-high,.pill-assigned { background:#fff1d6; color:var(--warn); }
+    .pill-medium,.pill-triaged,.pill-upcoming { background:#eef5ff; color:#1d4f91; }
+    .pill-low,.pill-open { background:#edf8f1; color:var(--good); }
+    .pill-resolved,.pill-closed { background:#e9f8ef; color:var(--good); }
+    .stack { display:grid; gap:16px; }
+    .forms { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:20px; }
+    form { display:grid; gap:10px; }
+    input,textarea,select,button { width:100%; font:inherit; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:#fffdf9; }
+    textarea { min-height:110px; resize:vertical; }
+    button { background:var(--accent); color:white; border:none; font-weight:700; cursor:pointer; }
+    pre { white-space:pre-wrap; background:#fff8ef; border:1px solid var(--line); border-radius:14px; padding:14px; }
+    @media (max-width: 960px) { .hero,.grid,.forms { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <div class="muted">独立本地程序</div>
+        <h1 style="margin:6px 0 8px;">{{.State.Title}}</h1>
+        <p style="margin:0;color:var(--muted);">单机文件持久化，支持工单导入、复核、指派、升级、解决、归档和日报导出。</p>
+        <div class="nav">
+          <a href="/">总览</a>
+          <a href="/tickets">工单池</a>
+          <a href="/reminders">提醒</a>
+          <a href="/archive">归档</a>
+          <a href="/exports/daily/latest.md">导出 Markdown</a>
+          <a href="/exports/daily/latest.json">导出 JSON</a>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="card"><div class="muted">工单总数</div><div class="num">{{.Overview.TicketCount}}</div></div>
+        <div class="card"><div class="muted">已升级</div><div class="num">{{.Overview.EscalatedCount}}</div></div>
+        <div class="card"><div class="muted">已解决</div><div class="num">{{.Overview.ResolvedCount}}</div></div>
+        <div class="card"><div class="muted">已归档</div><div class="num">{{.Overview.ArchiveCount}}</div></div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <div class="stack">
+        <section class="card">
+          <h2 class="section-title">工单池</h2>
+          <form method="get" action="/tickets" style="grid-template-columns:2fr 1fr 1fr 1fr 1fr;align-items:end;">
+            <input type="text" name="q" placeholder="关键词" value="{{.Query}}">
+            <select name="status">
+              <option value="">全部状态</option>
+              <option value="open" {{if eq .Status "open"}}selected{{end}}>open</option>
+              <option value="triaged" {{if eq .Status "triaged"}}selected{{end}}>triaged</option>
+              <option value="assigned" {{if eq .Status "assigned"}}selected{{end}}>assigned</option>
+              <option value="escalated" {{if eq .Status "escalated"}}selected{{end}}>escalated</option>
+              <option value="resolved" {{if eq .Status "resolved"}}selected{{end}}>resolved</option>
+              <option value="closed" {{if eq .Status "closed"}}selected{{end}}>closed</option>
+            </select>
+            <input type="text" name="owner" placeholder="负责人" value="{{.Owner}}">
+            <select name="priority">
+              <option value="">全部优先级</option>
+              <option value="critical" {{if eq .Priority "critical"}}selected{{end}}>critical</option>
+              <option value="high" {{if eq .Priority "high"}}selected{{end}}>high</option>
+              <option value="medium" {{if eq .Priority "medium"}}selected{{end}}>medium</option>
+              <option value="low" {{if eq .Priority "low"}}selected{{end}}>low</option>
+            </select>
+            <select name="sort">
+              <option value="">最新更新</option>
+              <option value="priority" {{if eq .Sort "priority"}}selected{{end}}>优先级</option>
+              <option value="due_asc" {{if eq .Sort "due_asc"}}selected{{end}}>截止时间</option>
+            </select>
+            <button type="submit">筛选</button>
+          </form>
+          <table>
+            <thead><tr><th>标题</th><th>优先级</th><th>状态</th><th>负责人</th><th>截止</th></tr></thead>
+            <tbody>
+              {{range .Tickets}}
+              <tr>
+                <td><a href="/tickets?ticket_id={{.ID}}">{{.Title}}</a><div class="muted">{{.Customer}} / {{.Source}}</div></td>
+                <td><span class="pill pill-{{.Priority}}">{{.Priority}}</span></td>
+                <td><span class="pill pill-{{.Status}}">{{.Status}}</span></td>
+                <td>{{.Owner}}</td>
+                <td>{{.DueAt}}</td>
+              </tr>
+              {{else}}
+              <tr><td colspan="5">暂无工单</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </section>
+
+        <section class="card">
+          <h2 class="section-title">提醒</h2>
+          <div class="muted">总数 {{.ReminderStats.Total}} / 立即处理 {{.ReminderStats.Critical}} / 已逾期 {{.ReminderStats.Overdue}} / 今日到期 {{.ReminderStats.DueToday}}</div>
+          <table>
+            <thead><tr><th>工单</th><th>提醒</th><th>负责人</th><th>截止</th></tr></thead>
+            <tbody>
+            {{range .Reminders}}
+              <tr>
+                <td>{{.Title}}</td>
+                <td><span class="pill pill-{{.Urgency}}">{{.UrgencyLabel}}</span></td>
+                <td>{{.Owner}}</td>
+                <td>{{.DueAt}}</td>
+              </tr>
+            {{else}}
+              <tr><td colspan="4">暂无提醒</td></tr>
+            {{end}}
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="card">
+          <h2 class="section-title">负责人摘要</h2>
+          <table>
+            <thead><tr><th>负责人</th><th>总数</th><th>已升级</th><th>高优先级</th></tr></thead>
+            <tbody>
+              {{range .Owners}}
+              <tr><td>{{.Owner}}</td><td>{{.Total}}</td><td>{{.Escalated}}</td><td>{{.Critical}}</td></tr>
+              {{else}}
+              <tr><td colspan="4">暂无负责人</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </section>
+        <section class="card">
+          <h2 class="section-title">最近历史</h2>
+          <table>
+            <thead><tr><th>动作</th><th>对象</th><th>时间</th></tr></thead>
+            <tbody>
+              {{range .History}}
+              <tr><td>{{.Action}}</td><td>{{.Title}}<div class="muted">{{.Detail}}</div></td><td>{{fmtTime .CreatedAt}}</td></tr>
+              {{else}}
+              <tr><td colspan="3">暂无历史</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </section>
+        {{if .Selected}}
+        <section class="card">
+          <h2 class="section-title">工单详情</h2>
+          <div><strong>{{.Selected.Title}}</strong></div>
+          <div class="muted">{{.Selected.Customer}} / {{.Selected.Source}}</div>
+          <pre>{{.Selected.Content}}</pre>
+          {{if .Selected.ReviewSummary}}<div><strong>复核</strong><pre>{{.Selected.ReviewSummary}}</pre></div>{{end}}
+          {{if .Selected.EscalationReason}}<div><strong>升级原因</strong><pre>{{.Selected.EscalationReason}}</pre></div>{{end}}
+          {{if .Selected.ResolutionNote}}<div><strong>解决说明</strong><pre>{{.Selected.ResolutionNote}}</pre></div>{{end}}
+        </section>
+        {{end}}
+      </div>
+    </div>
+
+    <div class="forms">
+      <section class="card">
+        <h2 class="section-title">新增工单</h2>
+        <form method="post" action="/actions/tickets/create">
+          <input name="title" placeholder="标题">
+          <input name="customer" placeholder="客户">
+          <input name="source" placeholder="来源">
+          <select name="priority">
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="critical">critical</option>
+            <option value="low">low</option>
+          </select>
+          <input name="due_at" placeholder="截止日期 YYYY-MM-DD">
+          <input name="labels" placeholder="标签，逗号分隔">
+          <textarea name="content" placeholder="工单内容"></textarea>
+          <button type="submit">创建工单</button>
+        </form>
+        <hr style="border:none;border-top:1px solid #eee2d0;margin:18px 0;">
+        <form method="post" action="/actions/tickets/batch">
+          <textarea name="raw" placeholder="批量导入，多条工单用 --- 分隔&#10;title: 客户无法登录&#10;customer: Alice&#10;source: 邮件&#10;priority: high&#10;due_at: 2026-04-15&#10;content: 描述内容"></textarea>
+          <button type="submit">批量导入工单</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2 class="section-title">工单动作</h2>
+        <form method="post" action="/actions/tickets/review">
+          <input name="ticket_id" placeholder="ticket_id">
+          <input name="reviewer" placeholder="reviewer">
+          <select name="priority">
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="critical">critical</option>
+            <option value="low">low</option>
+          </select>
+          <input name="due_at" placeholder="截止日期 YYYY-MM-DD">
+          <textarea name="summary" placeholder="复核结论"></textarea>
+          <button type="submit">提交复核</button>
+        </form>
+        <form method="post" action="/actions/tickets/assign">
+          <input name="ticket_id" placeholder="ticket_id">
+          <input name="owner" placeholder="负责人">
+          <button type="submit">分派负责人</button>
+        </form>
+        <form method="post" action="/actions/tickets/escalate">
+          <input name="ticket_id" placeholder="ticket_id">
+          <input name="owner" placeholder="升级负责人">
+          <textarea name="reason" placeholder="升级原因"></textarea>
+          <button type="submit">升级工单</button>
+        </form>
+        <form method="post" action="/actions/tickets/resolve">
+          <input name="ticket_id" placeholder="ticket_id">
+          <textarea name="note" placeholder="解决说明"></textarea>
+          <button type="submit">标记已解决</button>
+        </form>
+        <form method="post" action="/actions/tickets/close">
+          <input name="ticket_id" placeholder="ticket_id">
+          <textarea name="note" placeholder="关闭说明"></textarea>
+          <button type="submit">关闭并归档</button>
+        </form>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
+{{end}}

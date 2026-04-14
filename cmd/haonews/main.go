@@ -24,6 +24,7 @@ import (
 	"hao.news/internal/host"
 	"hao.news/internal/meetingnotesdesk"
 	"hao.news/internal/scaffold"
+	"hao.news/internal/supporttriagedesk"
 	"hao.news/internal/themes/directorytheme"
 	"hao.news/internal/workspace"
 )
@@ -120,6 +121,8 @@ func run(args []string) error {
 		return runCreate(args[1:])
 	case "meetingnotes":
 		return runMeetingNotes(args[1:])
+	case "supporttriage":
+		return runSupportTriage(args[1:])
 	default:
 		return usageError()
 	}
@@ -1611,6 +1614,43 @@ func runMeetingNotes(args []string) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	fmt.Fprintf(os.Stdout, "meeting notes system listening on http://%s\nstate file: %s\n", *listenAddr, *statePath)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- httpServer.ListenAndServe()
+	}()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return httpServer.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+func runSupportTriage(args []string) error {
+	fs := flag.NewFlagSet("supporttriage", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	listenAddr := fs.String("listen", "127.0.0.1:51924", "http listen address")
+	statePath := fs.String("state", supporttriagedesk.DefaultStatePath(), "state file path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	server, err := supporttriagedesk.New(*statePath)
+	if err != nil {
+		return err
+	}
+	httpServer := &http.Server{
+		Addr:              *listenAddr,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	fmt.Fprintf(os.Stdout, "support triage system listening on http://%s\nstate file: %s\n", *listenAddr, *statePath)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- httpServer.ListenAndServe()

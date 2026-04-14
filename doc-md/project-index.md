@@ -194,6 +194,15 @@
 - 本地程序手册：
   - [meeting-notes-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-local-app.md)
 
+### Support Triage
+
+- 项目整合说明：
+  - [support-triage-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-project-summary.md)
+- 规格来源：
+  - [support-triage-spec-package.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-spec-package.md)
+- 本地程序手册：
+  - [support-triage-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-local-app.md)
+
 ### Topics
 
 - 项目整合说明：
