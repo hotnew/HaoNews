@@ -49,6 +49,8 @@
         <div class="nav">
           <a href="/">总览</a>
           <a href="/tickets">工单池</a>
+          <a href="/owners">负责人</a>
+          <a href="/escalations">升级看板</a>
           <a href="/reminders">提醒</a>
           <a href="/archive">归档</a>
           <a href="/exports/daily/latest.md">导出 Markdown</a>
@@ -113,7 +115,7 @@
 
         <section class="card">
           <h2 class="section-title">提醒</h2>
-          <div class="muted">总数 {{.ReminderStats.Total}} / 立即处理 {{.ReminderStats.Critical}} / 已逾期 {{.ReminderStats.Overdue}} / 今日到期 {{.ReminderStats.DueToday}}</div>
+          <div class="muted">总数 {{.ReminderStats.Total}} / 关键 {{.ReminderStats.Critical}} / 已逾期 {{.ReminderStats.Overdue}} / 今日到期 {{.ReminderStats.DueToday}}</div>
           <table>
             <thead><tr><th>工单</th><th>提醒</th><th>负责人</th><th>截止</th></tr></thead>
             <tbody>
@@ -147,6 +149,32 @@
           </table>
         </section>
         <section class="card">
+          <h2 class="section-title">升级看板</h2>
+          <table>
+            <thead><tr><th>Open</th><th>Assigned</th><th>Escalated</th><th>Resolved</th><th>Closed</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>{{.Escalation.Open}}</td>
+                <td>{{.Escalation.Assigned}}</td>
+                <td>{{.Escalation.Escalated}}</td>
+                <td>{{.Escalation.Resolved}}</td>
+                <td>{{.Escalation.Closed}}</td>
+              </tr>
+            </tbody>
+          </table>
+          {{if .Escalations}}
+          <div class="muted" style="margin-top:10px;">当前升级链</div>
+          <table>
+            <thead><tr><th>工单</th><th>状态</th><th>负责人</th></tr></thead>
+            <tbody>
+              {{range .Escalations}}
+              <tr><td>{{.Title}}<div class="muted">{{.EscalationReason}}</div></td><td>{{.Status}}</td><td>{{.Owner}}</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+          {{end}}
+        </section>
+        <section class="card">
           <h2 class="section-title">最近历史</h2>
           <table>
             <thead><tr><th>动作</th><th>对象</th><th>时间</th></tr></thead>
@@ -159,6 +187,22 @@
             </tbody>
           </table>
         </section>
+        {{if .Owner}}
+        <section class="card">
+          <h2 class="section-title">负责人任务</h2>
+          <div class="muted">当前负责人：{{.Owner}}</div>
+          <table>
+            <thead><tr><th>工单</th><th>优先级</th><th>状态</th><th>截止</th></tr></thead>
+            <tbody>
+            {{range .OwnerTickets}}
+              <tr><td>{{.Title}}</td><td>{{.Priority}}</td><td>{{.Status}}</td><td>{{.DueAt}}</td></tr>
+            {{else}}
+              <tr><td colspan="4">暂无该负责人任务</td></tr>
+            {{end}}
+            </tbody>
+          </table>
+        </section>
+        {{end}}
         {{if .Selected}}
         <section class="card">
           <h2 class="section-title">工单详情</h2>

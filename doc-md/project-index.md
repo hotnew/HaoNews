@@ -95,6 +95,8 @@
 - 独立本地工具开发：
   - [meeting-notes-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-project-summary.md)
   - [meeting-notes-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-local-app.md)
+  - [support-triage-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-project-summary.md)
+  - [support-triage-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-local-app.md)
 
 ### 架构阅读
 

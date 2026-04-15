@@ -123,6 +123,14 @@ type overview struct {
 	ArchiveCount   int `json:"archive_count"`
 }
 
+type escalationBoard struct {
+	Open      int `json:"open"`
+	Assigned  int `json:"assigned"`
+	Escalated int `json:"escalated"`
+	Resolved  int `json:"resolved"`
+	Closed    int `json:"closed"`
+}
+
 type ownerSummary struct {
 	Owner     string `json:"owner"`
 	Total     int    `json:"total"`
@@ -138,10 +146,13 @@ type viewData struct {
 	ActiveSection string
 	Tickets       []Ticket
 	Selected      *Ticket
+	OwnerTickets  []Ticket
 	Reminders     []ticketReminder
 	ReminderStats reminderSummary
 	Overview      overview
+	Escalation    escalationBoard
 	Owners        []ownerSummary
+	Escalations   []Ticket
 	Archive       []ArchiveItem
 	History       []HistoryEvent
 	Query         string
@@ -245,10 +256,14 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/tickets", s.handleTicketsPage)
+	mux.HandleFunc("/owners", s.handleOwnersPage)
+	mux.HandleFunc("/escalations", s.handleEscalationsPage)
 	mux.HandleFunc("/reminders", s.handleRemindersPage)
 	mux.HandleFunc("/archive", s.handleArchivePage)
 	mux.HandleFunc("/api/state", s.handleAPIState)
 	mux.HandleFunc("/api/overview", s.handleAPIOverview)
+	mux.HandleFunc("/api/owners", s.handleAPIOwners)
+	mux.HandleFunc("/api/escalations", s.handleAPIEscalations)
 	mux.HandleFunc("/api/tickets", s.handleAPITickets)
 	mux.HandleFunc("/api/tickets/batch", s.handleAPITicketsBatch)
 	mux.HandleFunc("/api/tickets/", s.handleAPITicket)
@@ -294,6 +309,14 @@ func (s *Server) handleTicketsPage(w http.ResponseWriter, r *http.Request) {
 	s.renderPage(w, r, "tickets")
 }
 
+func (s *Server) handleOwnersPage(w http.ResponseWriter, r *http.Request) {
+	s.renderPage(w, r, "owners")
+}
+
+func (s *Server) handleEscalationsPage(w http.ResponseWriter, r *http.Request) {
+	s.renderPage(w, r, "escalations")
+}
+
 func (s *Server) handleRemindersPage(w http.ResponseWriter, r *http.Request) {
 	s.renderPage(w, r, "reminders")
 }
@@ -318,6 +341,8 @@ func (s *Server) renderPage(w http.ResponseWriter, r *http.Request, active strin
 	reminders, stats := buildReminders(filtered)
 	owners := ownerSummaries(tickets)
 	selected := selectTicket(filtered, strings.TrimSpace(r.URL.Query().Get("ticket_id")))
+	ownerTickets := ownerScopedTickets(tickets, owner)
+	escalations := escalatedTickets(tickets)
 	sort.Slice(history, func(i, j int) bool { return history[i].CreatedAt.After(history[j].CreatedAt) })
 	if len(history) > 12 {
 		history = history[:12]
@@ -328,10 +353,13 @@ func (s *Server) renderPage(w http.ResponseWriter, r *http.Request, active strin
 		ActiveSection: active,
 		Tickets:       filtered,
 		Selected:      selected,
+		OwnerTickets:  ownerTickets,
 		Reminders:     reminders,
 		ReminderStats: stats,
 		Overview:      buildOverview(tickets, archive),
+		Escalation:    buildEscalationBoard(tickets),
 		Owners:        owners,
+		Escalations:   escalations,
 		Archive:       archive,
 		History:       history,
 		Query:         query,
@@ -356,14 +384,39 @@ func (s *Server) handleAPIOverview(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	reminders, stats := buildReminders(s.state.Tickets)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"scope":    "support-triage-overview",
-		"overview": buildOverview(s.state.Tickets, s.state.Archive),
-		"owners":   ownerSummaries(s.state.Tickets),
+		"scope":            "support-triage-overview",
+		"overview":         buildOverview(s.state.Tickets, s.state.Archive),
+		"owners":           ownerSummaries(s.state.Tickets),
+		"escalation_board": buildEscalationBoard(s.state.Tickets),
 		"reminders": map[string]any{
 			"count":   len(reminders),
 			"summary": stats,
 			"items":   reminders,
 		},
+	})
+}
+
+func (s *Server) handleAPIOwners(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	owner := strings.TrimSpace(r.URL.Query().Get("owner"))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scope":   "support-triage-owners",
+		"count":   len(ownerSummaries(s.state.Tickets)),
+		"owners":  ownerSummaries(s.state.Tickets),
+		"tickets": ownerScopedTickets(s.state.Tickets, owner),
+	})
+}
+
+func (s *Server) handleAPIEscalations(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := escalatedTickets(s.state.Tickets)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scope":   "support-triage-escalations",
+		"count":   len(items),
+		"board":   buildEscalationBoard(s.state.Tickets),
+		"tickets": items,
 	})
 }
 
@@ -384,6 +437,7 @@ func (s *Server) handleAPITickets(w http.ResponseWriter, r *http.Request) {
 			"count":   len(filtered),
 			"tickets": filtered,
 			"owners":  ownerSummaries(filtered),
+			"board":   buildEscalationBoard(filtered),
 		})
 	case http.MethodPost:
 		var req struct {
@@ -901,6 +955,25 @@ func buildOverview(tickets []Ticket, archive []ArchiveItem) overview {
 	return out
 }
 
+func buildEscalationBoard(tickets []Ticket) escalationBoard {
+	var out escalationBoard
+	for _, ticket := range tickets {
+		switch ticket.Status {
+		case "open", "triaged":
+			out.Open++
+		case "assigned":
+			out.Assigned++
+		case "escalated":
+			out.Escalated++
+		case "resolved":
+			out.Resolved++
+		case "closed":
+			out.Closed++
+		}
+	}
+	return out
+}
+
 func buildReminders(tickets []Ticket) ([]ticketReminder, reminderSummary) {
 	now := time.Now()
 	items := make([]ticketReminder, 0)
@@ -997,6 +1070,9 @@ func ownerSummaries(tickets []Ticket) []ownerSummary {
 }
 
 func classifyUrgency(ticket Ticket, now time.Time) (string, string, int, time.Time) {
+	if ticket.Status == "escalated" {
+		return "critical", "已升级", 0, dueTime(ticket.DueAt)
+	}
 	if ticket.Priority == "critical" && ticket.Status != "resolved" && ticket.Status != "closed" {
 		return "critical", "立即处理", 0, time.Time{}
 	}
@@ -1015,8 +1091,14 @@ func classifyUrgency(ticket Ticket, now time.Time) (string, string, int, time.Ti
 	case days < 0:
 		return "overdue", "已逾期", days, due
 	case days == 0:
+		if ticket.Priority == "high" || ticket.Priority == "critical" {
+			return "critical", "今天必须处理", days, due
+		}
 		return "today", "今日到期", days, due
 	case days <= 2:
+		if ticket.Priority == "high" || ticket.Priority == "critical" {
+			return "critical", "优先处理", days, due
+		}
 		return "upcoming", "近期到期", days, due
 	default:
 		if ticket.Priority == "high" {
@@ -1070,6 +1152,36 @@ func filterTickets(items []Ticket, query, status, owner, priority string) []Tick
 		out = append(out, item)
 	}
 	return out
+}
+
+func ownerScopedTickets(items []Ticket, owner string) []Ticket {
+	owner = strings.TrimSpace(owner)
+	filtered := make([]Ticket, 0, len(items))
+	for _, item := range items {
+		if owner != "" && item.Owner != owner {
+			continue
+		}
+		if strings.TrimSpace(item.Owner) == "" && owner != "" {
+			continue
+		}
+		if owner == "" && strings.TrimSpace(item.Owner) == "" {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	sortTickets(filtered, "priority")
+	return filtered
+}
+
+func escalatedTickets(items []Ticket) []Ticket {
+	filtered := make([]Ticket, 0, len(items))
+	for _, item := range items {
+		if item.Status == "escalated" || strings.TrimSpace(item.EscalationReason) != "" {
+			filtered = append(filtered, item)
+		}
+	}
+	sortTickets(filtered, "priority")
+	return filtered
 }
 
 func sortTickets(items []Ticket, sortKey string) {

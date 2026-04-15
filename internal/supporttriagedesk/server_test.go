@@ -145,4 +145,47 @@ content: 重复标题`)
 	if reminderResp.Count == 0 || reminderResp.Summary.HighPriority == 0 {
 		t.Fatalf("unexpected reminders response: %s", reminderRec.Body.String())
 	}
+
+	if len(server.state.Tickets) == 0 {
+		t.Fatal("expected imported tickets")
+	}
+	if _, err := server.assignTicket(server.state.Tickets[0].ID, "Alice"); err != nil {
+		t.Fatalf("assignTicket error = %v", err)
+	}
+
+	ownerReq := httptest.NewRequest(http.MethodGet, "/api/owners?owner=Alice", nil)
+	ownerRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(ownerRec, ownerReq)
+	if ownerRec.Code != http.StatusOK || !strings.Contains(ownerRec.Body.String(), `"owner":"Alice"`) {
+		t.Fatalf("owners api status=%d body=%s", ownerRec.Code, ownerRec.Body.String())
+	}
+}
+
+func TestEscalationBoardAPI(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "state.json")
+	server, err := New(path)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	ticket, err := server.createTicket("邮件", "VIP", "客户强烈投诉", "客户已明确要求升级处理。", "critical", "2026-04-14", nil)
+	if err != nil {
+		t.Fatalf("createTicket error = %v", err)
+	}
+	if _, err := server.assignTicket(ticket.ID, "李四"); err != nil {
+		t.Fatalf("assignTicket error = %v", err)
+	}
+	if _, err := server.escalateTicket(ticket.ID, "李四", "投诉升级"); err != nil {
+		t.Fatalf("escalateTicket error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/escalations", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("escalations api status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"count":1`) || !strings.Contains(rec.Body.String(), `"escalated":1`) {
+		t.Fatalf("unexpected escalations response: %s", rec.Body.String())
+	}
 }

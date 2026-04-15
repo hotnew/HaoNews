@@ -19,7 +19,9 @@
 - 批量导入工单
 - 优先级分诊
 - 负责人分派
+- 负责人任务视图
 - 升级流转
+- 升级看板
 - 解决与关闭
 - 归档
 - Markdown / JSON 导出
@@ -52,6 +54,8 @@ go run ./cmd/haonews supporttriage --listen 127.0.0.1:51924
 
 - `/`
 - `/tickets`
+- `/owners`
+- `/escalations`
 - `/reminders`
 - `/archive`
 
@@ -59,6 +63,8 @@ API：
 
 - `/api/state`
 - `/api/overview`
+- `/api/owners`
+- `/api/escalations`
 - `/api/tickets`
 - `/api/tickets/batch`
 - `/api/tickets/{ticketID}`
@@ -103,6 +109,8 @@ Team 在这条主线里的作用是：
   - 复核
   - 分派
   - 升级
+  - 负责人视图
+  - 升级看板
   - 解决
   - 关闭并归档
   - 批量导入
@@ -117,4 +125,4 @@ Team 在这条主线里的作用是：
 
 - 更强的工单搜索和分页
 - 更细的 SLA 策略
-- 更强的负责人视图和提醒策略
+- 批量动作和更强的归档检索

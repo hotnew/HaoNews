@@ -104,14 +104,18 @@ content: 描述内容
 - 总览统计
 - 工单池筛选
 - 负责人摘要
+- 负责人任务视图
+- 升级看板
 - 提醒列表
 - 最近历史
 
 提醒口径：
 
-- `立即处理`
+- `已升级`
+- `今天必须处理`
 - `已逾期`
 - `今日到期`
+- `优先处理`
 - `近期到期`
 - `高优先级`
 
@@ -137,6 +141,8 @@ content: 描述内容
 
 - `/`
 - `/tickets`
+- `/owners`
+- `/escalations`
 - `/reminders`
 - `/archive`
 
@@ -144,6 +150,8 @@ API：
 
 - `/api/state`
 - `/api/overview`
+- `/api/owners`
+- `/api/escalations`
 - `/api/tickets`
 - `/api/tickets/batch`
 - `/api/tickets/{ticketID}`
@@ -166,6 +174,8 @@ API：
   - 复核
   - 指派
   - 升级
+  - 负责人筛选
+  - 升级看板查询
   - 解决
   - 关闭并归档
   - 批量导入
