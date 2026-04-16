@@ -39,7 +39,7 @@ description: 当需要为 Hao.News 好牛Ai 及配套应用仓库发布一个小
 至少同步这些位置：
 
 - `README.md`
-- `docs/release.md`
+- `doc-md/release.md`
 - 相关升级说明
 - 相关发布说明草稿
 

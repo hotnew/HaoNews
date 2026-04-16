@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.State.Title}}</title>
+  <style>
+    :root {
+      --bg: #07111d;
+      --bg-soft: #0a1728;
+      --panel: rgba(12, 27, 47, 0.92);
+      --panel-alt: rgba(18, 38, 63, 0.92);
+      --border: #25486d;
+      --text: #edf4ff;
+      --muted: #8fa5c5;
+      --accent: #55c8ff;
+      --good: #4cd28c;
+      --warn: #ffbd59;
+      --bad: #ff7373;
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "SF Mono", "PingFang SC", "Source Han Sans SC", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(85,200,255,0.16), transparent 24%),
+        radial-gradient(circle at top right, rgba(76,210,140,0.08), transparent 22%),
+        linear-gradient(180deg, var(--bg), var(--bg-soft));
+    }
+    a { color: var(--accent); text-decoration: none; }
+    .shell { width: min(1420px, calc(100vw - 32px)); margin: 0 auto; padding: 22px 0 44px; }
+    .hero, .panel, .nav {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.34);
+    }
+    .hero {
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .hero h1 { margin: 10px 0 12px; font-size: 40px; line-height: 1.1; }
+    .hero p, .muted { color: var(--muted); }
+    .chips, .stats, .button-row, .status-row, .nav-links, .inline-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .chip, .mini, .nav a {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      border-radius: 16px;
+      padding: 10px 14px;
+      color: var(--text);
+    }
+    .nav { padding: 14px 18px; margin-bottom: 20px; }
+    .nav-links a.active {
+      background: linear-gradient(135deg, #1481e2, #47d1ff);
+      border-color: transparent;
+    }
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+    .stat {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      border-radius: 16px;
+      padding: 12px 14px;
+    }
+    .stat strong { display: block; font-size: 28px; margin-top: 8px; color: var(--text); }
+    .workspace { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+    .stack { display: grid; gap: 20px; }
+    .panel { padding: 18px 20px; }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    h2, h3 { margin: 0 0 12px; }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--panel-alt);
+      padding: 14px 16px;
+    }
+    .list { display: grid; gap: 12px; }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .badge {
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .badge.todo { background: rgba(143,165,197,0.12); color: var(--muted); border-color: rgba(143,165,197,0.3); }
+    .badge.doing { background: rgba(85,200,255,0.12); color: var(--accent); border-color: rgba(85,200,255,0.35); }
+    .badge.blocked { background: rgba(255,115,115,0.12); color: var(--bad); border-color: rgba(255,115,115,0.35); }
+    .badge.done { background: rgba(76,210,140,0.12); color: var(--good); border-color: rgba(76,210,140,0.35); }
+    .forms { display: grid; gap: 16px; }
+    .form-grid { display: grid; gap: 10px; margin-top: 12px; }
+    .inline-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-top: 12px; }
+    input, select, textarea, button {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #081524;
+      color: var(--text);
+      padding: 10px 12px;
+      font: inherit;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    button {
+      width: auto;
+      cursor: pointer;
+      background: linear-gradient(135deg, #1481e2, #47d1ff);
+      border: none;
+      color: white;
+      font-weight: 700;
+    }
+    button.secondary {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border);
+    }
+    .markdown-body { line-height: 1.7; color: #dbe8ff; }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin-top: 20px; }
+    .markdown-body pre, .markdown-body code {
+      background: rgba(0,0,0,0.28);
+      border-radius: 10px;
+    }
+    .markdown-body pre { overflow: auto; padding: 12px; }
+    @media (max-width: 1080px) {
+      .hero, .workspace { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .inline-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <div class="muted">独立本地程序 · 来源池 / 复核 / 终审 / 事故 / 交接 / 简报 / 任务 / 归档</div>
+        <h1>{{.State.Title}}</h1>
+        <p>这是按 `night-shift-system2` 规格包实现的本地值班工作台。它只使用 Team 上游协作沉淀出来的 md 作为设计输入，不依赖 Team 页面、Team API 或 Team 数据文件。</p>
+        <div class="chips">
+          <span class="chip">System ID：{{.State.SystemID}}</span>
+          <span class="chip">操作人：{{len .State.Operators}}</span>
+          <span class="chip">最近更新：{{fmtTime .State.UpdatedAt}}</span>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="muted">待核来源</div><strong>{{add (index .SourceCounts "new") (index .SourceCounts "triaging")}}</strong></div>
+        <div class="stat"><div class="muted">待复核</div><strong>{{add (index .SourceCounts "needs_review") (index .SourceCounts "ready_for_decision")}}</strong></div>
+        <div class="stat"><div class="muted">已批准</div><strong>{{.ApprovedSourceCount}}</strong></div>
+        <div class="stat"><div class="muted">高风险</div><strong>{{.OpenRiskCount}}</strong></div>
+        <div class="stat"><div class="muted">未恢复事故</div><strong>{{.UnrecoveredCount}}</strong></div>
+        <div class="stat"><div class="muted">待交接</div><strong>{{.PendingHandoffCount}}</strong></div>
+      </div>
+    </section>
+
+    <nav class="nav">
+      <div class="nav-links">
+        <a href="/" {{if eq .ActiveSection "overview"}}class="active"{{end}}>总览</a>
+        <a href="/sources" {{if eq .ActiveSection "sources"}}class="active"{{end}}>来源池</a>
+        <a href="/reviews" {{if eq .ActiveSection "reviews"}}class="active"{{end}}>风险复核</a>
+        <a href="/decisions" {{if eq .ActiveSection "decisions"}}class="active"{{end}}>终审决策</a>
+        <a href="/incidents" {{if eq .ActiveSection "incidents"}}class="active"{{end}}>事故处置</a>
+        <a href="/handoffs" {{if eq .ActiveSection "handoffs"}}class="active"{{end}}>交接</a>
+        <a href="/briefs" {{if eq .ActiveSection "briefs"}}class="active"{{end}}>简报</a>
+        <a href="/tasks" {{if eq .ActiveSection "tasks"}}class="active"{{end}}>任务</a>
+        <a href="/archive" {{if eq .ActiveSection "archive"}}class="active"{{end}}>归档</a>
+      </div>
+    </nav>
+
+    <div class="workspace">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>来源池</h2>
+            <div class="status-row">
+              <span class="mini">new {{index .SourceCounts "new"}}</span>
+              <span class="mini">triaging {{index .SourceCounts "triaging"}}</span>
+              <span class="mini">needs_review {{index .SourceCounts "needs_review"}}</span>
+              <span class="mini">ready {{index .SourceCounts "ready_for_decision"}}</span>
+              <span class="mini">approved {{index .SourceCounts "approved"}}</span>
+            </div>
+          </div>
+          <div class="list">
+            {{range .SortedSources}}
+            <div class="card">
+              <div class="row">
+                <div>
+                  <strong>{{.Title}}</strong>
+                  <div class="muted">{{.SourceName}} · {{.Credibility}} · {{fmtTime .UpdatedAt}}</div>
+                </div>
+                <span class="badge {{badgeClass .Status}}">{{.Status}}</span>
+              </div>
+              {{if .Summary}}<p>{{.Summary}}</p>{{end}}
+              {{if .Notes}}<div class="muted">备注：{{.Notes}}</div>{{end}}
+              {{if .SourceURL}}<div><a href="{{.SourceURL}}" target="_blank" rel="noreferrer">原始链接</a></div>{{end}}
+              <div class="button-row">
+                <form method="post" action="/actions/source-status">
+                  <input type="hidden" name="source_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="triaging">开始初筛</button>
+                </form>
+                <form method="post" action="/actions/source-status">
+                  <input type="hidden" name="source_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="needs_review">送复核</button>
+                </form>
+                <form method="post" action="/actions/source-status">
+                  <input type="hidden" name="source_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="ready_for_decision">可终审</button>
+                </form>
+                <form method="post" action="/actions/source-status">
+                  <input type="hidden" name="source_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="approved">批准</button>
+                </form>
+                <form method="post" action="/actions/source-status">
+                  <input type="hidden" name="source_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="deferred">暂缓</button>
+                </form>
+                <form method="post" action="/actions/source-status">
+                  <input type="hidden" name="source_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="handoff">转交接</button>
+                </form>
+                <form method="post" action="/actions/source-status">
+                  <input type="hidden" name="source_id" value="{{.ID}}">
+                  <button type="submit" name="status" value="rejected">丢弃</button>
+                </form>
+              </div>
+            </div>
+            {{end}}
+          </div>
+          <form class="form-grid" method="post" action="/actions/source">
+            <h3>新增来源</h3>
+            <input name="title" placeholder="标题" required>
+            <input name="source_name" placeholder="来源名称，例如：新华社">
+            <input name="source_url" placeholder="原始链接">
+            <select name="credibility">
+              <option value="high">high</option>
+              <option value="medium" selected>medium</option>
+              <option value="low">low</option>
+            </select>
+            <textarea name="summary" placeholder="摘要"></textarea>
+            <textarea name="notes" placeholder="核验备注"></textarea>
+            <input name="reporter" placeholder="录入人">
+            <button type="submit">加入来源池</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>风险复核</h2>
+            <div class="muted">open risk {{.OpenRiskCount}} · open review {{.OpenReviewCount}}</div>
+          </div>
+          <div class="list">
+            {{range .SortedReviews}}
+            <div class="card">
+              <div class="row">
+                <div>
+                  <strong>{{.Title}}</strong>
+                  <div class="muted">{{.Actor}} · {{fmtTime .UpdatedAt}}</div>
+                </div>
+                <span class="badge {{badgeClass .Status}}">{{.Kind}} / {{.Status}}</span>
+              </div>
+              <p>{{.Body}}</p>
+              {{if .SourceID}}<div class="muted">关联来源：{{.SourceID}}</div>{{end}}
+              <div class="button-row">
+                <form method="post" action="/actions/review-status">
+                  <input type="hidden" name="review_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="open">open</button>
+                </form>
+                <form method="post" action="/actions/review-status">
+                  <input type="hidden" name="review_id" value="{{.ID}}">
+                  <button type="submit" name="status" value="resolved">resolved</button>
+                </form>
+              </div>
+            </div>
+            {{end}}
+          </div>
+          <form class="form-grid" method="post" action="/actions/review">
+            <h3>新增 review / risk / decision-support</h3>
+            <select name="kind">
+              <option value="review">review</option>
+              <option value="risk">risk</option>
+              <option value="decision-support">decision-support</option>
+            </select>
+            <input name="title" placeholder="标题" required>
+            <input name="source_id" placeholder="关联来源 ID">
+            <input name="actor" placeholder="actor">
+            <textarea name="body" placeholder="内容"></textarea>
+            <button type="submit">加入复核链</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>终审决策</h2>
+            <div class="status-row">
+              <span class="mini">publish_now {{index .DecisionCounts "publish_now"}}</span>
+              <span class="mini">hold {{index .DecisionCounts "hold"}}</span>
+              <span class="mini">discard {{index .DecisionCounts "discard"}}</span>
+              <span class="mini">handoff {{index .DecisionCounts "handoff"}}</span>
+            </div>
+          </div>
+          <div class="list">
+            {{range .SortedDecisions}}
+            <div class="card">
+              <div class="row">
+                <div>
+                  <strong>{{.Title}}</strong>
+                  <div class="muted">{{.Owner}} · {{fmtTime .UpdatedAt}}</div>
+                </div>
+                <span class="badge {{badgeClass .Outcome}}">{{.Outcome}}</span>
+              </div>
+              <p>{{.Body}}</p>
+              {{if .Impact}}<div class="muted">影响：{{.Impact}}</div>{{end}}
+              {{if .SourceIDs}}<div class="muted">关联来源：{{join .SourceIDs ", "}}</div>{{end}}
+              <div class="button-row">
+                <form method="post" action="/actions/decision-status">
+                  <input type="hidden" name="decision_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="outcome" value="publish_now">publish_now</button>
+                </form>
+                <form method="post" action="/actions/decision-status">
+                  <input type="hidden" name="decision_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="outcome" value="hold">hold</button>
+                </form>
+                <form method="post" action="/actions/decision-status">
+                  <input type="hidden" name="decision_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="outcome" value="handoff">handoff</button>
+                </form>
+                <form method="post" action="/actions/decision-status">
+                  <input type="hidden" name="decision_id" value="{{.ID}}">
+                  <button type="submit" name="outcome" value="discard">discard</button>
+                </form>
+              </div>
+            </div>
+            {{end}}
+          </div>
+          <form class="form-grid" method="post" action="/actions/decision">
+            <h3>新增终审结论</h3>
+            <input name="title" placeholder="决策标题" required>
+            <input name="source_ids" placeholder="关联来源 ID，逗号分隔">
+            <select name="outcome">
+              <option value="publish_now">publish_now</option>
+              <option value="hold">hold</option>
+              <option value="discard">discard</option>
+              <option value="handoff">handoff</option>
+            </select>
+            <input name="owner" placeholder="负责人">
+            <textarea name="body" placeholder="终审内容" required></textarea>
+            <textarea name="impact" placeholder="影响说明"></textarea>
+            <button type="submit">加入终审决策</button>
+          </form>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>事故处置</h2>
+            <div class="status-row">
+              <span class="mini">incident {{index .IncidentCounts "incident"}}</span>
+              <span class="mini">update {{index .IncidentCounts "update"}}</span>
+              <span class="mini">recovery {{index .IncidentCounts "recovery"}}</span>
+            </div>
+          </div>
+          <div class="list">
+            {{range .SortedIncidents}}
+            <div class="card">
+              <div class="row">
+                <div>
+                  <strong>{{.Title}}</strong>
+                  <div class="muted">{{.Severity}} · {{.Owner}} · {{fmtTime .UpdatedAt}}</div>
+                </div>
+                <span class="badge {{badgeClass .Stage}}">{{.Stage}}</span>
+              </div>
+              <p>{{.Body}}</p>
+              <div class="button-row">
+                <form method="post" action="/actions/incident-status">
+                  <input type="hidden" name="incident_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="stage" value="incident">incident</button>
+                </form>
+                <form method="post" action="/actions/incident-status">
+                  <input type="hidden" name="incident_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="stage" value="update">update</button>
+                </form>
+                <form method="post" action="/actions/incident-status">
+                  <input type="hidden" name="incident_id" value="{{.ID}}">
+                  <button type="submit" name="stage" value="recovery">recovery</button>
+                </form>
+              </div>
+            </div>
+            {{end}}
+          </div>
+          <form class="form-grid" method="post" action="/actions/incident">
+            <h3>登记事故链</h3>
+            <input name="title" placeholder="标题" required>
+            <select name="stage">
+              <option value="incident">incident</option>
+              <option value="update">update</option>
+              <option value="recovery">recovery</option>
+            </select>
+            <select name="severity">
+              <option value="high">high</option>
+              <option value="medium" selected>medium</option>
+              <option value="low">low</option>
+            </select>
+            <input name="owner" placeholder="负责人">
+            <textarea name="body" placeholder="说明" required></textarea>
+            <button type="submit">加入事故链</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>交接与简报</h2>
+            <div class="status-row">
+              <span class="mini">handoff {{index .HandoffCounts "handoff"}}</span>
+              <span class="mini">checkpoint {{index .HandoffCounts "checkpoint"}}</span>
+              <span class="mini">accept {{index .HandoffCounts "accept"}}</span>
+            </div>
+          </div>
+          <div class="list">
+            {{range .SortedHandoffs}}
+            <div class="card">
+              <div class="row">
+                <div>
+                  <strong>{{.Title}}</strong>
+                  <div class="muted">{{.Owner}} · {{fmtTime .UpdatedAt}}</div>
+                </div>
+                <span class="badge {{badgeClass .Stage}}">{{.Stage}}</span>
+              </div>
+              <p>{{.Body}}</p>
+              <div class="button-row">
+                <form method="post" action="/actions/handoff-status">
+                  <input type="hidden" name="handoff_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="stage" value="handoff">handoff</button>
+                </form>
+                <form method="post" action="/actions/handoff-status">
+                  <input type="hidden" name="handoff_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="stage" value="checkpoint">checkpoint</button>
+                </form>
+                <form method="post" action="/actions/handoff-status">
+                  <input type="hidden" name="handoff_id" value="{{.ID}}">
+                  <button type="submit" name="stage" value="accept">accept</button>
+                </form>
+              </div>
+            </div>
+            {{end}}
+          </div>
+          <form class="form-grid" method="post" action="/actions/handoff">
+            <h3>新增交接项</h3>
+            <input name="title" placeholder="标题" required>
+            <select name="stage">
+              <option value="handoff">handoff</option>
+              <option value="checkpoint">checkpoint</option>
+              <option value="accept">accept</option>
+            </select>
+            <input name="owner" placeholder="负责人">
+            <textarea name="body" placeholder="交接说明" required></textarea>
+            <button type="submit">加入交接</button>
+          </form>
+          <div class="button-row">
+            <form method="post" action="/actions/brief-generate">
+              <input type="hidden" name="status" value="draft">
+              <button type="submit">生成夜间简报</button>
+            </form>
+            <a class="chip" href="/exports/brief/latest">导出最新简报</a>
+            <a class="chip" href="/exports/handoff/latest">导出交接摘要</a>
+          </div>
+          {{if .LatestBrief}}
+          <div class="card" style="margin-top:12px;">
+            <div class="row">
+              <strong>{{.LatestBrief.Title}}</strong>
+              <span class="badge {{badgeClass .LatestBrief.Status}}">{{.LatestBrief.Status}}</span>
+            </div>
+            <div class="muted">{{fmtTime .LatestBrief.UpdatedAt}} · 收录 {{join .LatestBrief.Items ", "}}</div>
+            {{if .LatestBrief.Summary}}<div class="muted">{{.LatestBrief.Summary}}</div>{{end}}
+            <div class="markdown-body">{{renderMarkdown .LatestBrief.Markdown}}</div>
+          </div>
+          {{end}}
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>任务</h2>
+            <div class="status-row">
+              <span class="mini">todo {{index .TaskCounts "todo"}}</span>
+              <span class="mini">doing {{index .TaskCounts "doing"}}</span>
+              <span class="mini">blocked {{index .TaskCounts "blocked"}}</span>
+              <span class="mini">done {{index .TaskCounts "done"}}</span>
+            </div>
+          </div>
+          <div class="list">
+            {{range .SortedTasks}}
+            <div class="card">
+              <div class="row">
+                <div>
+                  <strong>{{.Title}}</strong>
+                  <div class="muted">{{.Owner}} · {{fmtTime .UpdatedAt}}</div>
+                </div>
+                <span class="badge {{badgeClass .Status}}">{{.Status}}</span>
+              </div>
+              <div class="muted">
+                {{if .SourceID}}source {{.SourceID}} {{end}}
+                {{if .DecisionID}}decision {{.DecisionID}} {{end}}
+                {{if .IncidentID}}incident {{.IncidentID}} {{end}}
+                {{if .HandoffID}}handoff {{.HandoffID}} {{end}}
+              </div>
+              <div class="button-row">
+                <form method="post" action="/actions/task-status">
+                  <input type="hidden" name="task_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="todo">todo</button>
+                </form>
+                <form method="post" action="/actions/task-status">
+                  <input type="hidden" name="task_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="doing">doing</button>
+                </form>
+                <form method="post" action="/actions/task-status">
+                  <input type="hidden" name="task_id" value="{{.ID}}">
+                  <button class="secondary" type="submit" name="status" value="blocked">blocked</button>
+                </form>
+                <form method="post" action="/actions/task-status">
+                  <input type="hidden" name="task_id" value="{{.ID}}">
+                  <button type="submit" name="status" value="done">done</button>
+                </form>
+              </div>
+            </div>
+            {{end}}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>归档</h2>
+            <div class="muted">{{len .SortedArchive}} 项</div>
+          </div>
+          <div class="list">
+            {{range .SortedArchive}}
+            <div class="card">
+              <div class="row">
+                <div>
+                  <strong>{{.Title}}</strong>
+                  <div class="muted">{{.Kind}} · {{fmtTime .CreatedAt}}</div>
+                </div>
+              </div>
+              {{if .RelatedIDs}}<div class="muted">关联：{{join .RelatedIDs ", "}}</div>{{end}}
+              <div class="markdown-body">{{renderMarkdown .Body}}</div>
+            </div>
+            {{end}}
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="workspace" style="margin-top:20px;">
+      <section class="panel">
+        <h2>产品手册</h2>
+        <div class="markdown-body">{{renderMarkdown .State.ManualMarkdown}}</div>
+      </section>
+      <section class="panel">
+        <h2>流程规格</h2>
+        <div class="markdown-body">{{renderMarkdown .State.SpecMarkdown}}</div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:20px;">
+      <div class="panel-head">
+        <h2>最近动态</h2>
+        <div class="muted">{{len .RecentHistory}} 条</div>
+      </div>
+      <div class="list">
+        {{range .RecentHistory}}
+        <div class="card">
+          <div class="row">
+            <strong>{{.Title}}</strong>
+            <span class="muted">{{fmtTime .CreatedAt}}</span>
+          </div>
+          <div class="muted">{{.Scope}} · {{.Action}}</div>
+          <p>{{.Detail}}</p>
+        </div>
+        {{end}}
+      </div>
+    </section>
+  </div>
+</body>
+</html>

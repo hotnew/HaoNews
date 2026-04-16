@@ -20,6 +20,7 @@
 4. [team-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/team-project-summary.md)
 5. [runtime-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/runtime-project-summary.md)
 6. [meeting-notes-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-project-summary.md)
+7. [night-shift-system2-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2-project-summary.md)
 
 ### 只想快速理解当前系统
 
@@ -95,6 +96,8 @@
 - 独立本地工具开发：
   - [meeting-notes-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-project-summary.md)
   - [meeting-notes-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/meeting-notes-local-app.md)
+  - [night-shift-system2-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2-project-summary.md)
+  - [night-shift-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-local-app.md)
   - [support-triage-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-project-summary.md)
   - [support-triage-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-local-app.md)
 
@@ -204,6 +207,15 @@
   - [support-triage-spec-package.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-spec-package.md)
 - 本地程序手册：
   - [support-triage-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/support-triage-local-app.md)
+
+### Night Shift System2
+
+- 项目整合说明：
+  - [night-shift-system2-project-summary.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2-project-summary.md)
+- 规格来源：
+  - [night-shift-system2/README.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-system2/README.md)
+- 本地程序手册：
+  - [night-shift-local-app.md](/Users/haoniu/sh18/hao.news2/haonews/doc-md/night-shift-local-app.md)
 
 ### Topics
 

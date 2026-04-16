@@ -23,6 +23,17 @@
   box-sizing: border-box;
 }
 
+select,
+option,
+optgroup {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+select {
+  color-scheme: light;
+}
+
 html {
   background: var(--bg);
 }

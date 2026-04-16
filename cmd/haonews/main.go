@@ -23,6 +23,7 @@ import (
 	"hao.news/internal/haonews/live"
 	"hao.news/internal/host"
 	"hao.news/internal/meetingnotesdesk"
+	"hao.news/internal/nightshiftdesk"
 	"hao.news/internal/scaffold"
 	"hao.news/internal/supporttriagedesk"
 	"hao.news/internal/themes/directorytheme"
@@ -121,6 +122,8 @@ func run(args []string) error {
 		return runCreate(args[1:])
 	case "meetingnotes":
 		return runMeetingNotes(args[1:])
+	case "nightshift":
+		return runNightShift(args[1:])
 	case "supporttriage":
 		return runSupportTriage(args[1:])
 	default:
@@ -1614,6 +1617,43 @@ func runMeetingNotes(args []string) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	fmt.Fprintf(os.Stdout, "meeting notes system listening on http://%s\nstate file: %s\n", *listenAddr, *statePath)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- httpServer.ListenAndServe()
+	}()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return httpServer.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+func runNightShift(args []string) error {
+	fs := flag.NewFlagSet("nightshift", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	listenAddr := fs.String("listen", "127.0.0.1:51921", "http listen address")
+	statePath := fs.String("state", nightshiftdesk.DefaultStatePath(), "state file path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	server, err := nightshiftdesk.New(*statePath)
+	if err != nil {
+		return err
+	}
+	httpServer := &http.Server{
+		Addr:              *listenAddr,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	fmt.Fprintf(os.Stdout, "night shift system listening on http://%s\nstate file: %s\n", *listenAddr, *statePath)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- httpServer.ListenAndServe()
